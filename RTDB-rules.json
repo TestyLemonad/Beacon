@@ -1,0 +1,7 @@
+// Rules from here will update in firebase
+{
+  "rules": {
+    ".read": "now < 1794603600000",  // 2026-11-14
+    ".write": "now < 1794603600000",  // 2026-11-14
+  }
+}
