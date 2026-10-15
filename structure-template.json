@@ -1,0 +1,84 @@
+{
+  "chats": {
+    "chat_private_1": {
+      "type": "private",
+      "createdAt": 1728723605,
+      "users": {
+        "user1_id": true,
+        "user2_id": true
+      },
+      "lastMessage": {
+        "text": "Привет!",
+        "sender": "user1_id",
+        "timestamp": 1728723605
+      }
+    },
+    "chat_group_1": {
+      "type": "group",
+      "title": "Разработка OpenLemon",
+      "createdAt": 1728723605,
+      "owner": "user1_id",
+      "users": {
+        "user1_id": true,
+        "user2_id": true,
+        "user3_id": true
+      },
+      "lastMessage": {
+        "text": "Обновил прошивку",
+        "sender": "user2_id",
+        "timestamp": 1728723900
+      }
+    },
+    "channel_1": {
+      "type": "channel",
+      "title": "Блог Лимонада",
+      "createdAt": 1728723605,
+      "owner": "user1_id",
+      "subscribersCount": 142,
+      "admins": {
+        "user1_id": true
+      },
+      "lastMessage": {
+        "text": "Запилили новый сайт testylemonad.ru",
+        "sender": "user1_id",
+        "timestamp": 1728724000
+      }
+    }
+  },
+
+  "messages": {
+    "chat_private_1": {
+      "msg_1": {
+        "sender": "user1_id",
+        "text": "Привет!",
+        "timestamp": 1728723605
+      }
+    },
+    "chat_group_1": {
+      "msg_2": {
+        "sender": "user2_id",
+        "text": "Обновил прошивку",
+        "timestamp": 1728723900
+      }
+    },
+    "channel_1": {
+      "msg_3": {
+        "sender": "user1_id",
+        "text": "Запилили новый сайт testylemonad.ru",
+        "timestamp": 1728724000
+      }
+    }
+  },
+
+  "user_chats": {
+    "user1_id": {
+      "chat_private_1": true,
+      "chat_group_1": true,
+      "channel_1": true 
+    },
+    "user2_id": {
+      "chat_private_1": true,
+      "chat_group_1": true
+    }
+  }
+}
