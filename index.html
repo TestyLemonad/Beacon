@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beacon</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="icon.png" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <meta name="theme-color" content="#121212" />
+  <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
+  <meta http-equiv="Cache-Control" content="no-cache" />
+
+  <link rel="stylesheet" href="styles.css?v=3" />
+</head>
+<body>
+  <!-- ============================================================
+       Экран авторизации
+       Google используется только для почты и вместо пароля:
+       все данные профиля юзер заполняет после входа.
+       ============================================================ -->
+  <div id="auth-screen" class="screen auth-screen">
+    <div class="auth-card">
+      <img src="icon.png" alt="Beacon" class="auth-logo" />
+      <h1 class="auth-title">Beacon</h1>
+      <p class="auth-subtitle">Простой мессенджер</p>
+
+      <form id="auth-form" class="auth-form">
+        <div class="field">
+          <label for="auth-email">Email</label>
+          <input id="auth-email" class="input" type="email" placeholder="you@example.com"
+                 autocomplete="email" required />
+        </div>
+
+        <div class="field">
+          <label for="auth-password">Пароль</label>
+          <input id="auth-password" class="input" type="password" placeholder="••••••"
+                 autocomplete="current-password" minlength="6" required />
+        </div>
+
+        <p id="auth-error" class="form-error hidden"></p>
+
+        <button id="auth-submit" type="submit" class="btn primary full">Войти</button>
+      </form>
+
+      <button id="auth-toggle-mode" type="button" class="link-btn">
+        Нет аккаунта? Зарегистрироваться
+      </button>
+
+      <div class="divider"><span>или</span></div>
+
+      <button id="google-btn" type="button" class="btn ghost full">
+        <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+          <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+          <path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+          <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+          <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+        </svg>
+        Войти через Google
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Онбординг: заполнение профиля после регистрации/входа
+       ============================================================ -->
+  <div id="onboarding-screen" class="screen auth-screen hidden">
+    <div class="auth-card">
+      <img src="icon.png" alt="Beacon" class="auth-logo" />
+      <h1 class="auth-title">Почти готово</h1>
+      <p class="auth-subtitle">Заполните профиль — так вас найдут другие</p>
+      <p id="onboarding-email" class="onboarding-email"></p>
+
+      <form id="onboarding-form" class="auth-form">
+        <div class="field">
+          <label for="ob-username">Юзернейм</label>
+          <input id="ob-username" class="input" type="text" placeholder="testy_lemon" autocomplete="username" />
+          <p class="field-hint">По нему вас будут находить в поиске: 3–32 символа (a–z, 0–9, «_»).</p>
+        </div>
+
+        <div class="field">
+          <label for="ob-firstname">Имя</label>
+          <input id="ob-firstname" class="input" type="text" placeholder="Иван" autocomplete="given-name" />
+        </div>
+
+        <div class="field">
+          <label for="ob-lastname">Фамилия (необязательно)</label>
+          <input id="ob-lastname" class="input" type="text" placeholder="Лимонов" autocomplete="family-name" />
+        </div>
+
+        <div class="field">
+          <label for="ob-bio">О себе (необязательно)</label>
+          <textarea id="ob-bio" class="textarea" rows="2" placeholder="Пара слов о себе"></textarea>
+        </div>
+
+        <p id="onboarding-error" class="form-error hidden"></p>
+
+        <button id="onboarding-submit" type="submit" class="btn primary full">Сохранить и продолжить</button>
+      </form>
+
+      <button id="onboarding-logout" type="button" class="link-btn">Выйти из аккаунта</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Мессенджер
+       ============================================================ -->
+  <div id="messenger-screen" class="screen messenger hidden">
+    <!-- Боковая панель: профиль, поиск, список чатов -->
+    <aside id="sidebar">
+      <header class="sidebar-header">
+        <img src="icon.png" alt="Beacon" class="logo" />
+        <div class="brand">
+          <h1>Beacon</h1>
+          <span id="current-user-name" class="current-user">…</span>
+        </div>
+        <button id="profile-btn" class="avatar-btn" type="button" title="Профиль" aria-label="Профиль">
+          <span id="sidebar-avatar" class="avatar avatar-sm"></span>
+        </button>
+        <button id="logout-btn" class="icon-btn" type="button" title="Выйти" aria-label="Выйти">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+      </header>
+
+      <div class="sidebar-actions">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input id="search-input" type="text" placeholder="Поиск: @юзернейм, чаты" autocomplete="off" />
+          <button id="search-clear" class="search-clear hidden" type="button" aria-label="Очистить">×</button>
+        </div>
+      </div>
+
+      <div id="chat-list-wrap" class="chat-list-wrap">
+        <ul id="chat-list" class="chat-list"></ul>
+        <p id="chat-list-empty" class="sidebar-empty hidden">
+          У вас пока нет чатов.<br />Создайте первый или найдите канал через поиск!
+        </p>
+      </div>
+
+      <div id="search-results" class="chat-list-wrap hidden"></div>
+
+      <!-- Создание чата: «+» в правом нижнем углу докбара -->
+      <button id="new-chat-btn" class="fab" type="button" title="Создать чат" aria-label="Создать чат">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+    </aside>
+
+    <!-- Панель чата / предпросмотра канала -->
+    <main id="chat-panel" class="chat-panel">
+      <div id="chat-panel-empty" class="panel-empty">
+        <img src="icon.png" alt="" />
+        <p>Выберите чат слева или найдите<br />собеседника по @юзернейму</p>
+      </div>
+
+      <!-- Предпросмотр канала (поиск -> подписка) -->
+      <div id="channel-preview" class="chat-view hidden">
+        <header class="chat-header">
+          <button id="preview-back-btn" class="icon-btn" type="button" title="Назад" aria-label="Назад">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <div class="chat-header-info">
+            <h2>Предпросмотр канала</h2>
+          </div>
+        </header>
+
+        <div class="panel-empty">
+          <div id="preview-avatar" class="avatar avatar-lg"></div>
+          <h2 id="preview-title" class="preview-title"></h2>
+          <p id="preview-meta" class="preview-meta"></p>
+          <p id="preview-description" class="preview-description hidden"></p>
+          <button id="preview-subscribe" class="btn primary" type="button">Подписаться</button>
+        </div>
+      </div>
+
+      <!-- Открытый чат -->
+      <div id="chat-view" class="chat-view hidden">
+        <header class="chat-header">
+          <button id="back-btn" class="icon-btn" type="button" title="К списку чатов" aria-label="К списку чатов">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <div id="chat-header-avatar" class="avatar"></div>
+          <div class="chat-header-info">
+            <h2 id="chat-title">…</h2>
+            <p id="chat-status"></p>
+          </div>
+          <button id="unsubscribe-btn" class="unsubscribe-btn hidden" type="button" title="Отписаться от канала">
+            Отписаться
+          </button>
+        </header>
+
+        <div id="messages" class="messages"></div>
+
+        <!-- Плашка для каналов: писать могут только администраторы -->
+        <div id="channel-locked" class="channel-locked hidden">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          Только администраторы могут публиковать сообщения
+        </div>
+
+        <form id="message-form" class="composer">
+          <input id="message-input" type="text" placeholder="Написать сообщение…" autocomplete="off" />
+          <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <!-- ============================================================
+       Модальное окно: создание чата
+       ============================================================ -->
+  <div id="modal-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Новый чат</h3>
+        <button id="modal-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" type="button" data-tab="private">Личный</button>
+        <button class="tab" type="button" data-tab="group">Группа</button>
+        <button class="tab" type="button" data-tab="channel">Канал</button>
+      </div>
+
+      <form id="create-chat-form" class="create-form">
+        <div class="tab-pane" data-pane="private">
+          <div class="field">
+            <label for="private-username">Юзернейм пользователя</label>
+            <input id="private-username" class="input" type="text" placeholder="@username" autocomplete="off" />
+            <p class="field-hint">Собеседника можно найти через поиск в сайдбаре.</p>
+          </div>
+        </div>
+
+        <div class="tab-pane hidden" data-pane="group">
+          <div class="field">
+            <label for="group-title">Название группы</label>
+            <input id="group-title" class="input" type="text" placeholder="Разработка Beacon" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="group-members">Участники — юзернеймы</label>
+            <textarea id="group-members" class="textarea" rows="3"
+                      placeholder="@friend, @other"></textarea>
+            <p class="field-hint">Через запятую или пробел; себя добавлять не нужно.</p>
+          </div>
+        </div>
+
+        <div class="tab-pane hidden" data-pane="channel">
+          <div class="field">
+            <label for="channel-username">Юзернейм канала</label>
+            <input id="channel-username" class="input" type="text" placeholder="@news_beacon" autocomplete="off" />
+            <p class="field-hint">По нему пользователи найдут канал и смогут подписаться.</p>
+          </div>
+          <div class="field">
+            <label for="channel-title">Название канала</label>
+            <input id="channel-title" class="input" type="text" placeholder="Новости Beacon" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="channel-description">Описание (необязательно)</label>
+            <textarea id="channel-description" class="textarea" rows="2"
+                      placeholder="О чём этот канал"></textarea>
+          </div>
+        </div>
+
+        <p id="modal-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="modal-submit" class="btn primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Модальное окно: профиль (юзернейм, имя, фамилия, био)
+       ============================================================ -->
+  <div id="profile-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Профиль</h3>
+        <button id="profile-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <form id="profile-form" class="create-form">
+        <div class="field">
+          <label for="pf-username">Юзернейм</label>
+          <input id="pf-username" class="input" type="text" placeholder="testy_lemon" autocomplete="off" />
+          <p class="field-hint">3–32 символа (a–z, 0–9, «_»). По нему вас находят другие.</p>
+        </div>
+        <div class="field">
+          <label for="pf-firstname">Имя</label>
+          <input id="pf-firstname" class="input" type="text" placeholder="Иван" autocomplete="given-name" />
+        </div>
+        <div class="field">
+          <label for="pf-lastname">Фамилия (необязательно)</label>
+          <input id="pf-lastname" class="input" type="text" placeholder="Лимонов" autocomplete="family-name" />
+        </div>
+        <div class="field">
+          <label for="pf-bio">О себе (необязательно)</label>
+          <textarea id="pf-bio" class="textarea" rows="2" placeholder="Пара слов о себе"></textarea>
+        </div>
+
+        <p id="profile-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="profile-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="profile-submit" class="btn primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Всплывающие уведомления -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Точка входа приложения -->
+  <script type="module" src="app.js?v=3"></script>
+</body>
+</html>

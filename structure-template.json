@@ -1,4 +1,27 @@
 {
+  "users": {
+    "user1_id": {
+      "username": "testy_lemon",
+      "firstName": "Иван",
+      "lastName": "Лимонов",
+      "bio": "Люблю лимонад",
+      "email": "ivan@example.com",
+      "createdAt": 1728723605
+    },
+    "user2_id": {
+      "username": "openlemon_dev",
+      "firstName": "Пётр",
+      "lastName": "Апельсинов",
+      "email": "petr@example.com",
+      "createdAt": 1728723605
+    }
+  },
+
+  "usernames": {
+    "testy_lemon": "user1_id",
+    "openlemon_dev": "user2_id"
+  },
+
   "chats": {
     "chat_private_1": {
       "type": "private",
@@ -31,7 +54,9 @@
     },
     "channel_1": {
       "type": "channel",
+      "username": "blog_limonada",
       "title": "Блог Лимонада",
+      "description": "Всё про OpenLemon и лимонад",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "subscribersCount": 142,
@@ -44,6 +69,10 @@
         "timestamp": 1728724000
       }
     }
+  },
+
+  "channel_usernames": {
+    "blog_limonada": "channel_1"
   },
 
   "messages": {
