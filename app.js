@@ -8,8 +8,8 @@
  *  - обработчики UI: список чатов, поиск по юзернеймам, сообщения,
  *    модальные окна «Новый чат» и «Профиль».
  */
-import * as Auth from './services/auth.js?v=3';
-import * as Chat from './services/chat.js?v=3';
+import * as Auth from './services/auth.js?v=4';
+import * as Chat from './services/chat.js?v=4';
 
 /* ============================================================
  *  DOM
@@ -103,6 +103,54 @@ const dom = {
   pfLastname: $('pf-lastname'),
   pfBio: $('pf-bio'),
 
+  // Тема оформления
+  themeBtn: $('theme-btn'),
+
+  // Панель чата: блокировка и настройки
+  blockBtn: $('block-btn'),
+  settingsBtn: $('settings-btn'),
+  privateBlocked: $('private-blocked'),
+  privateUnblockBtn: $('private-unblock-btn'),
+  previewHeading: $('preview-heading'),
+
+  // Создание группы: тип, юзернейм, описание
+  groupDescription: $('group-description'),
+  groupTypeBtns: Array.from(document.querySelectorAll('[data-group-type]')),
+  groupUsernameField: $('group-username-field'),
+  groupUsername: $('group-username'),
+  groupMembersField: $('group-members-field'),
+
+  // Профиль: аватарка и чёрный список
+  avatarPreview: $('avatar-preview'),
+  avatarValue: $('avatar-value'),
+  avatarKindBtns: Array.from(document.querySelectorAll('[data-avatar-kind]')),
+  avatarBgBtns: Array.from(document.querySelectorAll('[data-avatar-bg]')),
+  avatarPalette1: $('avatar-palette-1'),
+  avatarPalette2: $('avatar-palette-2'),
+  profileBlockedBtn: $('profile-blocked-btn'),
+
+  // Чёрный список
+  blockedOverlay: $('blocked-overlay'),
+  blockedClose: $('blocked-close'),
+  blockedList: $('blocked-list'),
+  blockedEmpty: $('blocked-empty'),
+
+  // Настройки группы/канала
+  settingsOverlay: $('settings-overlay'),
+  settingsForm: $('settings-form'),
+  settingsHeading: $('settings-heading'),
+  settingsClose: $('settings-close'),
+  settingsCancel: $('settings-cancel'),
+  settingsSubmit: $('settings-submit'),
+  settingsDelete: $('settings-delete'),
+  settingsError: $('settings-error'),
+  settingsTitle: $('settings-title'),
+  settingsDescription: $('settings-description'),
+  settingsGroupBlock: $('settings-group-block'),
+  settingsTypeBtns: Array.from(document.querySelectorAll('[data-settings-type]')),
+  settingsUsernameField: $('settings-username-field'),
+  settingsUsername: $('settings-username'),
+
   // Уведомления
   toast: $('toast'),
 };
@@ -120,7 +168,8 @@ const state = {
   messages: [],             // сообщения активного чата (отсортированы)
   stickToBottom: true,      // держать ли скролл внизу
   channelPreview: null,     // { chatId, chat } — предпросмотр канала из поиска
-  search: { query: '', loading: false, users: [], channels: [], localChats: [] },
+  search: { query: '', loading: false, users: [], groups: [], channels: [], localChats: [] },
+  blocked: new Set(),       // uid пользователей в моём чёрном списке
   subscriptions: {
     userChats: null,
     messages: null,
@@ -132,6 +181,9 @@ let authMode = 'login';     // 'login' | 'register'
 let modalTab = 'private';   // активная вкладка модального окна
 let searchSeq = 0;          // защита от гонок при поиске
 let searchTimer = null;
+let groupTypeChoice = 'private';    // тип новой группы: 'private' | 'public'
+let settingsTypeChoice = 'private'; // тип группы в окне настроек
+let settingsChatId = null;          // чат, открытый в окне настроек
 
 /* ============================================================
  *  Утилиты
@@ -225,6 +277,36 @@ function applyAvatar(node, seed, label) {
  *  Представление чата: заголовок, аватар, статус
  * ============================================================ */
 
+/**
+ * Аватарка профиля: кастомная (буква/эмодзи на цвете или градиенте)
+ * либо стандартные инициалы на сгенерированном цвете.
+ */
+function applyProfileAvatar(node, profile, seed, fallbackLabel = undefined) {
+  const avatar = profile?.avatar;
+  if (avatar && avatar.value && avatar.bg1) {
+    node.style.background = avatar.bgType === 'gradient'
+      ? `linear-gradient(135deg, ${avatar.bg1}, ${avatar.bg2 || avatar.bg1})`
+      : avatar.bg1;
+    node.textContent = avatar.value;
+    node.classList.toggle('avatar-emoji', avatar.kind === 'emoji');
+    return;
+  }
+  node.classList.remove('avatar-emoji');
+  applyAvatar(node, seed, fallbackLabel === undefined ? getProfileInitials(profile) : fallbackLabel);
+}
+
+/** Аватарка чата: личный — профиль собеседника, группа/канал — буква названия. */
+function applyChatAvatar(node, chatId, chat) {
+  if (chat?.type === 'private') {
+    const peerUid = getPrivatePeerUid(chat);
+    const profile = peerUid ? Chat.getCachedUserProfile(peerUid) : null;
+    applyProfileAvatar(node, profile, peerUid || chatId);
+    return;
+  }
+  node.classList.remove('avatar-emoji');
+  applyAvatar(node, chatId, (chat?.title || '?').trim().charAt(0).toUpperCase());
+}
+
 /** SVG-иконки типов чата. */
 const CHAT_TYPE_ICONS = {
   private:
@@ -250,16 +332,6 @@ function getChatTitle(chat) {
     return getProfileName(profile) || 'Личный чат';
   }
   return chat.title || 'Без названия';
-}
-
-/** Данные аватарки чата: seed цвета + подпись. */
-function getChatAvatar(chatId, chat) {
-  if (chat && chat.type === 'private') {
-    const peerUid = getPrivatePeerUid(chat);
-    const profile = peerUid ? Chat.getCachedUserProfile(peerUid) : null;
-    return { seed: peerUid || chatId, label: getProfileInitials(profile) };
-  }
-  return { seed: chatId, label: (chat?.title || '?').trim().charAt(0).toUpperCase() };
 }
 
 /** Статус в шапке чата: тип + @юзернейм / количество участников. */
@@ -296,7 +368,7 @@ function getOwnDisplayName() {
 /** Обновить аватар и имя текущего пользователя в сайдбаре. */
 function updateSidebarUser() {
   dom.currentUserName.textContent = getOwnDisplayName();
-  applyAvatar(dom.sidebarAvatar, state.user?.uid || 'me', getProfileInitials(state.profile));
+  applyProfileAvatar(dom.sidebarAvatar, state.profile, state.user?.uid || 'me');
 }
 
 /* ============================================================
@@ -339,8 +411,7 @@ function buildChatListItem(tag, chatId, chat) {
   item.dataset.chatId = chatId;
 
   const avatar = createEl('div', 'avatar');
-  const avatarData = getChatAvatar(chatId, chat);
-  applyAvatar(avatar, avatarData.seed, avatarData.label);
+  applyChatAvatar(avatar, chatId, chat);
 
   const body = createEl('div', 'chat-item-body');
 
@@ -405,6 +476,7 @@ async function runSearch(rawQuery) {
 
   if (!prefix) {
     state.search.users = [];
+    state.search.groups = [];
     state.search.channels = [];
     renderSearchResults();
     return;
@@ -413,10 +485,12 @@ async function runSearch(rawQuery) {
   renderSearchResults(); // показываем состояние «Поиск…»
 
   let users = [];
+  let groups = [];
   let channels = [];
   try {
-    [users, channels] = await Promise.all([
+    [users, groups, channels] = await Promise.all([
       Chat.searchUsersByPrefix(prefix, 10),
+      Chat.searchGroupsByPrefix(prefix, 10),
       Chat.searchChannelsByPrefix(prefix, 10),
     ]);
   } catch (error) {
@@ -425,6 +499,7 @@ async function runSearch(rawQuery) {
   if (seq !== searchSeq) return; // устаревший запрос
 
   state.search.users = users.filter((user) => user.uid !== state.user?.uid);
+  state.search.groups = groups;
   state.search.channels = channels;
   state.search.loading = false;
   renderSearchResults();
@@ -434,11 +509,12 @@ async function runSearch(rawQuery) {
 function buildUserRow(user) {
   const item = createEl('div', 'chat-item');
   const avatar = createEl('div', 'avatar');
-  applyAvatar(avatar, user.uid, getProfileInitials(user));
+  applyProfileAvatar(avatar, user, user.uid);
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
   top.append(createEl('span', 'chat-item-title', getProfileName(user) || '@' + user.username));
+  if (state.blocked.has(user.uid)) top.append(createEl('span', 'search-badge muted', 'в ЧС'));
 
   const bottom = createEl('div', 'chat-item-bottom');
   const subtitle = '@' + user.username + (user.bio ? ' · ' + user.bio : '');
@@ -481,13 +557,44 @@ function buildChannelRow(channel) {
   return item;
 }
 
-/** Отрисовать результаты поиска (разделы: мои чаты, люди, каналы). */
+/** Строка результата «публичная группа». */
+function buildGroupRow(group) {
+  const member = state.myChatIds.has(group.chatId);
+  const item = createEl('div', 'chat-item');
+
+  const avatar = createEl('div', 'avatar');
+  applyAvatar(avatar, group.chatId, (group.title || '?').trim().charAt(0).toUpperCase());
+
+  const body = createEl('div', 'chat-item-body');
+  const top = createEl('div', 'chat-item-top');
+  top.append(createEl('span', 'chat-item-title', group.title || 'Группа'));
+  if (member) top.append(createEl('span', 'search-badge', 'вы участник'));
+
+  const bottom = createEl('div', 'chat-item-bottom');
+  const count = Number(group.memberCount) || 0;
+  const subtitle = `@${group.username} · ${count} ${plural(count, ['участник', 'участника', 'участников'])}`;
+  bottom.append(createEl('span', 'chat-item-preview', subtitle));
+  const icon = createEl('span', 'chat-type-icon');
+  icon.innerHTML = CHAT_TYPE_ICONS.group;
+  bottom.append(icon);
+
+  body.append(top, bottom);
+  item.append(avatar, body);
+  item.addEventListener('click', () => {
+    exitSearchMode();
+    if (member) selectChat(group.chatId);
+    else openChannelPreview(group.chatId);
+  });
+  return item;
+}
+
+/** Отрисовать результаты поиска (разделы: мои чаты, люди, группы, каналы). */
 function renderSearchResults() {
-  const { query, loading, users, channels, localChats } = state.search;
+  const { query, loading, users, groups, channels, localChats } = state.search;
   dom.searchResults.innerHTML = '';
   if (!query) return;
 
-  if (loading && !users.length && !channels.length && !localChats.length) {
+  if (loading && !users.length && !groups.length && !channels.length && !localChats.length) {
     dom.searchResults.append(createEl('p', 'search-empty', 'Поиск…'));
     return;
   }
@@ -500,11 +607,12 @@ function renderSearchResults() {
 
   addSection('Мои чаты', localChats.map(([chatId, chat]) => buildChatListItem('div', chatId, chat)));
   addSection('Пользователи', users.map(buildUserRow));
+  addSection('Группы', groups.map(buildGroupRow));
   addSection('Каналы', channels.map(buildChannelRow));
 
   if (!dom.searchResults.children.length) {
     const empty = createEl('p', 'search-empty');
-    empty.innerHTML = 'Ничего не найдено.<br />Поиск идёт по @юзернеймам пользователей и каналов.';
+    empty.innerHTML = 'Ничего не найдено.<br />Поиск идёт по @юзернеймам людей, групп и каналов.';
     dom.searchResults.append(empty);
   }
 }
@@ -520,7 +628,7 @@ function exitSearchMode() {
   dom.searchClear.classList.add('hidden');
   dom.searchResults.classList.add('hidden');
   dom.chatListWrap.classList.remove('hidden');
-  state.search = { query: '', loading: false, users: [], channels: [], localChats: [] };
+  state.search = { query: '', loading: false, users: [], groups: [], channels: [], localChats: [] };
 }
 
 /** Создать личный чат по uid и открыть его. */
@@ -628,14 +736,13 @@ function renderMainPanel() {
 
   dom.chatTitle.textContent = getChatTitle(chat);
   dom.chatStatus.textContent = getChatStatus(chat);
-  const avatarData = getChatAvatar(state.activeChatId, chat);
-  applyAvatar(dom.chatHeaderAvatar, avatarData.seed, avatarData.label);
+  applyChatAvatar(dom.chatHeaderAvatar, state.activeChatId, chat);
 
   // Правом на запись управляет role-логика: каналы — только админы.
   const canPost = Chat.canPostToChat(chat, state.user?.uid);
   dom.messageInput.disabled = !canPost;
   dom.sendBtn.disabled = !canPost;
-  dom.messageInput.placeholder = canPost ? 'Написать сообщение…' : 'Просмотр';
+  dom.messageInput.placeholder = canPost ? 'Шепни что-нибудь…' : 'Просмотр';
   dom.channelLocked.classList.toggle('hidden', !(chat?.type === 'channel' && !canPost));
 
   // «Отписаться» — для каналов, где я подписчик, но не админ.
@@ -644,25 +751,46 @@ function renderMainPanel() {
   const showUnsubscribe = isChannel && !isAdmin && state.myChatIds.has(state.activeChatId);
   dom.unsubscribeBtn.classList.toggle('hidden', !showUnsubscribe);
 
+  // «Настройки» — владельцу группы/канала (название, описание, тип, удаление).
+  const isOwner = Boolean(chat?.owner && chat.owner === state.user?.uid);
+  const showSettings = isOwner && (chat?.type === 'group' || chat?.type === 'channel');
+  dom.settingsBtn.classList.toggle('hidden', !showSettings);
+
+  // Личный чат: собеседник в чёрном списке — прячем его сообщения и композер.
+  const peerUid = getPrivatePeerUid(chat);
+  const peerBlocked = Boolean(peerUid && state.blocked.has(peerUid));
+  dom.blockBtn.classList.toggle('hidden', !(chat?.type === 'private' && peerUid));
+  dom.blockBtn.textContent = peerBlocked ? 'Разблокировать' : 'Заблокировать';
+  dom.privateBlocked.classList.toggle('hidden', !peerBlocked);
+  dom.messageForm.classList.toggle('hidden', peerBlocked);
+
   renderMessages();
 }
 
-/** Отрисовать предпросмотр канала. */
+/** Отрисовать предпросмотр канала или публичной группы. */
 function renderChannelPreview() {
   const { chatId, chat } = state.channelPreview;
-  const subscribed = state.myChatIds.has(chatId);
+  const member = state.myChatIds.has(chatId);
+  const isGroup = chat?.type === 'group';
 
   dom.channelPreview.classList.remove('hidden');
   dom.chatView.classList.add('hidden');
   dom.chatPanelEmpty.classList.add('hidden');
 
+  dom.previewHeading.textContent = isGroup ? 'Предпросмотр группы' : 'Предпросмотр канала';
+
   applyAvatar(dom.previewAvatar, chatId, (chat?.title || 'К').trim().charAt(0).toUpperCase());
   dom.previewTitle.textContent = chat?.title || 'Загрузка…';
 
   if (chat) {
-    const count = Number(chat.subscribersCount) || 0;
     const handle = chat.username ? `@${chat.username} · ` : '';
-    dom.previewMeta.textContent = `${handle}${count} ${plural(count, ['подписчик', 'подписчика', 'подписчиков'])}`;
+    if (isGroup) {
+      const count = Object.keys(chat.users || {}).length;
+      dom.previewMeta.textContent = `${handle}${count} ${plural(count, ['участник', 'участника', 'участников'])}`;
+    } else {
+      const count = Number(chat.subscribersCount) || 0;
+      dom.previewMeta.textContent = `${handle}${count} ${plural(count, ['подписчик', 'подписчика', 'подписчиков'])}`;
+    }
   } else {
     dom.previewMeta.textContent = '';
   }
@@ -670,8 +798,9 @@ function renderChannelPreview() {
   dom.previewDescription.textContent = chat?.description || '';
   dom.previewDescription.classList.toggle('hidden', !chat?.description);
 
-  dom.previewSubscribe.textContent = subscribed ? 'Открыть канал' : 'Подписаться';
-  dom.previewSubscribe.disabled = false;
+  if (member) dom.previewSubscribe.textContent = isGroup ? 'Открыть группу' : 'Открыть канал';
+  else dom.previewSubscribe.textContent = isGroup ? 'Присоединиться' : 'Подписаться';
+  dom.previewSubscribe.disabled = !chat;
 }
 
 /** Перерисовать область сообщений активного чата. */
@@ -684,15 +813,19 @@ function renderMessages() {
 
   container.innerHTML = '';
 
-  if (!state.messages.length) {
-    container.append(createEl('p', 'messages-empty', 'В этом чате пока нет сообщений'));
+  // Сообщения пользователей из чёрного списка не показываем.
+  const visible = state.messages.filter((message) => !state.blocked.has(message.sender));
+  if (!visible.length) {
+    container.append(createEl('p', 'messages-empty', state.messages.length
+      ? 'Сообщения скрыты: отправитель в чёрном списке'
+      : 'В этом чате пока нет сообщений'));
     return;
   }
 
   let lastDay = null;
   const senderUids = [];
 
-  for (const message of state.messages) {
+  for (const message of visible) {
     const dayKey = new Date(message.timestamp * 1000).toDateString();
     if (dayKey !== lastDay) {
       container.append(createEl('div', 'message-day', formatDayLabel(message.timestamp)));
@@ -795,6 +928,7 @@ function teardownSubscriptions() {
   state.messages = [];
   state.stickToBottom = true;
   state.channelPreview = null;
+  state.blocked = new Set();
 
   exitSearchMode();
   dom.chatList.innerHTML = '';
@@ -831,7 +965,7 @@ function showOnboardingScreen() {
   setTimeout(() => dom.obUsername.focus(), 0);
 }
 
-/** Показать мессенджер (профиль заполнен). */
+/* Показать мессенджер (профиль заполнен). */
 function enterMessenger() {
   dom.authScreen.classList.add('hidden');
   dom.onboardingScreen.classList.add('hidden');
@@ -839,6 +973,19 @@ function enterMessenger() {
   updateSidebarUser();
   renderChatList();
   startSubscriptions();
+
+  // Чёрный список пользователя (сообщения и композер учитывают его).
+  state.blocked = new Set();
+  Chat.getBlockedUids(state.user.uid)
+    .then((uids) => {
+      if (!state.user) return; // успели выйти, пока грузили
+      state.blocked = new Set(uids);
+      renderChatList();
+      renderMainPanel();
+      if (state.search.query) renderSearchResults();
+      if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
+    })
+    .catch((error) => console.error('Не удалось загрузить чёрный список:', error));
 }
 
 function showAuthError(message) {
@@ -880,7 +1027,7 @@ function setAuthLoading(loading) {
  * Общий обработчик форм профиля (онбординг / модалка).
  * Показывает ошибки, блокирует кнопку, обновляет state.profile.
  */
-async function saveProfileForm({ usernameEl, firstNameEl, lastNameEl, bioEl, errorEl, submitEl, onSuccess }) {
+async function saveProfileForm({ usernameEl, firstNameEl, lastNameEl, bioEl, errorEl, submitEl, avatar = undefined, onSuccess }) {
   errorEl.classList.add('hidden');
   const originalText = submitEl.textContent;
   submitEl.disabled = true;
@@ -894,6 +1041,7 @@ async function saveProfileForm({ usernameEl, firstNameEl, lastNameEl, bioEl, err
         firstName: firstNameEl.value,
         lastName: lastNameEl.value,
         bio: bioEl.value,
+        avatar: avatar === undefined ? (state.profile?.avatar || null) : avatar,
       },
       state.profile?.username || null,
     );
@@ -916,6 +1064,7 @@ function openProfileModal() {
   dom.pfFirstname.value = state.profile?.firstName || '';
   dom.pfLastname.value = state.profile?.lastName || '';
   dom.pfBio.value = state.profile?.bio || '';
+  initAvatarEditor();
   dom.profileError.classList.add('hidden');
   dom.pfUsername.focus();
 }
@@ -925,12 +1074,137 @@ function closeProfileModal() {
 }
 
 /* ============================================================
+ *  Аватарка в профиле: буква или эмодзи на цвете/градиенте
+ * ============================================================ */
+
+/** Черновик аватарки в окне профиля. */
+const avatarDraft = {
+  custom: false,        // трогал ли пользователь редактор в этот раз
+  kind: 'letter',       // 'letter' | 'emoji'
+  value: '',
+  bgType: 'solid',      // 'solid' | 'gradient'
+  bg1: AVATAR_COLORS[0],
+  bg2: AVATAR_COLORS[2],
+};
+
+/** Собрать аватарку из черновика (null — если значение пустое). */
+function draftAvatar() {
+  const value = avatarDraft.kind === 'letter'
+    ? avatarDraft.value.replace(/[^0-9A-Za-zА-Яа-яЁё]/g, '').charAt(0).toUpperCase()
+    : [...avatarDraft.value].slice(0, 4).join('');
+  if (!value) return null;
+  return avatarDraft.bgType === 'gradient'
+    ? { kind: avatarDraft.kind, value, bgType: 'gradient', bg1: avatarDraft.bg1, bg2: avatarDraft.bg2 }
+    : { kind: avatarDraft.kind, value, bgType: 'solid', bg1: avatarDraft.bg1 };
+}
+
+/** Залить черновик данными текущего профиля и перерисовать редактор. */
+function initAvatarEditor() {
+  const avatar = state.profile?.avatar || null;
+  avatarDraft.custom = false;
+  avatarDraft.kind = avatar?.kind === 'emoji' ? 'emoji' : 'letter';
+  avatarDraft.value = avatar?.value
+    || (state.profile?.firstName || state.profile?.username || '').trim().charAt(0).toUpperCase();
+  avatarDraft.bgType = avatar?.bgType === 'gradient' ? 'gradient' : 'solid';
+  avatarDraft.bg1 = avatar?.bg1 || AVATAR_COLORS[0];
+  avatarDraft.bg2 = avatar?.bg2 || AVATAR_COLORS[2];
+  renderAvatarEditor();
+}
+
+/** Перерисовать контролы редактора и превью (syncInput=false — не трогать поле ввода). */
+function renderAvatarEditor(syncInput = true) {
+  dom.avatarKindBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.avatarKind === avatarDraft.kind);
+  });
+  dom.avatarBgBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.avatarBg === avatarDraft.bgType);
+  });
+
+  if (syncInput) {
+    dom.avatarValue.value = avatarDraft.value;
+    dom.avatarValue.maxLength = avatarDraft.kind === 'letter' ? 1 : 4;
+    dom.avatarValue.placeholder = avatarDraft.kind === 'letter' ? 'Ж' : '🐉';
+  }
+
+  dom.avatarPalette2.classList.toggle('hidden', avatarDraft.bgType !== 'gradient');
+  dom.avatarPalette1.querySelectorAll('.swatch').forEach((swatch) => {
+    swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg1);
+  });
+  dom.avatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
+    swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg2);
+  });
+
+  // Превью: своя аватарка (если есть или её начали настраивать), иначе стандартная.
+  const showDraft = avatarDraft.custom || Boolean(state.profile?.avatar);
+  if (showDraft) {
+    applyProfileAvatar(
+      dom.avatarPreview,
+      { avatar: draftAvatar() },
+      state.user?.uid || 'me',
+      getProfileInitials(state.profile),
+    );
+  } else {
+    dom.avatarPreview.classList.remove('avatar-emoji');
+    applyAvatar(dom.avatarPreview, state.user?.uid || 'me', getProfileInitials(state.profile));
+  }
+}
+
+/** Собрать ряд кнопок-цветов. */
+function buildPalette(container, onPick) {
+  container.innerHTML = '';
+  AVATAR_COLORS.forEach((color) => {
+    const swatch = createEl('button', 'swatch');
+    swatch.type = 'button';
+    swatch.dataset.color = color;
+    swatch.style.background = color;
+    swatch.title = color;
+    swatch.addEventListener('click', () => onPick(color));
+    container.append(swatch);
+  });
+}
+
+buildPalette(dom.avatarPalette1, (color) => {
+  avatarDraft.custom = true;
+  avatarDraft.bg1 = color;
+  renderAvatarEditor();
+});
+buildPalette(dom.avatarPalette2, (color) => {
+  avatarDraft.custom = true;
+  avatarDraft.bg2 = color;
+  renderAvatarEditor();
+});
+
+dom.avatarKindBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    avatarDraft.custom = true;
+    avatarDraft.kind = btn.dataset.avatarKind === 'emoji' ? 'emoji' : 'letter';
+    if (avatarDraft.kind === 'letter' && avatarDraft.value) {
+      avatarDraft.value = avatarDraft.value.charAt(0).toUpperCase();
+    }
+    renderAvatarEditor();
+  });
+});
+dom.avatarBgBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    avatarDraft.custom = true;
+    avatarDraft.bgType = btn.dataset.avatarBg === 'gradient' ? 'gradient' : 'solid';
+    renderAvatarEditor();
+  });
+});
+dom.avatarValue.addEventListener('input', () => {
+  avatarDraft.custom = true;
+  avatarDraft.value = dom.avatarValue.value;
+  renderAvatarEditor(false); // не трогаем само поле, чтобы не прыгал курсор
+});
+
+/* ============================================================
  *  Модальное окно «Новый чат»
  * ============================================================ */
 
 function openModal() {
   dom.modalOverlay.classList.remove('hidden');
   setModalTab('private');
+  setGroupTypeChoice('private');
   hideModalError();
   dom.privateUsername.focus();
 }
@@ -944,6 +1218,16 @@ function setModalTab(tab) {
   dom.modalTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
   dom.modalPanes.forEach((pane) => pane.classList.toggle('hidden', pane.dataset.pane !== tab));
   hideModalError();
+}
+
+/** Переключить тип новой группы: приватная (участники) / публичная (юзернейм). */
+function setGroupTypeChoice(type) {
+  groupTypeChoice = type === 'public' ? 'public' : 'private';
+  dom.groupTypeBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.groupType === groupTypeChoice);
+  });
+  dom.groupUsernameField.classList.toggle('hidden', groupTypeChoice !== 'public');
+  dom.groupMembersField.classList.toggle('hidden', groupTypeChoice !== 'private');
 }
 
 function showModalError(message) {
@@ -999,6 +1283,26 @@ async function handleCreateChatSubmit(event) {
       const title = dom.groupTitle.value.trim();
       if (!title) throw new Error('Укажите название группы');
 
+      // Публичная группа: обязателен юзернейм, участники присоединяются сами.
+      if (groupTypeChoice === 'public') {
+        const username = Chat.normalizeUsername(dom.groupUsername.value);
+        if (!Chat.isValidUsername(username)) {
+          throw new Error('Юзернейм группы: 3–32 символа (a–z, 0–9, «_»)');
+        }
+        const chatId = await Chat.createGroupChat(myUid, {
+          title,
+          description: dom.groupDescription.value,
+          type: 'public',
+          username,
+        });
+        closeModal();
+        dom.createChatForm.reset();
+        selectChat(chatId);
+        toast(`Публичная группа @${username} создана`, 'success');
+        return;
+      }
+
+      // Приватная группа: участники — по юзернеймам.
       const usernames = parseUsernames(dom.groupMembers.value);
       const members = new Set();
       const notFound = [];
@@ -1013,7 +1317,12 @@ async function handleCreateChatSubmit(event) {
       }
       if (notFound.length) throw new Error(`Не найдены: ${notFound.join(', ')}`);
 
-      const chatId = await Chat.createGroupChat(myUid, title, [...members]);
+      const chatId = await Chat.createGroupChat(myUid, {
+        title,
+        description: dom.groupDescription.value,
+        type: 'private',
+        memberUids: [...members],
+      });
       closeModal();
       dom.createChatForm.reset();
       selectChat(chatId);
@@ -1090,6 +1399,111 @@ async function handleSendMessage(event) {
 }
 
 /* ============================================================
+ *  Чёрный список и настройки группы/канала
+ * ============================================================ */
+
+/**
+ * Заблокировать (blocked=true) или разблокировать пользователя.
+ * Обновляет state.blocked и перерисовывает затронутые части UI.
+ */
+async function setBlocked(peerUid, blocked) {
+  if (!peerUid || !state.user) return;
+  if (blocked && !window.confirm('Заблокировать пользователя? Его сообщения станут скрыты, а писать ему будет нельзя.')) return;
+
+  try {
+    if (blocked) {
+      await Chat.blockUser(state.user.uid, peerUid);
+      state.blocked.add(peerUid);
+      toast('Пользователь заблокирован');
+    } else {
+      await Chat.unblockUser(state.user.uid, peerUid);
+      state.blocked.delete(peerUid);
+      toast('Пользователь разблокирован');
+    }
+    renderChatList();
+    renderMainPanel();
+    if (state.search.query) renderSearchResults();
+    if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось обновить чёрный список', 'error');
+  }
+}
+
+/** Список заблокированных в модальном окне. */
+function renderBlockedList() {
+  const uids = [...state.blocked];
+  dom.blockedList.innerHTML = '';
+  dom.blockedEmpty.classList.toggle('hidden', uids.length > 0);
+
+  const missing = [];
+  for (const uid of uids) {
+    const profile = Chat.getCachedUserProfile(uid);
+    if (profile === undefined) missing.push(uid);
+
+    const item = createEl('div', 'chat-item');
+
+    const avatar = createEl('div', 'avatar avatar-sm');
+    applyProfileAvatar(avatar, profile, uid);
+
+    const body = createEl('div', 'chat-item-body');
+    const top = createEl('div', 'chat-item-top');
+    top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+    const bottom = createEl('div', 'chat-item-bottom');
+    bottom.append(createEl('span', 'chat-item-preview', profile?.username ? '@' + profile.username : '…'));
+    body.append(top, bottom);
+
+    const unblockBtn = createEl('button', 'unsubscribe-btn', 'Разблокировать');
+    unblockBtn.type = 'button';
+    unblockBtn.addEventListener('click', () => setBlocked(uid, false));
+
+    item.append(avatar, body, unblockBtn);
+    dom.blockedList.append(item);
+  }
+
+  // Профили могли ещё не загрузиться — догружаем и перерисовываем.
+  if (missing.length) {
+    hydrateUsers(missing).then(() => {
+      if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
+    });
+  }
+}
+
+function openBlockedModal() {
+  dom.blockedOverlay.classList.remove('hidden');
+  renderBlockedList();
+}
+
+/** Открыть настройки чата (кнопка «Настройки» в шапке группы/канала). */
+function openSettingsModal() {
+  const chat = state.chats.get(state.activeChatId);
+  if (!chat || (chat.type !== 'group' && chat.type !== 'channel')) return;
+
+  settingsChatId = state.activeChatId;
+  dom.settingsHeading.textContent = chat.type === 'group' ? 'Настройки группы' : 'Настройки канала';
+  dom.settingsTitle.value = chat.title || '';
+  dom.settingsDescription.value = chat.description || '';
+  dom.settingsGroupBlock.classList.toggle('hidden', chat.type !== 'group');
+  setSettingsTypeChoice(chat.groupType === 'public' ? 'public' : 'private');
+  dom.settingsUsername.value = chat.username || '';
+  dom.settingsError.classList.add('hidden');
+  dom.settingsOverlay.classList.remove('hidden');
+}
+
+/** Переключить тип группы в настройках (приватная/публичная). */
+function setSettingsTypeChoice(type) {
+  settingsTypeChoice = type === 'public' ? 'public' : 'private';
+  dom.settingsTypeBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.settingsType === settingsTypeChoice);
+  });
+  dom.settingsUsernameField.classList.toggle('hidden', settingsTypeChoice !== 'public');
+}
+
+function closeSettingsModal() {
+  dom.settingsOverlay.classList.add('hidden');
+}
+
+/* ============================================================
  *  Инициализация: обработчики UI и подписка на Auth
  * ============================================================ */
 
@@ -1136,7 +1550,7 @@ function bindUsernameInput(input) {
     if (clean !== input.value) input.value = clean;
   });
 }
-[dom.obUsername, dom.pfUsername, dom.privateUsername, dom.channelUsername].forEach(bindUsernameInput);
+[dom.obUsername, dom.pfUsername, dom.privateUsername, dom.channelUsername, dom.groupUsername, dom.settingsUsername].forEach(bindUsernameInput);
 
 // --- Онбординг ---
 dom.onboardingForm.addEventListener('submit', (event) => {
@@ -1168,6 +1582,16 @@ dom.logoutBtn.addEventListener('click', () => {
     console.error(error);
     toast('Не удалось выйти из аккаунта', 'error');
   });
+});
+
+// --- Тема: тёмная по умолчанию, светлая включается переключателем ---
+dom.themeBtn.addEventListener('click', () => {
+  const light = document.documentElement.getAttribute('data-theme') === 'light';
+  if (light) document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', 'light');
+  try {
+    localStorage.setItem('beacon-theme', light ? 'dark' : 'light');
+  } catch (error) { /* приватный режим — тема просто не сохранится */ }
 });
 
 dom.newChatBtn.addEventListener('click', openModal);
@@ -1206,6 +1630,9 @@ dom.modalOverlay.addEventListener('click', (event) => {
 dom.modalTabs.forEach((btn) => {
   btn.addEventListener('click', () => setModalTab(btn.dataset.tab));
 });
+dom.groupTypeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => setGroupTypeChoice(btn.dataset.groupType));
+});
 dom.createChatForm.addEventListener('submit', handleCreateChatSubmit);
 
 // --- Модальное окно «Профиль» ---
@@ -1223,6 +1650,7 @@ dom.profileForm.addEventListener('submit', (event) => {
     bioEl: dom.pfBio,
     errorEl: dom.profileError,
     submitEl: dom.profileSubmit,
+    avatar: avatarDraft.custom ? draftAvatar() : (state.profile?.avatar || null),
     onSuccess: () => {
       closeProfileModal();
       updateSidebarUser();
@@ -1232,9 +1660,85 @@ dom.profileForm.addEventListener('submit', (event) => {
   });
 });
 
+// --- Модальное окно «Чёрный список» ---
+dom.blockedClose.addEventListener('click', () => dom.blockedOverlay.classList.add('hidden'));
+dom.blockedOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.blockedOverlay) dom.blockedOverlay.classList.add('hidden');
+});
+dom.profileBlockedBtn.addEventListener('click', () => {
+  closeProfileModal();
+  openBlockedModal();
+});
+
+// --- Модальное окно «Настройки чата» ---
+dom.settingsBtn.addEventListener('click', openSettingsModal);
+dom.settingsClose.addEventListener('click', closeSettingsModal);
+dom.settingsCancel.addEventListener('click', closeSettingsModal);
+dom.settingsOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.settingsOverlay) closeSettingsModal();
+});
+dom.settingsTypeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => setSettingsTypeChoice(btn.dataset.settingsType));
+});
+dom.settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const chat = state.chats.get(settingsChatId);
+  if (!chat) return;
+
+  dom.settingsError.classList.add('hidden');
+  dom.settingsSubmit.disabled = true;
+  dom.settingsSubmit.textContent = 'Сохраняем…';
+  try {
+    await Chat.updateChatSettings(settingsChatId, state.user.uid, {
+      title: dom.settingsTitle.value,
+      description: dom.settingsDescription.value,
+      groupType: chat.type === 'group' ? settingsTypeChoice : undefined,
+      username: dom.settingsUsername.value,
+    });
+    closeSettingsModal();
+    toast('Настройки сохранены', 'success');
+  } catch (error) {
+    console.error(error);
+    dom.settingsError.textContent = error.message || 'Не удалось сохранить настройки';
+    dom.settingsError.classList.remove('hidden');
+  } finally {
+    dom.settingsSubmit.disabled = false;
+    dom.settingsSubmit.textContent = 'Сохранить';
+  }
+});
+dom.settingsDelete.addEventListener('click', async () => {
+  const chat = state.chats.get(settingsChatId);
+  if (!chat) return;
+
+  const kind = chat.type === 'channel' ? 'канал' : 'группу';
+  if (!window.confirm(`Удалить ${kind} «${getChatTitle(chat)}»? Это действие необратимо.`)) return;
+
+  dom.settingsDelete.disabled = true;
+  try {
+    await Chat.deleteChat(settingsChatId, state.user.uid);
+    closeSettingsModal();
+    closeActiveChat();
+    toast(chat.type === 'channel' ? 'Канал удалён' : 'Группа удалена');
+  } catch (error) {
+    console.error(error);
+    dom.settingsError.textContent = error.message || 'Не удалось удалить чат';
+    dom.settingsError.classList.remove('hidden');
+  } finally {
+    dom.settingsDelete.disabled = false;
+  }
+});
+
 // --- Escape закрывает верхнюю открытую модалку ---
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (!dom.settingsOverlay.classList.contains('hidden')) {
+    closeSettingsModal();
+    return;
+  }
+  if (!dom.blockedOverlay.classList.contains('hidden')) {
+    dom.blockedOverlay.classList.add('hidden');
+    return;
+  }
   if (!dom.profileOverlay.classList.contains('hidden')) {
     closeProfileModal();
     return;
@@ -1251,11 +1755,12 @@ dom.messages.addEventListener('scroll', () => {
   state.stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
 });
 
-// Подписка/вход в канал из предпросмотра.
+// Подписка на канал / вступление в публичную группу из предпросмотра.
 dom.previewSubscribe.addEventListener('click', async () => {
   const preview = state.channelPreview;
   if (!preview) return;
-  const { chatId } = preview;
+  const { chatId, chat } = preview;
+  const isGroup = chat?.type === 'group';
 
   if (state.myChatIds.has(chatId)) {
     closeChannelPreview();
@@ -1265,13 +1770,18 @@ dom.previewSubscribe.addEventListener('click', async () => {
 
   dom.previewSubscribe.disabled = true;
   try {
-    await Chat.subscribeToChannel(state.user.uid, chatId);
-    toast('Вы подписались на канал', 'success');
+    if (isGroup) {
+      await Chat.joinGroup(state.user.uid, chatId);
+      toast('Вы присоединились к группе', 'success');
+    } else {
+      await Chat.subscribeToChannel(state.user.uid, chatId);
+      toast('Вы подписались на канал', 'success');
+    }
     closeChannelPreview();
     selectChat(chatId);
   } catch (error) {
     console.error(error);
-    toast('Не удалось подписаться на канал', 'error');
+    toast(isGroup ? 'Не удалось присоединиться к группе' : 'Не удалось подписаться на канал', 'error');
     dom.previewSubscribe.disabled = false;
   }
 });
@@ -1290,6 +1800,20 @@ dom.unsubscribeBtn.addEventListener('click', async () => {
     console.error(error);
     toast('Не удалось отписаться от канала', 'error');
   }
+});
+
+// Блокировка/разблокировка собеседника (кнопка в шапке личного чата).
+dom.blockBtn.addEventListener('click', () => {
+  const chat = state.chats.get(state.activeChatId);
+  const peerUid = getPrivatePeerUid(chat);
+  if (peerUid) setBlocked(peerUid, !state.blocked.has(peerUid));
+});
+
+// Разблокировка из плашки над композером.
+dom.privateUnblockBtn.addEventListener('click', () => {
+  const chat = state.chats.get(state.activeChatId);
+  const peerUid = getPrivatePeerUid(chat);
+  if (peerUid) setBlocked(peerUid, false);
 });
 
 // --- Роутинг по состоянию авторизации ---

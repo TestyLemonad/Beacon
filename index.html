@@ -12,7 +12,16 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
+
+  <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
+  <script>
+    try {
+      if (localStorage.getItem('beacon-theme') === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    } catch (e) { /* приватный режим — остаётся тёмная тема */ }
+  </script>
 </head>
 <body>
   <!-- ============================================================
@@ -29,7 +38,7 @@
       <form id="auth-form" class="auth-form">
         <div class="field">
           <label for="auth-email">Email</label>
-          <input id="auth-email" class="input" type="email" placeholder="you@example.com"
+          <input id="auth-email" class="input" type="email" placeholder="kvestolov@taverna.ru"
                  autocomplete="email" required />
         </div>
 
@@ -75,23 +84,23 @@
       <form id="onboarding-form" class="auth-form">
         <div class="field">
           <label for="ob-username">Юзернейм</label>
-          <input id="ob-username" class="input" type="text" placeholder="testy_lemon" autocomplete="username" />
+          <input id="ob-username" class="input" type="text" placeholder="pochti_paladin" autocomplete="username" />
           <p class="field-hint">По нему вас будут находить в поиске: 3–32 символа (a–z, 0–9, «_»).</p>
         </div>
 
         <div class="field">
           <label for="ob-firstname">Имя</label>
-          <input id="ob-firstname" class="input" type="text" placeholder="Иван" autocomplete="given-name" />
+          <input id="ob-firstname" class="input" type="text" placeholder="Жора" autocomplete="given-name" />
         </div>
 
         <div class="field">
           <label for="ob-lastname">Фамилия (необязательно)</label>
-          <input id="ob-lastname" class="input" type="text" placeholder="Лимонов" autocomplete="family-name" />
+          <input id="ob-lastname" class="input" type="text" placeholder="Крушителин" autocomplete="family-name" />
         </div>
 
         <div class="field">
           <label for="ob-bio">О себе (необязательно)</label>
-          <textarea id="ob-bio" class="textarea" rows="2" placeholder="Пара слов о себе"></textarea>
+          <textarea id="ob-bio" class="textarea" rows="2" placeholder="Убил дракона, но забыл сохраниться"></textarea>
         </div>
 
         <p id="onboarding-error" class="form-error hidden"></p>
@@ -118,6 +127,20 @@
         <button id="profile-btn" class="avatar-btn" type="button" title="Профиль" aria-label="Профиль">
           <span id="sidebar-avatar" class="avatar avatar-sm"></span>
         </button>
+        <button id="theme-btn" class="icon-btn" type="button" title="Тёмная / светлая тема" aria-label="Переключить тему">
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+        </button>
         <button id="logout-btn" class="icon-btn" type="button" title="Выйти" aria-label="Выйти">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -135,7 +158,7 @@
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input id="search-input" type="text" placeholder="Поиск: @юзернейм, чаты" autocomplete="off" />
+          <input id="search-input" type="text" placeholder="Кого ищем, путник?" autocomplete="off" />
           <button id="search-clear" class="search-clear hidden" type="button" aria-label="Очистить">×</button>
         </div>
       </div>
@@ -176,7 +199,7 @@
             </svg>
           </button>
           <div class="chat-header-info">
-            <h2>Предпросмотр канала</h2>
+            <h2 id="preview-heading">Предпросмотр</h2>
           </div>
         </header>
 
@@ -206,6 +229,12 @@
           <button id="unsubscribe-btn" class="unsubscribe-btn hidden" type="button" title="Отписаться от канала">
             Отписаться
           </button>
+          <button id="block-btn" class="unsubscribe-btn hidden" type="button" title="Чёрный список">
+            Заблокировать
+          </button>
+          <button id="settings-btn" class="unsubscribe-btn hidden" type="button" title="Настройки чата">
+            Настройки
+          </button>
         </header>
 
         <div id="messages" class="messages"></div>
@@ -220,8 +249,19 @@
           Только администраторы могут публиковать сообщения
         </div>
 
+        <!-- Плашка для личных чатов: собеседник в чёрном списке -->
+        <div id="private-blocked" class="channel-locked hidden">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+          </svg>
+          Пользователь в чёрном списке
+          <button id="private-unblock-btn" class="unsubscribe-btn" type="button">Разблокировать</button>
+        </div>
+
         <form id="message-form" class="composer">
-          <input id="message-input" type="text" placeholder="Написать сообщение…" autocomplete="off" />
+          <input id="message-input" type="text" placeholder="Шепни что-нибудь…" autocomplete="off" />
           <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -254,7 +294,7 @@
         <div class="tab-pane" data-pane="private">
           <div class="field">
             <label for="private-username">Юзернейм пользователя</label>
-            <input id="private-username" class="input" type="text" placeholder="@username" autocomplete="off" />
+            <input id="private-username" class="input" type="text" placeholder="@pochti_paladin" autocomplete="off" />
             <p class="field-hint">Собеседника можно найти через поиск в сайдбаре.</p>
           </div>
         </div>
@@ -262,12 +302,30 @@
         <div class="tab-pane hidden" data-pane="group">
           <div class="field">
             <label for="group-title">Название группы</label>
-            <input id="group-title" class="input" type="text" placeholder="Разработка Beacon" autocomplete="off" />
+            <input id="group-title" class="input" type="text" placeholder="Поход на дракона" autocomplete="off" />
           </div>
           <div class="field">
+            <label for="group-description">Описание (необязательно)</label>
+            <textarea id="group-description" class="textarea" rows="2"
+                      placeholder="Собираемся по пятницам у костра"></textarea>
+          </div>
+          <div class="field">
+            <label>Тип группы</label>
+            <div class="segmented" id="group-type-toggle">
+              <button class="seg-btn active" type="button" data-group-type="private">Приватная</button>
+              <button class="seg-btn" type="button" data-group-type="public">Публичная</button>
+            </div>
+            <p class="field-hint">Приватная — участники добавляются по юзернеймам. Публичная — её находят по юзернейму и присоединяются сами.</p>
+          </div>
+          <div class="field hidden" id="group-username-field">
+            <label for="group-username">Юзернейм группы</label>
+            <input id="group-username" class="input" type="text" placeholder="@otrjad_kvestov" autocomplete="off" />
+            <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
+          </div>
+          <div class="field" id="group-members-field">
             <label for="group-members">Участники — юзернеймы</label>
             <textarea id="group-members" class="textarea" rows="3"
-                      placeholder="@friend, @other"></textarea>
+                      placeholder="@druid, @varvar"></textarea>
             <p class="field-hint">Через запятую или пробел; себя добавлять не нужно.</p>
           </div>
         </div>
@@ -275,17 +333,17 @@
         <div class="tab-pane hidden" data-pane="channel">
           <div class="field">
             <label for="channel-username">Юзернейм канала</label>
-            <input id="channel-username" class="input" type="text" placeholder="@news_beacon" autocomplete="off" />
+            <input id="channel-username" class="input" type="text" placeholder="@tavernnye_vesti" autocomplete="off" />
             <p class="field-hint">По нему пользователи найдут канал и смогут подписаться.</p>
           </div>
           <div class="field">
             <label for="channel-title">Название канала</label>
-            <input id="channel-title" class="input" type="text" placeholder="Новости Beacon" autocomplete="off" />
+            <input id="channel-title" class="input" type="text" placeholder="Слухи из таверны" autocomplete="off" />
           </div>
           <div class="field">
             <label for="channel-description">Описание (необязательно)</label>
             <textarea id="channel-description" class="textarea" rows="2"
-                      placeholder="О чём этот канал"></textarea>
+                      placeholder="Сплетни, квесты и скидки на зелья"></textarea>
           </div>
         </div>
 
@@ -312,27 +370,113 @@
       <form id="profile-form" class="create-form">
         <div class="field">
           <label for="pf-username">Юзернейм</label>
-          <input id="pf-username" class="input" type="text" placeholder="testy_lemon" autocomplete="off" />
+          <input id="pf-username" class="input" type="text" placeholder="pochti_paladin" autocomplete="off" />
           <p class="field-hint">3–32 символа (a–z, 0–9, «_»). По нему вас находят другие.</p>
         </div>
         <div class="field">
           <label for="pf-firstname">Имя</label>
-          <input id="pf-firstname" class="input" type="text" placeholder="Иван" autocomplete="given-name" />
+          <input id="pf-firstname" class="input" type="text" placeholder="Жора" autocomplete="given-name" />
         </div>
         <div class="field">
           <label for="pf-lastname">Фамилия (необязательно)</label>
-          <input id="pf-lastname" class="input" type="text" placeholder="Лимонов" autocomplete="family-name" />
+          <input id="pf-lastname" class="input" type="text" placeholder="Крушителин" autocomplete="family-name" />
         </div>
         <div class="field">
           <label for="pf-bio">О себе (необязательно)</label>
-          <textarea id="pf-bio" class="textarea" rows="2" placeholder="Пара слов о себе"></textarea>
+          <textarea id="pf-bio" class="textarea" rows="2" placeholder="Убил дракона, но забыл сохраниться"></textarea>
+        </div>
+
+        <div class="field">
+          <label>Аватарка</label>
+          <div class="avatar-editor">
+            <div class="avatar-editor-preview">
+              <span id="avatar-preview" class="avatar avatar-lg"></span>
+              <div class="avatar-editor-modes">
+                <div class="segmented" id="avatar-kind-toggle">
+                  <button class="seg-btn active" type="button" data-avatar-kind="letter">Буква</button>
+                  <button class="seg-btn" type="button" data-avatar-kind="emoji">Эмодзи</button>
+                </div>
+                <input id="avatar-value" class="input avatar-value-input" type="text" maxlength="1"
+                       placeholder="Ж" autocomplete="off" />
+              </div>
+            </div>
+            <div class="segmented" id="avatar-bg-toggle">
+              <button class="seg-btn active" type="button" data-avatar-bg="solid">Цвет</button>
+              <button class="seg-btn" type="button" data-avatar-bg="gradient">Градиент</button>
+            </div>
+            <div id="avatar-palette-1" class="palette"></div>
+            <div id="avatar-palette-2" class="palette hidden"></div>
+          </div>
         </div>
 
         <p id="profile-error" class="form-error hidden"></p>
 
         <div class="modal-actions">
+          <button id="profile-blocked-btn" class="btn ghost push-left" type="button">Чёрный список</button>
           <button id="profile-cancel" class="btn ghost" type="button">Отмена</button>
           <button id="profile-submit" class="btn primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Модальное окно: чёрный список
+       ============================================================ -->
+  <div id="blocked-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Чёрный список</h3>
+        <button id="blocked-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div id="blocked-list" class="blocked-list"></div>
+      <p id="blocked-empty" class="sidebar-empty hidden">
+        Чёрный список пуст.<br />Заблокировать человека можно из личного чата с ним.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Модальное окно: настройки группы / канала
+       ============================================================ -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="settings-heading">Настройки</h3>
+        <button id="settings-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <form id="settings-form" class="create-form">
+        <div class="field">
+          <label for="settings-title">Название</label>
+          <input id="settings-title" class="input" type="text" placeholder="Поход на дракона" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="settings-description">Описание (необязательно)</label>
+          <textarea id="settings-description" class="textarea" rows="2"
+                    placeholder="Собираемся по пятницам у костра"></textarea>
+        </div>
+
+        <div class="field hidden" id="settings-group-block">
+          <label>Тип группы</label>
+          <div class="segmented" id="settings-type-toggle">
+            <button class="seg-btn active" type="button" data-settings-type="private">Приватная</button>
+            <button class="seg-btn" type="button" data-settings-type="public">Публичная</button>
+          </div>
+          <p class="field-hint">Публичную группу находят по юзернейму и присоединяются сами.</p>
+        </div>
+        <div class="field hidden" id="settings-username-field">
+          <label for="settings-username">Юзернейм группы</label>
+          <input id="settings-username" class="input" type="text" placeholder="@otrjad_kvestov" autocomplete="off" />
+          <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
+        </div>
+
+        <p id="settings-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="settings-delete" class="btn danger push-left" type="button">Удалить</button>
+          <button id="settings-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="settings-submit" class="btn primary" type="submit">Сохранить</button>
         </div>
       </form>
     </div>
@@ -342,6 +486,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

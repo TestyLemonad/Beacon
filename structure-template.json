@@ -1,25 +1,44 @@
 {
   "users": {
     "user1_id": {
-      "username": "testy_lemon",
-      "firstName": "Иван",
-      "lastName": "Лимонов",
-      "bio": "Люблю лимонад",
-      "email": "ivan@example.com",
+      "username": "pochti_paladin",
+      "firstName": "Жора",
+      "lastName": "Крушителин",
+      "avatar": {
+        "kind": "emoji",
+        "value": "🐉",
+        "bgType": "gradient",
+        "bg1": "#f0a24a",
+        "bg2": "#e06c75"
+      },
+      "bio": "Убил дракона, но забыл сохраниться",
+      "email": "kvestolov@taverna.ru",
       "createdAt": 1728723605
     },
     "user2_id": {
-      "username": "openlemon_dev",
+      "username": "kuznec_udachi",
       "firstName": "Пётр",
-      "lastName": "Апельсинов",
-      "email": "petr@example.com",
+      "lastName": "Наковальнин",
+      "avatar": {
+        "kind": "letter",
+        "value": "П",
+        "bgType": "solid",
+        "bg1": "#61afef"
+      },
+      "email": "petr@taverna.ru",
       "createdAt": 1728723605
     }
   },
 
   "usernames": {
-    "testy_lemon": "user1_id",
-    "openlemon_dev": "user2_id"
+    "pochti_paladin": "user1_id",
+    "kuznec_udachi": "user2_id"
+  },
+
+  "user_blocks": {
+    "user1_id": {
+      "user3_id": true
+    }
   },
 
   "chats": {
@@ -31,14 +50,16 @@
         "user2_id": true
       },
       "lastMessage": {
-        "text": "Привет!",
+        "text": "Привет! Готов к походу?",
         "sender": "user1_id",
         "timestamp": 1728723605
       }
     },
     "chat_group_1": {
       "type": "group",
-      "title": "Разработка OpenLemon",
+      "groupType": "private",
+      "title": "Поход на дракона",
+      "description": "Собираемся по пятницам у костра",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "users": {
@@ -47,16 +68,33 @@
         "user3_id": true
       },
       "lastMessage": {
-        "text": "Обновил прошивку",
+        "text": "Кто взял верёвку?",
         "sender": "user2_id",
         "timestamp": 1728723900
       }
     },
+    "chat_group_2": {
+      "type": "group",
+      "groupType": "public",
+      "username": "otrjad_kvestov",
+      "title": "Отряд квестов",
+      "description": "Открытая гильдия: вступай и бери квест",
+      "createdAt": 1728723605,
+      "owner": "user1_id",
+      "users": {
+        "user1_id": true
+      },
+      "lastMessage": {
+        "text": "Новый квест на доске объявлений",
+        "sender": "user1_id",
+        "timestamp": 1728723950
+      }
+    },
     "channel_1": {
       "type": "channel",
-      "username": "blog_limonada",
-      "title": "Блог Лимонада",
-      "description": "Всё про OpenLemon и лимонад",
+      "username": "tavernnye_vesti",
+      "title": "Слухи из таверны",
+      "description": "Сплетни, квесты и скидки на зелья",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "subscribersCount": 142,
@@ -64,7 +102,7 @@
         "user1_id": true
       },
       "lastMessage": {
-        "text": "Запилили новый сайт testylemonad.ru",
+        "text": "Скидка на зелья лечения до конца недели",
         "sender": "user1_id",
         "timestamp": 1728724000
       }
@@ -72,28 +110,32 @@
   },
 
   "channel_usernames": {
-    "blog_limonada": "channel_1"
+    "tavernnye_vesti": "channel_1"
+  },
+
+  "group_usernames": {
+    "otrjad_kvestov": "chat_group_2"
   },
 
   "messages": {
     "chat_private_1": {
       "msg_1": {
         "sender": "user1_id",
-        "text": "Привет!",
+        "text": "Привет! Готов к походу?",
         "timestamp": 1728723605
       }
     },
     "chat_group_1": {
       "msg_2": {
         "sender": "user2_id",
-        "text": "Обновил прошивку",
+        "text": "Кто взял верёвку?",
         "timestamp": 1728723900
       }
     },
     "channel_1": {
       "msg_3": {
         "sender": "user1_id",
-        "text": "Запилили новый сайт testylemonad.ru",
+        "text": "Скидка на зелья лечения до конца недели",
         "timestamp": 1728724000
       }
     }
@@ -103,7 +145,8 @@
     "user1_id": {
       "chat_private_1": true,
       "chat_group_1": true,
-      "channel_1": true 
+      "chat_group_2": true,
+      "channel_1": true
     },
     "user2_id": {
       "chat_private_1": true,

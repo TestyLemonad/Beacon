@@ -3,16 +3,18 @@
  *
  * Все пути и названия полей соответствуют structure-template.json:
  *
- *   /users/$uid              { username, firstName, lastName?, bio?, email, createdAt }
+ *   /users/$uid              { username, firstName, lastName?, bio?, avatar?, email, createdAt }
  *   /usernames/$username     $uid                       — индекс поиска людей
- *   /chats/$chat_id          { type, username?, title?, description?, owner?, users?,
+ *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
  *                              admins?, subscribersCount?, createdAt, lastMessage? }
  *   /channel_usernames/$username  $chat_id              — индекс поиска каналов
+ *   /group_usernames/$username    $chat_id              — индекс поиска публичных групп
  *   /messages/$chat_id       { $msg_id: { sender, text, timestamp } }
  *   /user_chats/$uid         { $chat_id: true }
+ *   /user_blocks/$uid        { $blocked_uid: true }     — чёрный список
  *
  * Юзернеймы уникальны: они захватываются транзакцией в узлах-индексах
- * /usernames и /channel_usernames.
+ * /usernames, /channel_usernames и /group_usernames.
  */
 import {
   ref,
@@ -30,7 +32,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=3';
+import { db } from '../firebase-config.js?v=4';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -87,6 +89,18 @@ async function claimChannelUsername(chatId, username) {
   if (!result.committed) throw new Error(`Юзернейм канала @${username} уже занят`);
 }
 
+/**
+ * Занять юзернейм публичной группы (по нему группу находят и присоединяются).
+ * @returns {Promise<string>} chatId группы-владельца
+ */
+async function claimGroupUsername(chatId, username) {
+  const result = await runTransaction(ref(db, `group_usernames/${username}`), (current) => {
+    if (current === null || current === chatId) return chatId;
+    return undefined; // занято другой группой — прерываем транзакцию
+  });
+  if (!result.committed) throw new Error(`Юзернейм группы @${username} уже занят`);
+}
+
 /* ============================================================
  *  Профили пользователей
  * ============================================================ */
@@ -94,6 +108,39 @@ async function claimChannelUsername(chatId, username) {
 /** Заполнен ли обязательный профиль (юзернейм и имя; фамилия необязательна). */
 export function isProfileComplete(profile) {
   return Boolean(profile && profile.username && profile.firstName);
+}
+
+/** Разрешённый формат цвета фона аватарки: #rrggbb. */
+const AVATAR_COLOR_REGEX = /^#[0-9a-f]{6}$/;
+
+/**
+ * Проверить и нормализовать аватарку пользователя:
+ * буква или эмодзи на сплошном цвете либо на градиенте.
+ *
+ * @param {object|null} raw
+ * @returns {{kind: 'letter'|'emoji', value: string, bgType: 'solid'|'gradient',
+ *            bg1: string, bg2?: string}|null} null — аватарка по умолчанию (инициалы)
+ */
+function cleanAvatar(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const kind = raw.kind === 'emoji' ? 'emoji' : 'letter';
+  let value = String(raw.value || '').trim();
+  if (kind === 'emoji') {
+    value = [...value].slice(0, 4).join(''); // эмодзи бывают составными
+  } else {
+    value = value.replace(/[^0-9A-Za-zА-Яа-яЁё]/g, '').charAt(0).toUpperCase();
+  }
+  if (!value) return null;
+
+  const bg1 = String(raw.bg1 || '').toLowerCase();
+  const bg2 = String(raw.bg2 || '').toLowerCase();
+  if (!AVATAR_COLOR_REGEX.test(bg1)) return null;
+
+  const gradient = raw.bgType === 'gradient' && AVATAR_COLOR_REGEX.test(bg2);
+  return gradient
+    ? { kind, value, bgType: 'gradient', bg1, bg2 }
+    : { kind, value, bgType: 'solid', bg1 };
 }
 
 /**
@@ -145,7 +192,8 @@ export async function getUserByUsername(rawUsername) {
  * новый захватывается транзакцией, старый освобождается.
  *
  * @param {string} uid
- * @param {{ username: string, firstName: string, lastName?: string, bio?: string }} data
+ * @param {{ username: string, firstName: string, lastName?: string, bio?: string,
+ *           avatar?: object }} data
  * @param {string|null} previousUsername — текущий юзернейм (null при первом заполнении)
  * @returns {Promise<object>} обновлённый профиль
  */
@@ -154,6 +202,7 @@ export async function updateUserProfile(uid, data, previousUsername = null) {
   const firstName = String(data.firstName || '').trim();
   const lastName = String(data.lastName || '').trim();
   const bio = String(data.bio || '').trim();
+  const avatar = cleanAvatar(data.avatar);
 
   if (!isValidUsername(username)) throw new Error(USERNAME_ERROR);
   if (!firstName) throw new Error('Укажите имя');
@@ -167,6 +216,7 @@ export async function updateUserProfile(uid, data, previousUsername = null) {
     [`users/${uid}/username`]: username,
     [`users/${uid}/firstName`]: firstName,
     [`users/${uid}/lastName`]: lastName || null,
+    [`users/${uid}/avatar`]: avatar,
     [`users/${uid}/bio`]: bio || null,
   };
   if (claimedNew && prev) updates[`usernames/${prev}`] = null;
@@ -262,31 +312,66 @@ export async function createPrivateChat(myUid, peerUid) {
 
 /**
  * Создать группу. Владелец автоматически становится участником.
+ * Тип «private» — участники добавляются по юзернеймам;
+ * тип «public» — обязателен юзернейм группы, по которому её находят
+ * и присоединяются (индекс /group_usernames).
+ *
+ * @param {string} ownerUid
+ * @param {{ title: string, description?: string, type?: 'private'|'public',
+ *           username?: string, memberUids?: string[] }} data
  * @returns {Promise<string>} id чата
  */
-export async function createGroupChat(ownerUid, title, memberUids = []) {
+export async function createGroupChat(ownerUid, {
+  title,
+  description = '',
+  type = 'private',
+  username = '',
+  memberUids = [],
+} = {}) {
   const cleanTitle = String(title || '').trim();
+  const cleanDescription = String(description || '').trim();
   if (!cleanTitle) throw new Error('Укажите название группы');
 
+  const isPublic = type === 'public';
+  let cleanUsername = '';
+  if (isPublic) {
+    cleanUsername = normalizeUsername(username);
+    if (!isValidUsername(cleanUsername)) throw new Error('Юзернейм группы: 3–32 символа (a–z, 0–9, «_»)');
+  }
+
   const chatId = push(ref(db, 'chats')).key;
+  if (isPublic) await claimGroupUsername(chatId, cleanUsername);
+
   const users = { [ownerUid]: true };
-  memberUids.filter(Boolean).forEach((uid) => {
-    users[uid] = true;
-  });
+  if (!isPublic) {
+    memberUids.filter(Boolean).forEach((uid) => {
+      if (uid !== ownerUid) users[uid] = true;
+    });
+  }
 
   const updates = {};
   updates[`chats/${chatId}`] = {
     type: 'group',
+    groupType: isPublic ? 'public' : 'private',
     title: cleanTitle,
     owner: ownerUid,
     createdAt: nowSeconds(),
     users,
+    ...(cleanDescription ? { description: cleanDescription } : {}),
+    ...(isPublic ? { username: cleanUsername } : {}),
   };
   Object.keys(users).forEach((uid) => {
     updates[`user_chats/${uid}/${chatId}`] = true;
   });
 
-  await update(ref(db), updates);
+  try {
+    await update(ref(db), updates);
+  } catch (error) {
+    // Не оставляем «висячий» юзернейм группы.
+    if (isPublic) await set(ref(db, `group_usernames/${cleanUsername}`), null).catch(() => {});
+    throw error;
+  }
+
   return chatId;
 }
 
@@ -390,6 +475,162 @@ export async function searchChannelsByPrefix(prefix, limit = 10) {
   return results;
 }
 
+/**
+ * Вступить в публичную группу (из поиска): стать участником + добавить
+ * чат в список своих. Приватные группы так не работают — в них
+ * добавляет владелец.
+ *
+ * @param {string} uid
+ * @param {string} chatId
+ * @returns {Promise<void>}
+ */
+export async function joinGroup(uid, chatId) {
+  const chat = await getChat(chatId);
+  if (!chat || chat.type !== 'group') throw new Error('Группа не найдена');
+  if (chat.groupType !== 'public') throw new Error('Это приватная группа — в неё добавляет владелец');
+
+  const updates = {
+    [`chats/${chatId}/users/${uid}`]: true,
+    [`user_chats/${uid}/${chatId}`]: true,
+  };
+  await update(ref(db), updates);
+}
+
+/**
+ * Префиксный поиск публичных групп по юзернейму группы.
+ * @param {string} prefix — минимум 1 символ (без «@»)
+ * @param {number} limit
+ * @returns {Promise<Array<object>>} узлы групп с полями chatId и memberCount
+ */
+export async function searchGroupsByPrefix(prefix, limit = 10) {
+  const normalized = normalizeUsername(prefix);
+  if (!normalized) return [];
+
+  const groupsQuery = query(
+    ref(db, 'group_usernames'),
+    orderByKey(),
+    startAt(normalized),
+    endAt(normalized + PREFIX_END),
+    limitToFirst(limit),
+  );
+  const snapshot = await get(groupsQuery);
+
+  const entries = [];
+  // Тело в блоках: возврат истинного значения из колбэка останавливает перебор (см. комментарий в searchUsersByPrefix).
+  snapshot.forEach((child) => {
+    entries.push({ username: child.key, chatId: child.val() });
+  });
+
+  const results = [];
+  for (const entry of entries) {
+    const chat = await getChat(entry.chatId);
+    if (chat && chat.type === 'group') {
+      results.push({
+        chatId: entry.chatId,
+        ...chat,
+        username: chat.username || entry.username,
+        memberCount: Object.keys(chat.users || {}).length,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Обновить настройки группы или канала (доступно только владельцу).
+ * Группа: название, описание, тип (приватная/публичная), юзернейм публичной
+ * группы — с захватом/освобождением индекса /group_usernames.
+ * Канал: название и описание.
+ *
+ * @param {string} chatId
+ * @param {string} requesterUid
+ * @param {{ title: string, description?: string, groupType?: 'private'|'public',
+ *           username?: string }} data
+ * @returns {Promise<object>} обновлённый узел чата
+ */
+export async function updateChatSettings(chatId, requesterUid, data) {
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== 'group' && chat.type !== 'channel') {
+    throw new Error('Настройки доступны только для групп и каналов');
+  }
+  if (chat.owner !== requesterUid) throw new Error('Изменять настройки может только владелец');
+
+  const cleanTitle = String(data.title || '').trim();
+  const cleanDescription = String(data.description || '').trim();
+  if (!cleanTitle) throw new Error(chat.type === 'group' ? 'Укажите название группы' : 'Укажите название канала');
+
+  const updates = {
+    [`chats/${chatId}/title`]: cleanTitle,
+    [`chats/${chatId}/description`]: cleanDescription || null,
+  };
+
+  let claimed = null;
+  if (chat.type === 'group') {
+    const oldUsername = chat.username || null;
+    const wantPublic = data.groupType === 'public';
+
+    if (wantPublic) {
+      const cleanUsername = normalizeUsername(data.username);
+      if (!isValidUsername(cleanUsername)) {
+        throw new Error('Юзернейм группы: 3–32 символа (a–z, 0–9, «_»)');
+      }
+      if (cleanUsername !== oldUsername) {
+        await claimGroupUsername(chatId, cleanUsername);
+        claimed = cleanUsername;
+        if (oldUsername) updates[`group_usernames/${oldUsername}`] = null;
+      }
+      updates[`chats/${chatId}/groupType`] = 'public';
+      updates[`chats/${chatId}/username`] = cleanUsername;
+    } else {
+      updates[`chats/${chatId}/groupType`] = 'private';
+      updates[`chats/${chatId}/username`] = null;
+      if (oldUsername) updates[`group_usernames/${oldUsername}`] = null;
+    }
+  }
+
+  try {
+    await update(ref(db), updates);
+  } catch (error) {
+    // Не оставляем «висячий» новый юзернейм группы.
+    if (claimed) await set(ref(db, `group_usernames/${claimed}`), null).catch(() => {});
+    throw error;
+  }
+  return getChat(chatId);
+}
+
+/**
+ * Удалить группу или канал (доступно только владельцу): сам чат, его
+ * сообщения, юзернейм-индекс и записи в /user_chats у всех, у кого он был.
+ *
+ * @returns {Promise<void>}
+ */
+export async function deleteChat(chatId, requesterUid) {
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== 'group' && chat.type !== 'channel') {
+    throw new Error('Удалять можно только группы и каналы');
+  }
+  if (chat.owner !== requesterUid) throw new Error('Удалять может только владелец');
+
+  const updates = {
+    [`chats/${chatId}`]: null,
+    [`messages/${chatId}`]: null,
+  };
+  if (chat.username) {
+    const indexNode = chat.type === 'channel' ? 'channel_usernames' : 'group_usernames';
+    updates[`${indexNode}/${chat.username}`] = null;
+  }
+
+  // Убираем чат из списков всех пользователей: у каналов подписчики заранее неизвестны.
+  const allUserChats = (await get(ref(db, 'user_chats'))).val() || {};
+  for (const [uid, chatsMap] of Object.entries(allUserChats)) {
+    if (chatsMap && chatsMap[chatId]) updates[`user_chats/${uid}/${chatId}`] = null;
+  }
+
+  await update(ref(db), updates);
+}
+
 /* ============================================================
  *  Подписки RTDB
  * ============================================================ */
@@ -454,6 +695,39 @@ export function subscribeToMessages(chatId, onChange, { pageSize = MESSAGES_PAGE
       if (onError) onError(error);
     },
   );
+}
+
+/* ============================================================
+ *  Чёрный список
+ * ============================================================ */
+
+/**
+ * Добавить пользователя в чёрный список.
+ * Его сообщения скрываются, а писать ему нельзя до разблокировки.
+ * @returns {Promise<void>}
+ */
+export async function blockUser(ownerUid, targetUid) {
+  if (!ownerUid || !targetUid || ownerUid === targetUid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `user_blocks/${ownerUid}/${targetUid}`), true);
+}
+
+/**
+ * Убрать пользователя из чёрного списка.
+ * @returns {Promise<void>}
+ */
+export async function unblockUser(ownerUid, targetUid) {
+  if (!ownerUid || !targetUid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `user_blocks/${ownerUid}/${targetUid}`), null);
+}
+
+/**
+ * Список uid пользователей в чёрном списке.
+ * @returns {Promise<string[]>}
+ */
+export async function getBlockedUids(ownerUid) {
+  const snapshot = await get(ref(db, `user_blocks/${ownerUid}`));
+  const value = snapshot.val() || {};
+  return Object.keys(value).filter((uid) => value[uid]);
 }
 
 /* ============================================================
