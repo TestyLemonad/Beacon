@@ -8,8 +8,8 @@
  *  - обработчики UI: список чатов, поиск по юзернеймам, сообщения,
  *    модальные окна «Новый чат» и «Профиль».
  */
-import * as Auth from './services/auth.js?v=4';
-import * as Chat from './services/chat.js?v=4';
+import * as Auth from './services/auth.js?v=5';
+import * as Chat from './services/chat.js?v=5';
 
 /* ============================================================
  *  DOM
@@ -68,7 +68,6 @@ const dom = {
   chatHeaderAvatar: $('chat-header-avatar'),
   chatTitle: $('chat-title'),
   chatStatus: $('chat-status'),
-  unsubscribeBtn: $('unsubscribe-btn'),
   messages: $('messages'),
   channelLocked: $('channel-locked'),
   messageForm: $('message-form'),
@@ -106,9 +105,19 @@ const dom = {
   // Тема оформления
   themeBtn: $('theme-btn'),
 
-  // Панель чата: блокировка и настройки
-  blockBtn: $('block-btn'),
-  settingsBtn: $('settings-btn'),
+  // Панель чата: всплывающее меню чата и плашка блокировки
+  chatMenuBtn: $('chat-menu-btn'),
+  chatMenuOverlay: $('chat-menu-overlay'),
+  chatMenuClose: $('chat-menu-close'),
+  chatMenuAvatar: $('chat-menu-avatar'),
+  chatMenuTitle: $('chat-menu-title'),
+  chatMenuType: $('chat-menu-type'),
+  chatMenuDescription: $('chat-menu-description'),
+  chatMenuUsername: $('chat-menu-username'),
+  chatMenuActions: $('chat-menu-actions'),
+  chatMenuMembersBlock: $('chat-menu-members-block'),
+  chatMenuMembersTitle: $('chat-menu-members-title'),
+  chatMenuMembers: $('chat-menu-members'),
   privateBlocked: $('private-blocked'),
   privateUnblockBtn: $('private-unblock-btn'),
   previewHeading: $('preview-heading'),
@@ -127,6 +136,12 @@ const dom = {
   avatarBgBtns: Array.from(document.querySelectorAll('[data-avatar-bg]')),
   avatarPalette1: $('avatar-palette-1'),
   avatarPalette2: $('avatar-palette-2'),
+  avatarHex1: $('avatar-hex-1'),
+  avatarHex2: $('avatar-hex-2'),
+  avatarColorRow2: $('avatar-color-row-2'),
+  avatarSizeMinus: $('avatar-size-minus'),
+  avatarSizePlus: $('avatar-size-plus'),
+  avatarSizeValue: $('avatar-size-value'),
   profileBlockedBtn: $('profile-blocked-btn'),
 
   // Чёрный список
@@ -287,8 +302,17 @@ function applyProfileAvatar(node, profile, seed, fallbackLabel = undefined) {
     node.style.background = avatar.bgType === 'gradient'
       ? `linear-gradient(135deg, ${avatar.bg1}, ${avatar.bg2 || avatar.bg1})`
       : avatar.bg1;
-    node.textContent = avatar.value;
-    node.classList.toggle('avatar-emoji', avatar.kind === 'emoji');
+
+    // Глиф в отдельном span: размер задаётся в em от базового кегля аватара.
+    const glyph = createEl('span', 'avatar-glyph');
+    if (avatar.kind === 'emoji') glyph.classList.add('avatar-emoji');
+    const scale = Math.min(200, Math.max(50, Number(avatar.size) || 100)) / 100;
+    glyph.style.fontSize = `${(avatar.kind === 'emoji' ? 1.4 : 1) * scale}em`;
+    glyph.textContent = avatar.value;
+
+    node.textContent = '';
+    node.classList.remove('avatar-emoji');
+    node.append(glyph);
     return;
   }
   node.classList.remove('avatar-emoji');
@@ -650,6 +674,7 @@ async function openPrivateChatWith(peerUid) {
 /** Открыть чат: подписаться на сообщения, отрисовать панель. */
 function selectChat(chatId) {
   state.channelPreview = null;
+  closeChatMenu();
 
   const chatChanged = state.activeChatId !== chatId;
   state.activeChatId = chatId;
@@ -678,6 +703,7 @@ function selectChat(chatId) {
 
 /** Полностью снять активный чат (например, отписались от канала). */
 function closeActiveChat() {
+  closeChatMenu();
   state.subscriptions.messages?.();
   state.subscriptions.messages = null;
   state.activeChatId = null;
@@ -689,6 +715,7 @@ function closeActiveChat() {
 
 /** Открыть предпросмотр канала (из поиска) — с кнопкой «Подписаться». */
 async function openChannelPreview(chatId) {
+  closeChatMenu();
   state.subscriptions.messages?.();
   state.subscriptions.messages = null;
   state.activeChatId = null;
@@ -742,25 +769,12 @@ function renderMainPanel() {
   const canPost = Chat.canPostToChat(chat, state.user?.uid);
   dom.messageInput.disabled = !canPost;
   dom.sendBtn.disabled = !canPost;
-  dom.messageInput.placeholder = canPost ? 'Шепни что-нибудь…' : 'Просмотр';
+  dom.messageInput.placeholder = canPost ? 'Сообщение...' : 'Просмотр';
   dom.channelLocked.classList.toggle('hidden', !(chat?.type === 'channel' && !canPost));
-
-  // «Отписаться» — для каналов, где я подписчик, но не админ.
-  const isChannel = chat?.type === 'channel';
-  const isAdmin = Boolean(chat?.admins?.[state.user?.uid]);
-  const showUnsubscribe = isChannel && !isAdmin && state.myChatIds.has(state.activeChatId);
-  dom.unsubscribeBtn.classList.toggle('hidden', !showUnsubscribe);
-
-  // «Настройки» — владельцу группы/канала (название, описание, тип, удаление).
-  const isOwner = Boolean(chat?.owner && chat.owner === state.user?.uid);
-  const showSettings = isOwner && (chat?.type === 'group' || chat?.type === 'channel');
-  dom.settingsBtn.classList.toggle('hidden', !showSettings);
 
   // Личный чат: собеседник в чёрном списке — прячем его сообщения и композер.
   const peerUid = getPrivatePeerUid(chat);
   const peerBlocked = Boolean(peerUid && state.blocked.has(peerUid));
-  dom.blockBtn.classList.toggle('hidden', !(chat?.type === 'private' && peerUid));
-  dom.blockBtn.textContent = peerBlocked ? 'Разблокировать' : 'Заблокировать';
   dom.privateBlocked.classList.toggle('hidden', !peerBlocked);
   dom.messageForm.classList.toggle('hidden', peerBlocked);
 
@@ -1085,7 +1099,25 @@ const avatarDraft = {
   bgType: 'solid',      // 'solid' | 'gradient'
   bg1: AVATAR_COLORS[0],
   bg2: AVATAR_COLORS[2],
+  size: 100,            // размер буквы/эмодзи в процентах (50–200)
 };
+
+/** Разрешённый формат цвета: #rrggbb. */
+const HEX_COLOR_REGEX = /^#[0-9a-f]{6}$/;
+
+/**
+ * Нормализовать hex-цвет из поля ввода: добавить «#», раскрыть #abc,
+ * привести к нижнему регистру. null — невалидный цвет.
+ */
+function normalizeHex(raw) {
+  let value = String(raw || '').trim().toLowerCase();
+  if (!value) return null;
+  if (!value.startsWith('#')) value = '#' + value;
+  if (/^#[0-9a-f]{3}$/.test(value)) {
+    value = '#' + [...value.slice(1)].map((char) => char + char).join('');
+  }
+  return HEX_COLOR_REGEX.test(value) ? value : null;
+}
 
 /** Собрать аватарку из черновика (null — если значение пустое). */
 function draftAvatar() {
@@ -1094,8 +1126,8 @@ function draftAvatar() {
     : [...avatarDraft.value].slice(0, 4).join('');
   if (!value) return null;
   return avatarDraft.bgType === 'gradient'
-    ? { kind: avatarDraft.kind, value, bgType: 'gradient', bg1: avatarDraft.bg1, bg2: avatarDraft.bg2 }
-    : { kind: avatarDraft.kind, value, bgType: 'solid', bg1: avatarDraft.bg1 };
+    ? { kind: avatarDraft.kind, value, bgType: 'gradient', bg1: avatarDraft.bg1, bg2: avatarDraft.bg2, size: avatarDraft.size }
+    : { kind: avatarDraft.kind, value, bgType: 'solid', bg1: avatarDraft.bg1, size: avatarDraft.size };
 }
 
 /** Залить черновик данными текущего профиля и перерисовать редактор. */
@@ -1108,6 +1140,14 @@ function initAvatarEditor() {
   avatarDraft.bgType = avatar?.bgType === 'gradient' ? 'gradient' : 'solid';
   avatarDraft.bg1 = avatar?.bg1 || AVATAR_COLORS[0];
   avatarDraft.bg2 = avatar?.bg2 || AVATAR_COLORS[2];
+  avatarDraft.size = Math.min(200, Math.max(50, Number(avatar?.size) || 100));
+  renderAvatarEditor();
+}
+
+/** Изменить размер буквы/эмодзи на delta процентов (шаг 10). */
+function adjustAvatarSize(delta) {
+  avatarDraft.custom = true;
+  avatarDraft.size = Math.min(200, Math.max(50, avatarDraft.size + delta));
   renderAvatarEditor();
 }
 
@@ -1121,11 +1161,17 @@ function renderAvatarEditor(syncInput = true) {
   });
 
   if (syncInput) {
-    dom.avatarValue.value = avatarDraft.value;
+    if (dom.avatarValue.value !== avatarDraft.value) dom.avatarValue.value = avatarDraft.value;
     dom.avatarValue.maxLength = avatarDraft.kind === 'letter' ? 1 : 4;
-    dom.avatarValue.placeholder = avatarDraft.kind === 'letter' ? 'Ж' : '🐉';
+    dom.avatarValue.placeholder = avatarDraft.kind === 'letter' ? 'С' : '💡';
+    if (normalizeHex(dom.avatarHex1.value) !== avatarDraft.bg1) dom.avatarHex1.value = avatarDraft.bg1;
+    if (normalizeHex(dom.avatarHex2.value) !== avatarDraft.bg2) dom.avatarHex2.value = avatarDraft.bg2;
+    dom.avatarHex1.classList.remove('invalid');
+    dom.avatarHex2.classList.remove('invalid');
   }
 
+  dom.avatarSizeValue.textContent = `${avatarDraft.size}%`;
+  dom.avatarColorRow2.classList.toggle('hidden', avatarDraft.bgType !== 'gradient');
   dom.avatarPalette2.classList.toggle('hidden', avatarDraft.bgType !== 'gradient');
   dom.avatarPalette1.querySelectorAll('.swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg1);
@@ -1196,6 +1242,28 @@ dom.avatarValue.addEventListener('input', () => {
   avatarDraft.value = dom.avatarValue.value;
   renderAvatarEditor(false); // не трогаем само поле, чтобы не прыгал курсор
 });
+
+// Размер буквы/эмодзи: шаг 10% в диапазоне 50–200%.
+dom.avatarSizeMinus.addEventListener('click', () => adjustAvatarSize(-10));
+dom.avatarSizePlus.addEventListener('click', () => adjustAvatarSize(10));
+
+// Свои hex-цвета для фона и градиента.
+function bindHexInput(inputEl, key) {
+  inputEl.addEventListener('input', () => {
+    const hex = normalizeHex(inputEl.value);
+    inputEl.classList.toggle('invalid', !hex && inputEl.value.trim() !== '');
+    if (!hex) return;
+    avatarDraft.custom = true;
+    avatarDraft[key] = hex;
+    renderAvatarEditor(false); // не трогаем поля, чтобы не прыгал курсор
+  });
+  inputEl.addEventListener('blur', () => {
+    inputEl.classList.remove('invalid');
+    inputEl.value = avatarDraft[key];
+  });
+}
+bindHexInput(dom.avatarHex1, 'bg1');
+bindHexInput(dom.avatarHex2, 'bg2');
 
 /* ============================================================
  *  Модальное окно «Новый чат»
@@ -1424,6 +1492,7 @@ async function setBlocked(peerUid, blocked) {
     renderMainPanel();
     if (state.search.query) renderSearchResults();
     if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
   } catch (error) {
     console.error(error);
     toast('Не удалось обновить чёрный список', 'error');
@@ -1474,7 +1543,7 @@ function openBlockedModal() {
   renderBlockedList();
 }
 
-/** Открыть настройки чата (кнопка «Настройки» в шапке группы/канала). */
+/** Открыть настройки чата (действие «Настройки» в меню чата). */
 function openSettingsModal() {
   const chat = state.chats.get(state.activeChatId);
   if (!chat || (chat.type !== 'group' && chat.type !== 'channel')) return;
@@ -1501,6 +1570,139 @@ function setSettingsTypeChoice(type) {
 
 function closeSettingsModal() {
   dom.settingsOverlay.classList.add('hidden');
+}
+
+/* ============================================================
+ *  Всплывающее меню чата (клик по аватарке в шапке)
+ * ============================================================ */
+
+/** Открыть меню: аватарка, описание, действия, участники/админы. */
+function openChatMenu() {
+  if (!state.activeChatId) return;
+  renderChatMenu();
+  dom.chatMenuOverlay.classList.remove('hidden');
+}
+
+function closeChatMenu() {
+  dom.chatMenuOverlay.classList.add('hidden');
+}
+
+/** Кнопка-действие в меню чата. */
+function addChatMenuAction(label, onClick) {
+  const btn = createEl('button', 'btn ghost menu-action', label);
+  btn.type = 'button';
+  btn.addEventListener('click', onClick);
+  dom.chatMenuActions.append(btn);
+  return btn;
+}
+
+/** Перерисовать содержимое меню для активного чата. */
+function renderChatMenu() {
+  const chat = state.chats.get(state.activeChatId) || null;
+  if (!chat) return;
+
+  const myUid = state.user?.uid;
+  const isOwner = Boolean(chat.owner && chat.owner === myUid);
+  const peerUid = chat.type === 'private' ? getPrivatePeerUid(chat) : null;
+  const missing = [];
+
+  applyChatAvatar(dom.chatMenuAvatar, state.activeChatId, chat);
+  dom.chatMenuTitle.textContent = getChatTitle(chat);
+  dom.chatMenuType.textContent = chat.type === 'channel'
+    ? 'Канал'
+    : chat.type === 'group' ? 'Группа' : 'Личный чат';
+
+  // Описание канала/группы; для личного чата — био собеседника.
+  let description = chat.description || '';
+  let handle = chat.username ? '@' + chat.username : '';
+  if (chat.type === 'private') {
+    const peerProfile = peerUid ? Chat.getCachedUserProfile(peerUid) : null;
+    if (peerUid && peerProfile === undefined) missing.push(peerUid);
+    description = peerProfile?.bio || '';
+    handle = peerProfile?.username ? '@' + peerProfile.username : '';
+  }
+  dom.chatMenuDescription.textContent = description;
+  dom.chatMenuDescription.classList.toggle('hidden', !description);
+  dom.chatMenuUsername.textContent = handle;
+  dom.chatMenuUsername.classList.toggle('hidden', !handle);
+
+  // Кнопки действий.
+  dom.chatMenuActions.innerHTML = '';
+
+  if (chat.type === 'private') {
+    if (peerUid) {
+      const blocked = state.blocked.has(peerUid);
+      addChatMenuAction(blocked ? 'Разблокировать' : 'Заблокировать', () => {
+        setBlocked(peerUid, !blocked);
+      });
+    }
+  } else if (isOwner) {
+    addChatMenuAction('Настройки', () => {
+      closeChatMenu();
+      openSettingsModal();
+    });
+  }
+  if (chat.type === 'channel' && !chat.admins?.[myUid] && state.myChatIds.has(state.activeChatId)) {
+    addChatMenuAction('Отписаться от канала', unsubscribeFromActiveChannel);
+  }
+
+  // Участники группы либо администраторы канала.
+  const uids = chat.type === 'group'
+    ? Object.keys(chat.users || {})
+    : chat.type === 'channel' ? Object.keys(chat.admins || {}) : [];
+  dom.chatMenuMembersBlock.classList.toggle('hidden', uids.length === 0);
+  dom.chatMenuMembers.innerHTML = '';
+
+  if (uids.length) {
+    dom.chatMenuMembersTitle.textContent = chat.type === 'group'
+      ? `Участники · ${uids.length}`
+      : `Администраторы · ${uids.length}`;
+
+    for (const uid of uids) {
+      const profile = Chat.getCachedUserProfile(uid);
+      if (profile === undefined) missing.push(uid);
+
+      const item = createEl('div', 'chat-item');
+      const avatar = createEl('div', 'avatar avatar-sm');
+      applyProfileAvatar(avatar, profile, uid);
+
+      const body = createEl('div', 'chat-item-body');
+      const top = createEl('div', 'chat-item-top');
+      top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+      if (uid === chat.owner) top.append(createEl('span', 'search-badge muted', 'владелец'));
+      else if (chat.type === 'channel') top.append(createEl('span', 'search-badge muted', 'админ'));
+      if (uid === myUid) top.append(createEl('span', 'search-badge', 'вы'));
+
+      const bottom = createEl('div', 'chat-item-bottom');
+      bottom.append(createEl('span', 'chat-item-preview', profile?.username ? '@' + profile.username : '…'));
+      body.append(top, bottom);
+      item.append(avatar, body);
+      dom.chatMenuMembers.append(item);
+    }
+  }
+
+  // Профили могли ещё не загрузиться — догружаем и перерисовываем.
+  if (missing.length) {
+    hydrateUsers(missing).then(() => {
+      if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+    });
+  }
+}
+
+/** Отписаться от канала (действие в меню чата). */
+async function unsubscribeFromActiveChannel() {
+  const chat = state.chats.get(state.activeChatId);
+  if (!chat || chat.type !== 'channel') return;
+  if (!window.confirm(`Отписаться от канала «${getChatTitle(chat)}»?`)) return;
+
+  try {
+    await Chat.unsubscribeFromChannel(state.user.uid, state.activeChatId);
+    closeChatMenu();
+    toast('Вы отписались от канала');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось отписаться от канала', 'error');
+  }
 }
 
 /* ============================================================
@@ -1670,8 +1872,7 @@ dom.profileBlockedBtn.addEventListener('click', () => {
   openBlockedModal();
 });
 
-// --- Модальное окно «Настройки чата» ---
-dom.settingsBtn.addEventListener('click', openSettingsModal);
+// --- Модальное окно «Настройки чата» (открывается из меню чата) ---
 dom.settingsClose.addEventListener('click', closeSettingsModal);
 dom.settingsCancel.addEventListener('click', closeSettingsModal);
 dom.settingsOverlay.addEventListener('click', (event) => {
@@ -1731,6 +1932,10 @@ dom.settingsDelete.addEventListener('click', async () => {
 // --- Escape закрывает верхнюю открытую модалку ---
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (!dom.chatMenuOverlay.classList.contains('hidden')) {
+    closeChatMenu();
+    return;
+  }
   if (!dom.settingsOverlay.classList.contains('hidden')) {
     closeSettingsModal();
     return;
@@ -1786,27 +1991,11 @@ dom.previewSubscribe.addEventListener('click', async () => {
   }
 });
 
-// Отписка от канала (для подписчиков-неадминов).
-dom.unsubscribeBtn.addEventListener('click', async () => {
-  const chat = state.chats.get(state.activeChatId);
-  if (!chat || chat.type !== 'channel') return;
-
-  if (!window.confirm(`Отписаться от канала «${getChatTitle(chat)}»?`)) return;
-
-  try {
-    await Chat.unsubscribeFromChannel(state.user.uid, state.activeChatId);
-    toast('Вы отписались от канала');
-  } catch (error) {
-    console.error(error);
-    toast('Не удалось отписаться от канала', 'error');
-  }
-});
-
-// Блокировка/разблокировка собеседника (кнопка в шапке личного чата).
-dom.blockBtn.addEventListener('click', () => {
-  const chat = state.chats.get(state.activeChatId);
-  const peerUid = getPrivatePeerUid(chat);
-  if (peerUid) setBlocked(peerUid, !state.blocked.has(peerUid));
+// Меню чата: открывается по клику на аватарку в шапке.
+dom.chatMenuBtn.addEventListener('click', openChatMenu);
+dom.chatMenuClose.addEventListener('click', closeChatMenu);
+dom.chatMenuOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.chatMenuOverlay) closeChatMenu();
 });
 
 // Разблокировка из плашки над композером.

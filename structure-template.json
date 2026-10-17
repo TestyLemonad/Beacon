@@ -1,38 +1,40 @@
 {
   "users": {
     "user1_id": {
-      "username": "pochti_paladin",
-      "firstName": "Жора",
-      "lastName": "Крушителин",
+      "username": "smotritel_mayaka",
+      "firstName": "Семён",
+      "lastName": "Маяковский",
       "avatar": {
         "kind": "emoji",
-        "value": "🐉",
+        "value": "💡",
         "bgType": "gradient",
         "bg1": "#f0a24a",
-        "bg2": "#e06c75"
+        "bg2": "#e06c75",
+        "size": 120
       },
-      "bio": "Убил дракона, но забыл сохраниться",
-      "email": "kvestolov@taverna.ru",
+      "bio": "Держу свет включённым, чтобы корабли не сбивались с пути",
+      "email": "smotritel@mayak.ru",
       "createdAt": 1728723605
     },
     "user2_id": {
-      "username": "kuznec_udachi",
-      "firstName": "Пётр",
-      "lastName": "Наковальнин",
+      "username": "faros_far",
+      "firstName": "Игнат",
+      "lastName": "Береговой",
       "avatar": {
         "kind": "letter",
-        "value": "П",
+        "value": "И",
         "bgType": "solid",
-        "bg1": "#61afef"
+        "bg1": "#61afef",
+        "size": 100
       },
-      "email": "petr@taverna.ru",
+      "email": "faros@mayak.ru",
       "createdAt": 1728723605
     }
   },
 
   "usernames": {
-    "pochti_paladin": "user1_id",
-    "kuznec_udachi": "user2_id"
+    "smotritel_mayaka": "user1_id",
+    "faros_far": "user2_id"
   },
 
   "user_blocks": {
@@ -50,7 +52,7 @@
         "user2_id": true
       },
       "lastMessage": {
-        "text": "Привет! Готов к походу?",
+        "text": "Смена сегодня твоя?",
         "sender": "user1_id",
         "timestamp": 1728723605
       }
@@ -58,8 +60,8 @@
     "chat_group_1": {
       "type": "group",
       "groupType": "private",
-      "title": "Поход на дракона",
-      "description": "Собираемся по пятницам у костра",
+      "title": "Ночная смена на маяке",
+      "description": "Светим, пока все спят",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "users": {
@@ -68,7 +70,7 @@
         "user3_id": true
       },
       "lastMessage": {
-        "text": "Кто взял верёвку?",
+        "text": "Кто взял запасной фитиль?",
         "sender": "user2_id",
         "timestamp": 1728723900
       }
@@ -76,25 +78,25 @@
     "chat_group_2": {
       "type": "group",
       "groupType": "public",
-      "username": "otrjad_kvestov",
-      "title": "Отряд квестов",
-      "description": "Открытая гильдия: вступай и бери квест",
+      "username": "komanda_mayaka",
+      "title": "Команда маяка",
+      "description": "Открытая группа: вступай и заступай на вахту",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "users": {
         "user1_id": true
       },
       "lastMessage": {
-        "text": "Новый квест на доске объявлений",
+        "text": "Новое расписание вахт на доске",
         "sender": "user1_id",
         "timestamp": 1728723950
       }
     },
     "channel_1": {
       "type": "channel",
-      "username": "tavernnye_vesti",
-      "title": "Слухи из таверны",
-      "description": "Сплетни, квесты и скидки на зелья",
+      "username": "signaly_mayaka",
+      "title": "Сигналы из тумана",
+      "description": "Сводки о погоде, судах и китах",
       "createdAt": 1728723605,
       "owner": "user1_id",
       "subscribersCount": 142,
@@ -102,7 +104,7 @@
         "user1_id": true
       },
       "lastMessage": {
-        "text": "Скидка на зелья лечения до конца недели",
+        "text": "Сегодня туман — держим свет ярче обычного",
         "sender": "user1_id",
         "timestamp": 1728724000
       }
@@ -110,32 +112,32 @@
   },
 
   "channel_usernames": {
-    "tavernnye_vesti": "channel_1"
+    "signaly_mayaka": "channel_1"
   },
 
   "group_usernames": {
-    "otrjad_kvestov": "chat_group_2"
+    "komanda_mayaka": "chat_group_2"
   },
 
   "messages": {
     "chat_private_1": {
       "msg_1": {
         "sender": "user1_id",
-        "text": "Привет! Готов к походу?",
+        "text": "Смена сегодня твоя?",
         "timestamp": 1728723605
       }
     },
     "chat_group_1": {
       "msg_2": {
         "sender": "user2_id",
-        "text": "Кто взял верёвку?",
+        "text": "Кто взял запасной фитиль?",
         "timestamp": 1728723900
       }
     },
     "channel_1": {
       "msg_3": {
         "sender": "user1_id",
-        "text": "Скидка на зелья лечения до конца недели",
+        "text": "Сегодня туман — держим свет ярче обычного",
         "timestamp": 1728724000
       }
     }

@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=5" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -38,7 +38,7 @@
       <form id="auth-form" class="auth-form">
         <div class="field">
           <label for="auth-email">Email</label>
-          <input id="auth-email" class="input" type="email" placeholder="kvestolov@taverna.ru"
+          <input id="auth-email" class="input" type="email" placeholder="smotritel@mayak.ru"
                  autocomplete="email" required />
         </div>
 
@@ -84,23 +84,23 @@
       <form id="onboarding-form" class="auth-form">
         <div class="field">
           <label for="ob-username">Юзернейм</label>
-          <input id="ob-username" class="input" type="text" placeholder="pochti_paladin" autocomplete="username" />
+          <input id="ob-username" class="input" type="text" placeholder="smotritel_mayaka" autocomplete="username" />
           <p class="field-hint">По нему вас будут находить в поиске: 3–32 символа (a–z, 0–9, «_»).</p>
         </div>
 
         <div class="field">
           <label for="ob-firstname">Имя</label>
-          <input id="ob-firstname" class="input" type="text" placeholder="Жора" autocomplete="given-name" />
+          <input id="ob-firstname" class="input" type="text" placeholder="Семён" autocomplete="given-name" />
         </div>
 
         <div class="field">
           <label for="ob-lastname">Фамилия (необязательно)</label>
-          <input id="ob-lastname" class="input" type="text" placeholder="Крушителин" autocomplete="family-name" />
+          <input id="ob-lastname" class="input" type="text" placeholder="Маяковский" autocomplete="family-name" />
         </div>
 
         <div class="field">
           <label for="ob-bio">О себе (необязательно)</label>
-          <textarea id="ob-bio" class="textarea" rows="2" placeholder="Убил дракона, но забыл сохраниться"></textarea>
+          <textarea id="ob-bio" class="textarea" rows="2" placeholder="Держу свет включённым, чтобы корабли не сбивались с пути"></textarea>
         </div>
 
         <p id="onboarding-error" class="form-error hidden"></p>
@@ -158,7 +158,7 @@
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input id="search-input" type="text" placeholder="Кого ищем, путник?" autocomplete="off" />
+          <input id="search-input" type="text" placeholder="Кого ищем, капитан?" autocomplete="off" />
           <button id="search-clear" class="search-clear hidden" type="button" aria-label="Очистить">×</button>
         </div>
       </div>
@@ -221,20 +221,14 @@
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <div id="chat-header-avatar" class="avatar"></div>
+          <button id="chat-menu-btn" class="avatar-btn chat-header-avatar-btn" type="button"
+                  title="О чате" aria-label="О чате">
+            <span id="chat-header-avatar" class="avatar"></span>
+          </button>
           <div class="chat-header-info">
             <h2 id="chat-title">…</h2>
             <p id="chat-status"></p>
           </div>
-          <button id="unsubscribe-btn" class="unsubscribe-btn hidden" type="button" title="Отписаться от канала">
-            Отписаться
-          </button>
-          <button id="block-btn" class="unsubscribe-btn hidden" type="button" title="Чёрный список">
-            Заблокировать
-          </button>
-          <button id="settings-btn" class="unsubscribe-btn hidden" type="button" title="Настройки чата">
-            Настройки
-          </button>
         </header>
 
         <div id="messages" class="messages"></div>
@@ -261,7 +255,7 @@
         </div>
 
         <form id="message-form" class="composer">
-          <input id="message-input" type="text" placeholder="Шепни что-нибудь…" autocomplete="off" />
+          <input id="message-input" type="text" placeholder="Сообщение..." autocomplete="off" />
           <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -294,7 +288,7 @@
         <div class="tab-pane" data-pane="private">
           <div class="field">
             <label for="private-username">Юзернейм пользователя</label>
-            <input id="private-username" class="input" type="text" placeholder="@pochti_paladin" autocomplete="off" />
+            <input id="private-username" class="input" type="text" placeholder="@smotritel_mayaka" autocomplete="off" />
             <p class="field-hint">Собеседника можно найти через поиск в сайдбаре.</p>
           </div>
         </div>
@@ -302,12 +296,12 @@
         <div class="tab-pane hidden" data-pane="group">
           <div class="field">
             <label for="group-title">Название группы</label>
-            <input id="group-title" class="input" type="text" placeholder="Поход на дракона" autocomplete="off" />
+            <input id="group-title" class="input" type="text" placeholder="Ночная смена на маяке" autocomplete="off" />
           </div>
           <div class="field">
             <label for="group-description">Описание (необязательно)</label>
             <textarea id="group-description" class="textarea" rows="2"
-                      placeholder="Собираемся по пятницам у костра"></textarea>
+                      placeholder="Светим, пока все спят"></textarea>
           </div>
           <div class="field">
             <label>Тип группы</label>
@@ -319,13 +313,13 @@
           </div>
           <div class="field hidden" id="group-username-field">
             <label for="group-username">Юзернейм группы</label>
-            <input id="group-username" class="input" type="text" placeholder="@otrjad_kvestov" autocomplete="off" />
+            <input id="group-username" class="input" type="text" placeholder="@komanda_mayaka" autocomplete="off" />
             <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
           </div>
           <div class="field" id="group-members-field">
             <label for="group-members">Участники — юзернеймы</label>
             <textarea id="group-members" class="textarea" rows="3"
-                      placeholder="@druid, @varvar"></textarea>
+                      placeholder="@faros_far, @severny"></textarea>
             <p class="field-hint">Через запятую или пробел; себя добавлять не нужно.</p>
           </div>
         </div>
@@ -333,17 +327,17 @@
         <div class="tab-pane hidden" data-pane="channel">
           <div class="field">
             <label for="channel-username">Юзернейм канала</label>
-            <input id="channel-username" class="input" type="text" placeholder="@tavernnye_vesti" autocomplete="off" />
+            <input id="channel-username" class="input" type="text" placeholder="@signaly_mayaka" autocomplete="off" />
             <p class="field-hint">По нему пользователи найдут канал и смогут подписаться.</p>
           </div>
           <div class="field">
             <label for="channel-title">Название канала</label>
-            <input id="channel-title" class="input" type="text" placeholder="Слухи из таверны" autocomplete="off" />
+            <input id="channel-title" class="input" type="text" placeholder="Сигналы из тумана" autocomplete="off" />
           </div>
           <div class="field">
             <label for="channel-description">Описание (необязательно)</label>
             <textarea id="channel-description" class="textarea" rows="2"
-                      placeholder="Сплетни, квесты и скидки на зелья"></textarea>
+                      placeholder="Сводки о погоде, судах и китах"></textarea>
           </div>
         </div>
 
@@ -370,20 +364,20 @@
       <form id="profile-form" class="create-form">
         <div class="field">
           <label for="pf-username">Юзернейм</label>
-          <input id="pf-username" class="input" type="text" placeholder="pochti_paladin" autocomplete="off" />
+          <input id="pf-username" class="input" type="text" placeholder="smotritel_mayaka" autocomplete="off" />
           <p class="field-hint">3–32 символа (a–z, 0–9, «_»). По нему вас находят другие.</p>
         </div>
         <div class="field">
           <label for="pf-firstname">Имя</label>
-          <input id="pf-firstname" class="input" type="text" placeholder="Жора" autocomplete="given-name" />
+          <input id="pf-firstname" class="input" type="text" placeholder="Семён" autocomplete="given-name" />
         </div>
         <div class="field">
           <label for="pf-lastname">Фамилия (необязательно)</label>
-          <input id="pf-lastname" class="input" type="text" placeholder="Крушителин" autocomplete="family-name" />
+          <input id="pf-lastname" class="input" type="text" placeholder="Маяковский" autocomplete="family-name" />
         </div>
         <div class="field">
           <label for="pf-bio">О себе (необязательно)</label>
-          <textarea id="pf-bio" class="textarea" rows="2" placeholder="Убил дракона, но забыл сохраниться"></textarea>
+          <textarea id="pf-bio" class="textarea" rows="2" placeholder="Держу свет включённым, чтобы корабли не сбивались с пути"></textarea>
         </div>
 
         <div class="field">
@@ -397,14 +391,32 @@
                   <button class="seg-btn" type="button" data-avatar-kind="emoji">Эмодзи</button>
                 </div>
                 <input id="avatar-value" class="input avatar-value-input" type="text" maxlength="1"
-                       placeholder="Ж" autocomplete="off" />
+                       placeholder="С" autocomplete="off" />
+                <div class="avatar-size-row">
+                  <span class="avatar-mini-label">Размер</span>
+                  <div class="stepper">
+                    <button id="avatar-size-minus" class="stepper-btn" type="button" aria-label="Меньше">−</button>
+                    <span id="avatar-size-value" class="stepper-value">100%</span>
+                    <button id="avatar-size-plus" class="stepper-btn" type="button" aria-label="Больше">+</button>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="segmented" id="avatar-bg-toggle">
               <button class="seg-btn active" type="button" data-avatar-bg="solid">Цвет</button>
               <button class="seg-btn" type="button" data-avatar-bg="gradient">Градиент</button>
             </div>
+            <div class="avatar-color-row">
+              <span class="avatar-mini-label">Основной</span>
+              <input id="avatar-hex-1" class="input hex-input" type="text" maxlength="7" placeholder="#f0a24a"
+                     autocomplete="off" spellcheck="false" />
+            </div>
             <div id="avatar-palette-1" class="palette"></div>
+            <div id="avatar-color-row-2" class="avatar-color-row hidden">
+              <span class="avatar-mini-label">Второй</span>
+              <input id="avatar-hex-2" class="input hex-input" type="text" maxlength="7" placeholder="#61afef"
+                     autocomplete="off" spellcheck="false" />
+            </div>
             <div id="avatar-palette-2" class="palette hidden"></div>
           </div>
         </div>
@@ -449,12 +461,12 @@
       <form id="settings-form" class="create-form">
         <div class="field">
           <label for="settings-title">Название</label>
-          <input id="settings-title" class="input" type="text" placeholder="Поход на дракона" autocomplete="off" />
+          <input id="settings-title" class="input" type="text" placeholder="Ночная смена на маяке" autocomplete="off" />
         </div>
         <div class="field">
           <label for="settings-description">Описание (необязательно)</label>
           <textarea id="settings-description" class="textarea" rows="2"
-                    placeholder="Собираемся по пятницам у костра"></textarea>
+                    placeholder="Светим, пока все спят"></textarea>
         </div>
 
         <div class="field hidden" id="settings-group-block">
@@ -467,7 +479,7 @@
         </div>
         <div class="field hidden" id="settings-username-field">
           <label for="settings-username">Юзернейм группы</label>
-          <input id="settings-username" class="input" type="text" placeholder="@otrjad_kvestov" autocomplete="off" />
+          <input id="settings-username" class="input" type="text" placeholder="@komanda_mayaka" autocomplete="off" />
           <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
         </div>
 
@@ -482,10 +494,31 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       Всплывающее меню чата: открывается по клику на аватарку в шапке
+       ============================================================ -->
+  <div id="chat-menu-overlay" class="overlay hidden">
+    <div class="chat-menu">
+      <button id="chat-menu-close" class="icon-btn chat-menu-close" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      <div class="chat-menu-head">
+        <div id="chat-menu-avatar" class="avatar avatar-lg"></div>
+        <h3 id="chat-menu-title" class="chat-menu-title"></h3>
+        <p id="chat-menu-type" class="chat-menu-type"></p>
+      </div>
+      <p id="chat-menu-description" class="chat-menu-description hidden"></p>
+      <p id="chat-menu-username" class="chat-menu-username"></p>
+      <div id="chat-menu-actions" class="chat-menu-actions"></div>
+      <div id="chat-menu-members-block" class="chat-menu-members hidden">
+        <p id="chat-menu-members-title" class="chat-menu-members-title"></p>
+        <div id="chat-menu-members" class="blocked-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Всплывающие уведомления -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>

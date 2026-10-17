@@ -32,7 +32,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=4';
+import { db } from '../firebase-config.js?v=5';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -119,7 +119,7 @@ const AVATAR_COLOR_REGEX = /^#[0-9a-f]{6}$/;
  *
  * @param {object|null} raw
  * @returns {{kind: 'letter'|'emoji', value: string, bgType: 'solid'|'gradient',
- *            bg1: string, bg2?: string}|null} null — аватарка по умолчанию (инициалы)
+ *            bg1: string, bg2?: string, size: number}|null} null — аватарка по умолчанию (инициалы)
  */
 function cleanAvatar(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -137,10 +137,16 @@ function cleanAvatar(raw) {
   const bg2 = String(raw.bg2 || '').toLowerCase();
   if (!AVATAR_COLOR_REGEX.test(bg1)) return null;
 
+  // Размер буквы/эмодзи: проценты от базового (50–200, шаг 5, по умолчанию 100).
+  const sizeRaw = Number(raw.size);
+  const size = Number.isFinite(sizeRaw)
+    ? Math.min(200, Math.max(50, Math.round(sizeRaw / 5) * 5))
+    : 100;
+
   const gradient = raw.bgType === 'gradient' && AVATAR_COLOR_REGEX.test(bg2);
   return gradient
-    ? { kind, value, bgType: 'gradient', bg1, bg2 }
-    : { kind, value, bgType: 'solid', bg1 };
+    ? { kind, value, bgType: 'gradient', bg1, bg2, size }
+    : { kind, value, bgType: 'solid', bg1, size };
 }
 
 /**
