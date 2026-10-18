@@ -107,6 +107,14 @@
       "createdAt": 1728723605,
       "owner": "user1_id",
       "subscribersCount": 142,
+      "avatar": {
+        "kind": "emoji",
+        "value": "📡",
+        "bgType": "gradient",
+        "bg1": "#61afef",
+        "bg2": "#56b6c2",
+        "size": 100
+      },
       "admins": {
         "user1_id": true
       },

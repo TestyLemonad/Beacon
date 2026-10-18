@@ -53,7 +53,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=11';
+import { db } from '../firebase-config.js?v=15';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -628,6 +628,116 @@ export async function updateChatSettings(chatId, requesterUid, data) {
   }
   return getChat(chatId);
 }
+
+/* ============================================================
+ *  Администраторы канала
+ * ============================================================ */
+
+/** Может ли пользователь управлять админами канала: владелец или супер-админ. */
+async function canManageChannelAdmins(chat, uid) {
+  if (!uid) return false;
+  if (chat.owner === uid) return true;
+  return isRootAdmin(uid);
+}
+
+/**
+ * Добавить администратора канала (админы могут писать в канал и смотреть
+ * статистику). Нового админа автоматически подписываем на канал.
+ * @returns {Promise<void>}
+ */
+export async function addChannelAdmin(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== 'channel') throw new Error('Администраторы есть только у каналов');
+  if (!(await canManageChannelAdmins(chat, requesterUid))) {
+    throw new Error('Управлять администраторами может только владелец канала');
+  }
+  if (targetUid === chat.owner) throw new Error('Владелец уже администратор');
+
+  const target = await getUserProfile(targetUid);
+  if (!target) throw new Error('Пользователь не найден');
+
+  const updates = { [`chats/${chatId}/admins/${targetUid}`]: true };
+
+  // Подписываем нового админа, если он ещё не подписан на канал.
+  const subscribed = (await get(ref(db, `user_chats/${targetUid}/${chatId}`))).val();
+  if (!subscribed) {
+    updates[`user_chats/${targetUid}/${chatId}`] = true;
+    updates[`chats/${chatId}/subscribersCount`] = increment(1);
+  }
+
+  await update(ref(db), updates);
+}
+
+/**
+ * Снять администратора канала. Владельца снять нельзя.
+ * @returns {Promise<void>}
+ */
+export async function removeChannelAdmin(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== 'channel') throw new Error('Администраторы есть только у каналов');
+  if (!(await canManageChannelAdmins(chat, requesterUid))) {
+    throw new Error('Управлять администраторами может только владелец канала');
+  }
+  if (targetUid === chat.owner) throw new Error('Нельзя снять владельца канала');
+
+  await set(ref(db, `chats/${chatId}/admins/${targetUid}`), null);
+}
+
+/* ============================================================
+ *  Логотип канала
+ * ============================================================ */
+
+/**
+ * Настроить логотип канала: буква или эмодзи на цвете/градиенте.
+ * avatar = null — вернуть стандартную букву названия.
+ * Менять может владелец канала или супер-админ.
+ * @param {{kind?: string, value: string, bgType?: string, bg1: string, bg2?: string, size?: number}|null} avatar
+ * @returns {Promise<void>}
+ */
+export async function updateChatAvatar(chatId, requesterUid, avatar) {
+  if (!chatId || !requesterUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== 'channel') throw new Error('Логотип можно настроить только у канала');
+  if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
+    throw new Error('Менять логотип может только владелец канала');
+  }
+
+  let cleanAvatar = null;
+  if (avatar) {
+    const kind = avatar.kind === 'emoji' ? 'emoji' : 'letter';
+    const rawValue = String(avatar.value || '').trim();
+    const value = kind === 'letter'
+      ? rawValue.replace(/[^0-9A-Za-zА-Яа-яЁё]/g, '').charAt(0).toUpperCase()
+      : [...rawValue].slice(0, 4).join('');
+    if (!value) throw new Error('Укажите букву или эмодзи для логотипа');
+
+    // Нормализуем hex-цвета: #abc -> #aabbcc, без «#» — добавим.
+    const hex = (raw) => {
+      let v = String(raw || '').trim().toLowerCase();
+      if (!v) return null;
+      if (!v.startsWith('#')) v = '#' + v;
+      if (/^#[0-9a-f]{3}$/.test(v)) v = '#' + [...v.slice(1)].map((c) => c + c).join('');
+      return /^#[0-9a-f]{6}$/.test(v) ? v : null;
+    };
+    const bg1 = hex(avatar.bg1);
+    if (!bg1) throw new Error('Некорректный цвет логотипа');
+    const bgType = avatar.bgType === 'gradient' ? 'gradient' : 'solid';
+    const bg2 = bgType === 'gradient' ? (hex(avatar.bg2) || bg1) : null;
+    const size = Math.min(200, Math.max(50, Number(avatar.size) || 100));
+
+    cleanAvatar = bgType === 'gradient'
+      ? { kind, value, bgType, bg1, bg2, size }
+      : { kind, value, bgType, bg1, size };
+  }
+
+  await set(ref(db, `chats/${chatId}/avatar`), cleanAvatar);
+}
+
 
 /**
  * Удалить группу или канал (доступно только владельцу): сам чат, его

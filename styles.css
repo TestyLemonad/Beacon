@@ -1125,6 +1125,103 @@ textarea:-webkit-autofill {
   margin-left: 8px;
 }
 
+/* Администраторы канала (в настройках канала) */
+.admin-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.admin-add-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.admin-empty {
+  padding: 6px 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Логотип канала в окне настроек */
+.settings-avatar-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.settings-avatar-row .avatar {
+  flex: none;
+}
+.settings-avatar-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-avatar-controls .input {
+  width: 100%;
+}
+
+/* Способы входа: пароль и Google */
+.providers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.provider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+}
+.provider-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.provider-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.provider-name .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.provider-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.provider-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.provider-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Привязка Google на экране входа */
+.auth-link-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+.auth-link-text {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
 .btn.danger {
   background: transparent;
   border-color: rgba(255, 107, 107, 0.45);

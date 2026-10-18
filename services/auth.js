@@ -13,12 +13,17 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCredential,
+  linkWithPopup,
+  linkWithCredential,
+  unlink,
+  EmailAuthProvider,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=11';
+import { auth, db } from '../firebase-config.js?v=15';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -57,12 +62,71 @@ export async function loginWithEmail(email, password) {
 
 /**
  * Вход через Google (всплывающее окно).
- * Используется только для почты и вместо пароля — данные профиля не заполняет.
- * @returns {Promise<object>} Firebase user
+ * Если такой email уже занят аккаунтом с паролем
+ * (auth/account-exists-with-different-credential) — не ошибка, а просьба
+ * подтвердить личность: возвращаем { needsLink, email, pendingCredential },
+ * чтобы app.js запросил пароль и привязал Google к существующему аккаунту.
+ * @returns {Promise<{user?: object, needsLink?: boolean, email?: string, pendingCredential?: object|null}>}
  */
 export async function loginWithGoogle() {
-  const credential = await signInWithPopup(auth, googleProvider);
+  try {
+    const credential = await signInWithPopup(auth, googleProvider);
+    return { user: credential.user };
+  } catch (error) {
+    if (error?.code === 'auth/account-exists-with-different-credential') {
+      return {
+        needsLink: true,
+        email: error.customData?.email || '',
+        pendingCredential: GoogleAuthProvider.credentialFromError(error),
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Завершить привязку Google к существующему аккаунту: вход по паролю,
+ * затем linkWithCredential с «отложенной» Google-креденшл.
+ * @returns {Promise<object>} Firebase user
+ */
+export async function completeGoogleLink(email, password, pendingCredential) {
+  if (!pendingCredential) throw new Error('Данные Google потерялись — попробуйте вход заново');
+  const passwordCredential = EmailAuthProvider.credential(String(email).trim(), password);
+  const userCredential = await signInWithCredential(auth, passwordCredential);
+  await linkWithCredential(userCredential.user, pendingCredential);
+  return userCredential.user;
+}
+
+/**
+ * Список привязанных способов входа текущего пользователя.
+ * @returns {string[]} например ['password', 'google.com']
+ */
+export function getLinkedProviders() {
+  const providers = auth.currentUser?.providerData || [];
+  return [...new Set(providers.map((item) => item.providerId))];
+}
+
+/**
+ * Привязать Google к текущему аккаунту — входить можно будет и паролем,
+ * и через Google.
+ * @returns {Promise<object>} Firebase user
+ */
+export async function linkGoogle() {
+  if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
+  const credential = await linkWithPopup(auth.currentUser, googleProvider);
   return credential.user;
+}
+
+/**
+ * Отвязать способ входа. Нельзя отвязать единственный оставшийся.
+ * @param {string} providerId — 'password' | 'google.com'
+ */
+export async function unlinkProvider(providerId) {
+  if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
+  const providers = getLinkedProviders();
+  if (providers.length < 2) throw new Error('Это единственный способ входа — отвязать нельзя');
+  if (!providers.includes(providerId)) throw new Error('Этот способ входа не привязан');
+  return unlink(auth.currentUser, providerId);
 }
 
 /** Выход из аккаунта. */
@@ -112,6 +176,10 @@ const AUTH_ERROR_MESSAGES = {
   'auth/popup-blocked': 'Браузер заблокировал всплывающее окно',
   'auth/operation-not-allowed': 'Этот способ входа не включён в Firebase Console',
   'auth/unauthorized-domain': 'Домен не авторизован в Firebase Console',
+  'auth/account-exists-with-different-credential': 'Этот email уже привязан другим способом входа',
+  'auth/provider-already-linked': 'Этот способ входа уже привязан',
+  'auth/credential-already-in-use': 'Этот аккаунт уже привязан к другому пользователю',
+  'auth/requires-recent-login': 'Войдите заново, чтобы изменить способы входа',
 };
 
 /**

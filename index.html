@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=11" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -52,6 +52,21 @@
 
         <button id="auth-submit" type="submit" class="btn primary full">Войти</button>
       </form>
+
+      <!-- Привязка Google к аккаунту с паролем: показывается, когда вход через
+           Google наткнулся на account-exists-with-different-credential -->
+      <div id="auth-link-panel" class="auth-link-panel hidden">
+        <p class="auth-link-text">Этот email уже зарегистрирован с паролем. Введите пароль — привяжем Google к аккаунту и войдём.</p>
+        <div class="field">
+          <label for="auth-link-password">Пароль аккаунта</label>
+          <input id="auth-link-password" class="input" type="password" placeholder="••••••"
+                 autocomplete="current-password" />
+        </div>
+        <div class="modal-actions">
+          <button id="auth-link-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="auth-link-submit" class="btn primary" type="button">Привязать и войти</button>
+        </div>
+      </div>
 
       <button id="auth-toggle-mode" type="button" class="link-btn">
         Нет аккаунта? Зарегистрироваться
@@ -442,7 +457,6 @@
         <p id="profile-error" class="form-error hidden"></p>
 
         <div class="modal-actions">
-          <button id="profile-blocked-btn" class="btn ghost push-left" type="button">Чёрный список</button>
           <button id="profile-cancel" class="btn ghost" type="button">Отмена</button>
           <button id="profile-submit" class="btn primary" type="submit">Сохранить</button>
         </div>
@@ -477,6 +491,39 @@
       </div>
 
       <form id="settings-form" class="create-form">
+        <!-- Логотип канала: буква или эмодзи на цвете/градиенте -->
+        <div class="field hidden" id="settings-avatar-block">
+          <label>Логотип канала</label>
+          <div class="settings-avatar-row">
+            <div id="settings-avatar-preview" class="avatar avatar-lg"></div>
+            <div class="settings-avatar-controls">
+              <div class="segmented" id="settings-avatar-kind">
+                <button class="seg-btn" type="button" data-sa-kind="letter">Буква</button>
+                <button class="seg-btn" type="button" data-sa-kind="emoji">Эмодзи</button>
+              </div>
+              <input id="settings-avatar-value" class="input" type="text" maxlength="1"
+                     placeholder="А" autocomplete="off" />
+              <div class="segmented" id="settings-avatar-bg">
+                <button class="seg-btn" type="button" data-sa-bg="solid">Цвет</button>
+                <button class="seg-btn" type="button" data-sa-bg="gradient">Градиент</button>
+              </div>
+              <div class="avatar-color-row">
+                <span class="avatar-mini-label">Основной</span>
+                <input id="settings-avatar-hex1" class="input hex-input" type="text" maxlength="7"
+                       placeholder="#f0a24a" autocomplete="off" spellcheck="false" />
+              </div>
+              <div id="settings-avatar-palette1" class="palette"></div>
+              <div class="avatar-color-row hidden" id="settings-avatar-color-row2">
+                <span class="avatar-mini-label">Второй</span>
+                <input id="settings-avatar-hex2" class="input hex-input" type="text" maxlength="7"
+                       placeholder="#61afef" autocomplete="off" spellcheck="false" />
+              </div>
+              <div id="settings-avatar-palette2" class="palette hidden"></div>
+              <button id="settings-avatar-reset" class="btn ghost full" type="button">Убрать логотип</button>
+            </div>
+          </div>
+        </div>
+
         <div class="field">
           <label for="settings-title">Название</label>
           <input id="settings-title" class="input" type="text" placeholder="Ночная смена на маяке" autocomplete="off" />
@@ -499,6 +546,18 @@
           <label for="settings-username">Юзернейм группы</label>
           <input id="settings-username" class="input" type="text" placeholder="@komanda_mayaka" autocomplete="off" />
           <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
+        </div>
+
+        <!-- Администраторы канала: только для каналов -->
+        <div class="field hidden" id="settings-admins-block">
+          <label>Администраторы канала</label>
+          <div id="settings-admins-list" class="blocked-list"></div>
+          <div class="admin-add-row">
+            <input id="settings-admin-input" class="input" type="text" placeholder="@username или ID"
+                   autocomplete="off" spellcheck="false" />
+            <button id="settings-admin-add" class="btn ghost" type="button">Добавить</button>
+          </div>
+          <p class="field-hint">Администраторы могут писать в канал и смотреть статистику. Новый админ автоматически подписывается на канал.</p>
         </div>
 
         <p id="settings-error" class="form-error hidden"></p>
@@ -633,6 +692,19 @@
             Открыть архив (<span id="prefs-archive-count">0</span>)
           </button>
         </div>
+
+        <div class="field">
+          <label>Способы входа</label>
+          <div id="prefs-providers" class="providers-list"></div>
+          <p class="field-hint">Один аккаунт — два способа: можно входить и по паролю, и через Google. Привяжите или отвяжите способ входа здесь.</p>
+        </div>
+
+        <div class="field">
+          <label>Чёрный список</label>
+          <button id="prefs-blocked-btn" class="btn ghost full" type="button">
+            Открыть чёрный список (<span id="prefs-blocked-count">0</span>)
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -743,6 +815,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=15"></script>
 </body>
 </html>

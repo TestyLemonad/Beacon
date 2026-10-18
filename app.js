@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=11';
-import * as Chat from './services/chat.js?v=11';
+import * as Auth from './services/auth.js?v=15';
+import * as Chat from './services/chat.js?v=15';
 
 /* ============================================================
  *  DOM
@@ -28,6 +28,10 @@ const dom = {
   authError: $('auth-error'),
   authSubmit: $('auth-submit'),
   authToggleMode: $('auth-toggle-mode'),
+  authLinkPanel: $('auth-link-panel'),
+  authLinkPassword: $('auth-link-password'),
+  authLinkSubmit: $('auth-link-submit'),
+  authLinkCancel: $('auth-link-cancel'),
   googleBtn: $('google-btn'),
 
   // Онбординг: заполнение профиля после входа
@@ -163,6 +167,9 @@ const dom = {
   prefsArchiveCount: $('prefs-archive-count'),
   prefsAdminField: $('prefs-admin-field'),
   prefsAdminToggle: $('prefs-admin-toggle'),
+  prefsBlockedBtn: $('prefs-blocked-btn'),
+  prefsBlockedCount: $('prefs-blocked-count'),
+  prefsProviders: $('prefs-providers'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -220,7 +227,6 @@ const dom = {
   avatarSizeMinus: $('avatar-size-minus'),
   avatarSizePlus: $('avatar-size-plus'),
   avatarSizeValue: $('avatar-size-value'),
-  profileBlockedBtn: $('profile-blocked-btn'),
 
   // Чёрный список
   blockedOverlay: $('blocked-overlay'),
@@ -243,6 +249,21 @@ const dom = {
   settingsTypeBtns: Array.from(document.querySelectorAll('[data-settings-type]')),
   settingsUsernameField: $('settings-username-field'),
   settingsUsername: $('settings-username'),
+  settingsAdminsBlock: $('settings-admins-block'),
+  settingsAdminsList: $('settings-admins-list'),
+  settingsAdminInput: $('settings-admin-input'),
+  settingsAdminAdd: $('settings-admin-add'),
+  settingsAvatarBlock: $('settings-avatar-block'),
+  settingsAvatarPreview: $('settings-avatar-preview'),
+  settingsAvatarKindBtns: Array.from(document.querySelectorAll('[data-sa-kind]')),
+  settingsAvatarValue: $('settings-avatar-value'),
+  settingsAvatarBgBtns: Array.from(document.querySelectorAll('[data-sa-bg]')),
+  settingsAvatarHex1: $('settings-avatar-hex1'),
+  settingsAvatarHex2: $('settings-avatar-hex2'),
+  settingsAvatarColorRow2: $('settings-avatar-color-row2'),
+  settingsAvatarPalette1: $('settings-avatar-palette1'),
+  settingsAvatarPalette2: $('settings-avatar-palette2'),
+  settingsAvatarReset: $('settings-avatar-reset'),
 
   // Уведомления
   toast: $('toast'),
@@ -329,6 +350,7 @@ const state = {
 };
 
 let authMode = 'login';     // 'login' | 'register'
+let pendingGoogleLink = null; // { email, pendingCredential } — ждём пароль для привязки Google
 let modalTab = 'private';   // активная вкладка модального окна
 let searchSeq = 0;          // защита от гонок при поиске
 let searchTimer = null;
@@ -496,7 +518,7 @@ function applyProfileAvatar(node, profile, seed, fallbackLabel = undefined) {
   applyAvatar(node, seed, fallbackLabel === undefined ? getProfileInitials(profile) : fallbackLabel);
 }
 
-/** Аватарка чата: личный — профиль собеседника, группа/канал — буква названия. */
+/** Аватарка чата: личный — профиль собеседника, группа/канал — лого или буква названия. */
 function applyChatAvatar(node, chatId, chat) {
   if (chat?.type === 'private') {
     const peerUid = getPrivatePeerUid(chat);
@@ -504,8 +526,13 @@ function applyChatAvatar(node, chatId, chat) {
     applyProfileAvatar(node, profile, peerUid || chatId);
     return;
   }
+  const fallback = (chat?.title || '?').trim().charAt(0).toUpperCase();
+  if (chat?.avatar && chat.avatar.value && chat.avatar.bg1) {
+    applyProfileAvatar(node, { avatar: chat.avatar }, chatId, fallback);
+    return;
+  }
   node.classList.remove('avatar-emoji');
-  applyAvatar(node, chatId, (chat?.title || '?').trim().charAt(0).toUpperCase());
+  applyAvatar(node, chatId, fallback);
 }
 
 /** SVG-иконки типов чата. */
@@ -546,6 +573,10 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   close:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
+  key:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>',
+  google:
+    '<svg viewBox="0 0 48 48" fill="none"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>',
   plus:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   back:
@@ -2096,6 +2127,11 @@ function handleUserChatsUpdate(chatIds) {
 
         renderChatList();
         if (chatId === state.activeChatId) renderMainPanel();
+        // Настройки канала открыты — обновляем список администраторов.
+        if (chatId === settingsChatId && !dom.settingsOverlay.classList.contains('hidden')) {
+          if (chat) renderSettingsAdmins(chat);
+          else closeSettingsModal();
+        }
       }),
     );
   }
@@ -2413,14 +2449,14 @@ function normalizeHex(raw) {
 }
 
 /** Собрать аватарку из черновика (null — если значение пустое). */
-function draftAvatar() {
-  const value = avatarDraft.kind === 'letter'
-    ? avatarDraft.value.replace(/[^0-9A-Za-zА-Яа-яЁё]/g, '').charAt(0).toUpperCase()
-    : [...avatarDraft.value].slice(0, 4).join('');
+function draftAvatar(from = avatarDraft) {
+  const value = from.kind === 'letter'
+    ? from.value.replace(/[^0-9A-Za-zА-Яа-яЁё]/g, '').charAt(0).toUpperCase()
+    : [...from.value].slice(0, 4).join('');
   if (!value) return null;
-  return avatarDraft.bgType === 'gradient'
-    ? { kind: avatarDraft.kind, value, bgType: 'gradient', bg1: avatarDraft.bg1, bg2: avatarDraft.bg2, size: avatarDraft.size }
-    : { kind: avatarDraft.kind, value, bgType: 'solid', bg1: avatarDraft.bg1, size: avatarDraft.size };
+  return from.bgType === 'gradient'
+    ? { kind: from.kind, value, bgType: 'gradient', bg1: from.bg1, bg2: from.bg2, size: from.size }
+    : { kind: from.kind, value, bgType: 'solid', bg1: from.bg1, size: from.size };
 }
 
 /** Залить черновик данными текущего профиля и перерисовать редактор. */
@@ -3309,6 +3345,17 @@ function openSettingsModal() {
   dom.settingsGroupBlock.classList.toggle('hidden', chat.type !== 'group');
   setSettingsTypeChoice(chat.groupType === 'public' ? 'public' : 'private');
   dom.settingsUsername.value = chat.username || '';
+
+  // Администраторы канала: блок виден только для каналов.
+  const isChannel = chat.type === 'channel';
+  dom.settingsAdminsBlock.classList.toggle('hidden', !isChannel);
+  dom.settingsAdminInput.value = '';
+  if (isChannel) renderSettingsAdmins(chat);
+
+  // Логотип канала: тоже только для каналов.
+  dom.settingsAvatarBlock.classList.toggle('hidden', !isChannel);
+  if (isChannel) initChatAvatarEditor(chat);
+
   dom.settingsError.classList.add('hidden');
   dom.settingsOverlay.classList.remove('hidden');
 }
@@ -3325,6 +3372,246 @@ function setSettingsTypeChoice(type) {
 function closeSettingsModal() {
   dom.settingsOverlay.classList.add('hidden');
 }
+
+/**
+ * Список администраторов канала в окне настроек: владелец помечен,
+ * у остальных — кнопка снятия.
+ */
+function renderSettingsAdmins(chat) {
+  dom.settingsAdminsList.innerHTML = '';
+  const adminUids = Object.keys(chat.admins || {});
+  if (!adminUids.length) {
+    dom.settingsAdminsList.append(createEl('div', 'admin-empty', 'Администраторов пока нет.'));
+    return;
+  }
+
+  // Владелец канала — всегда первым в списке.
+  adminUids.sort((a, b) => (a === chat.owner ? -1 : b === chat.owner ? 1 : 0));
+
+  const missing = [];
+  for (const uid of adminUids) {
+    const profile = Chat.getCachedUserProfile(uid);
+    if (profile === undefined) missing.push(uid);
+
+    const item = createEl('div', 'chat-item');
+
+    const avatar = createEl('div', 'avatar avatar-sm');
+    applyProfileAvatar(avatar, profile, uid);
+
+    const body = createEl('div', 'chat-item-body');
+    const top = createEl('div', 'chat-item-top');
+    top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+    const bottom = createEl('div', 'chat-item-bottom');
+    bottom.append(createEl('span', 'chat-item-preview',
+      uid === chat.owner ? 'владелец канала' : (profile?.username ? '@' + profile.username : 'администратор')));
+    body.append(top, bottom);
+    item.append(avatar, body);
+
+    if (uid !== chat.owner) {
+      const remove = createEl('button', 'unsubscribe-btn', 'Снять');
+      remove.type = 'button';
+      remove.addEventListener('click', () => removeSettingsAdmin(uid, remove));
+      item.append(remove);
+    }
+
+    dom.settingsAdminsList.append(item);
+  }
+
+  // Профили могли ещё не загрузиться — догружаем и перерисовываем.
+  if (missing.length) {
+    hydrateUsers(missing).then(() => {
+      if (!settingsChatId || dom.settingsOverlay.classList.contains('hidden')) return;
+      const live = state.chats.get(settingsChatId);
+      if (live) renderSettingsAdmins(live);
+    });
+  }
+}
+
+/** Снять администратора канала (кнопка «×» в списке настроек). */
+async function removeSettingsAdmin(uid, buttonEl) {
+  if (!settingsChatId || !state.user) return;
+  buttonEl.disabled = true;
+  try {
+    await Chat.removeChannelAdmin(settingsChatId, state.user.uid, uid);
+    toast('Администратор снят');
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось снять администратора', 'error');
+  } finally {
+    buttonEl.disabled = false;
+  }
+}
+
+/** Добавить администратора канала по @username или ID (кнопка в настройках). */
+async function addSettingsAdmin() {
+  const chat = state.chats.get(settingsChatId);
+  if (!chat || chat.type !== 'channel' || !state.user) return;
+  const query = dom.settingsAdminInput.value.trim();
+  if (!query) {
+    dom.settingsAdminInput.focus();
+    return;
+  }
+
+  dom.settingsAdminAdd.disabled = true;
+  try {
+    // Сначала ищем по @username, затем пробуем как ID пользователя.
+    let targetUid = null;
+    const byUsername = await Chat.getUserByUsername(query).catch(() => null);
+    if (byUsername) targetUid = byUsername.uid;
+    else targetUid = query;
+
+    await Chat.addChannelAdmin(settingsChatId, state.user.uid, targetUid);
+    dom.settingsAdminInput.value = '';
+    toast('Администратор добавлен', 'success');
+    renderSettingsAdmins(state.chats.get(settingsChatId) || chat);
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось добавить администратора', 'error');
+  } finally {
+    dom.settingsAdminAdd.disabled = false;
+  }
+}
+
+/* ============================================================
+ *  Логотип канала (редактор в окне настроек канала)
+ * ============================================================ */
+
+/** Черновик логотипа канала в окне настроек. */
+const chatAvatarDraft = {
+  touched: false,     // трогал ли пользователь редактор за этот заход
+  removed: false,     // «Убрать логотип» — вернуть стандартную букву названия
+  kind: 'letter',     // 'letter' | 'emoji'
+  value: '',
+  bgType: 'solid',    // 'solid' | 'gradient'
+  bg1: AVATAR_COLORS[0],
+  bg2: AVATAR_COLORS[2],
+  size: 100,
+};
+
+/** Залить черновик логотипа данными канала и перерисовать редактор. */
+function initChatAvatarEditor(chat) {
+  const avatar = chat.avatar || null;
+  chatAvatarDraft.touched = false;
+  chatAvatarDraft.removed = false;
+  chatAvatarDraft.kind = avatar?.kind === 'emoji' ? 'emoji' : 'letter';
+  chatAvatarDraft.value = avatar?.value || (chat.title || '?').trim().charAt(0).toUpperCase();
+  chatAvatarDraft.bgType = avatar?.bgType === 'gradient' ? 'gradient' : 'solid';
+  chatAvatarDraft.bg1 = avatar?.bg1 || AVATAR_COLORS[0];
+  chatAvatarDraft.bg2 = avatar?.bg2 || AVATAR_COLORS[2];
+  chatAvatarDraft.size = Math.min(200, Math.max(50, Number(avatar?.size) || 100));
+  renderChatAvatarEditor();
+}
+
+/** Пользователь изменил логотип — черновик считается тронутым. */
+function touchChatAvatar() {
+  chatAvatarDraft.touched = true;
+  chatAvatarDraft.removed = false;
+}
+
+/** Перерисовать контролы логотипа и превью (syncInput=false — не трогать поля ввода). */
+function renderChatAvatarEditor(syncInput = true) {
+  dom.settingsAvatarKindBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.saKind === chatAvatarDraft.kind);
+  });
+  dom.settingsAvatarBgBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.saBg === chatAvatarDraft.bgType);
+  });
+
+  if (syncInput) {
+    if (dom.settingsAvatarValue.value !== chatAvatarDraft.value) dom.settingsAvatarValue.value = chatAvatarDraft.value;
+    dom.settingsAvatarValue.maxLength = chatAvatarDraft.kind === 'letter' ? 1 : 4;
+    dom.settingsAvatarValue.placeholder = chatAvatarDraft.kind === 'letter' ? 'А' : '💡';
+    if (normalizeHex(dom.settingsAvatarHex1.value) !== chatAvatarDraft.bg1) dom.settingsAvatarHex1.value = chatAvatarDraft.bg1;
+    if (normalizeHex(dom.settingsAvatarHex2.value) !== chatAvatarDraft.bg2) dom.settingsAvatarHex2.value = chatAvatarDraft.bg2;
+    dom.settingsAvatarHex1.classList.remove('invalid');
+    dom.settingsAvatarHex2.classList.remove('invalid');
+  }
+
+  dom.settingsAvatarColorRow2.classList.toggle('hidden', chatAvatarDraft.bgType !== 'gradient');
+  dom.settingsAvatarPalette2.classList.toggle('hidden', chatAvatarDraft.bgType !== 'gradient');
+  dom.settingsAvatarPalette1.querySelectorAll('.swatch').forEach((swatch) => {
+    swatch.classList.toggle('active', swatch.dataset.color === chatAvatarDraft.bg1);
+  });
+  dom.settingsAvatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
+    swatch.classList.toggle('active', swatch.dataset.color === chatAvatarDraft.bg2);
+  });
+
+  // Превью: кастомный логотип либо стандартная буква названия.
+  const chat = state.chats.get(settingsChatId) || { title: dom.settingsTitle.value };
+  const draft = chatAvatarDraft.removed ? null : draftAvatar(chatAvatarDraft);
+  if (draft) {
+    applyProfileAvatar(
+      dom.settingsAvatarPreview,
+      { avatar: draft },
+      settingsChatId || 'chat',
+      (chat.title || '?').trim().charAt(0).toUpperCase(),
+    );
+  } else {
+    applyChatAvatar(dom.settingsAvatarPreview, settingsChatId || 'chat', { type: 'channel', title: chat.title });
+  }
+}
+
+buildPalette(dom.settingsAvatarPalette1, (color) => {
+  touchChatAvatar();
+  chatAvatarDraft.bg1 = color;
+  renderChatAvatarEditor();
+});
+buildPalette(dom.settingsAvatarPalette2, (color) => {
+  touchChatAvatar();
+  chatAvatarDraft.bg2 = color;
+  renderChatAvatarEditor();
+});
+
+dom.settingsAvatarKindBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    touchChatAvatar();
+    chatAvatarDraft.kind = btn.dataset.saKind === 'emoji' ? 'emoji' : 'letter';
+    if (chatAvatarDraft.kind === 'letter' && chatAvatarDraft.value) {
+      chatAvatarDraft.value = chatAvatarDraft.value.charAt(0).toUpperCase();
+    }
+    renderChatAvatarEditor();
+  });
+});
+dom.settingsAvatarBgBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    touchChatAvatar();
+    chatAvatarDraft.bgType = btn.dataset.saBg === 'gradient' ? 'gradient' : 'solid';
+    renderChatAvatarEditor();
+  });
+});
+dom.settingsAvatarValue.addEventListener('input', () => {
+  touchChatAvatar();
+  chatAvatarDraft.value = dom.settingsAvatarValue.value;
+  renderChatAvatarEditor(false); // не трогаем само поле, чтобы не прыгал курсор
+});
+dom.settingsAvatarReset.addEventListener('click', () => {
+  chatAvatarDraft.touched = true;
+  chatAvatarDraft.removed = true;
+  chatAvatarDraft.kind = 'letter';
+  chatAvatarDraft.value = '';
+  chatAvatarDraft.bgType = 'solid';
+  chatAvatarDraft.bg1 = AVATAR_COLORS[0];
+  chatAvatarDraft.bg2 = AVATAR_COLORS[2];
+  renderChatAvatarEditor();
+});
+
+/** Свои hex-цвета для фона логотипа (окно настроек канала). */
+function bindChatAvatarHexInput(inputEl, key) {
+  inputEl.addEventListener('input', () => {
+    const hex = normalizeHex(inputEl.value);
+    inputEl.classList.toggle('invalid', !hex && inputEl.value.trim() !== '');
+    if (!hex) return;
+    touchChatAvatar();
+    chatAvatarDraft[key] = hex;
+    renderChatAvatarEditor(false); // не трогаем поля, чтобы не прыгал курсор
+  });
+  inputEl.addEventListener('blur', () => {
+    inputEl.classList.remove('invalid');
+    inputEl.value = chatAvatarDraft[key];
+  });
+}
+bindChatAvatarHexInput(dom.settingsAvatarHex1, 'bg1');
+bindChatAvatarHexInput(dom.settingsAvatarHex2, 'bg2');
 
 /* ============================================================
  *  Всплывающее меню чата (клик по аватарке в шапке)
@@ -3723,11 +4010,85 @@ function renderPrefsModal() {
   });
 
   dom.prefsArchiveCount.textContent = String(archivedChats().length);
+  dom.prefsBlockedCount.textContent = String(state.blocked.size);
+  renderPrefsProviders();
 
   // Админ-права: поле видно только супер-администраторам.
   const isRoot = Boolean(state.user && state.rootAdmins.has(state.user.uid));
   dom.prefsAdminField.classList.toggle('hidden', !isRoot);
   dom.prefsAdminToggle.checked = isRoot && state.settings?.adminMode !== false;
+}
+
+/** Способы входа (пароль / Google): строки со статусом и кнопками. */
+function renderPrefsProviders() {
+  dom.prefsProviders.innerHTML = '';
+  const providers = Auth.getLinkedProviders();
+  const canUnlink = providers.length > 1;
+
+  const rows = [
+    { id: 'password', label: 'Пароль (email)', icon: 'key', linkable: false },
+    { id: 'google.com', label: 'Google', icon: 'google', linkable: true },
+  ];
+
+  rows.forEach(({ id, label, icon, linkable }) => {
+    const linked = providers.includes(id);
+    const row = createEl('div', 'provider-row');
+
+    const info = createEl('div', 'provider-info');
+    const name = createEl('span', 'provider-name', label);
+    name.prepend(createIcon(icon, 'provider-icon'));
+    info.append(name);
+    info.append(createEl('span', 'provider-status', linked ? 'Привязан' : 'Не привязан'));
+    row.append(info);
+
+    if (linked) {
+      if (canUnlink) {
+        const btn = createEl('button', 'btn ghost provider-btn', 'Отвязать');
+        btn.type = 'button';
+        btn.addEventListener('click', () => unlinkProviderClick(id, label));
+        row.append(btn);
+      } else {
+        row.append(createEl('span', 'provider-hint', 'единственный способ'));
+      }
+    } else if (linkable) {
+      const btn = createEl('button', 'btn ghost provider-btn', 'Привязать');
+      btn.type = 'button';
+      btn.addEventListener('click', () => linkGoogleClick(btn));
+      row.append(btn);
+    } else {
+      row.append(createEl('span', 'provider-hint', 'не привязан'));
+    }
+
+    dom.prefsProviders.append(row);
+  });
+}
+
+/** Привязать Google к текущему аккаунту (кнопка в настройках). */
+async function linkGoogleClick(btn) {
+  btn.disabled = true;
+  try {
+    await Auth.linkGoogle();
+    toast('Google привязан — можно входить любым способом', 'success');
+    renderPrefsProviders();
+  } catch (error) {
+    console.error(error);
+    toast(Auth.getAuthErrorMessage(error), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Отвязать способ входа (кнопка в настройках). */
+async function unlinkProviderClick(providerId, label) {
+  if (!window.confirm(`Отвязать способ входа «${label}»?`)) return;
+  try {
+    await Auth.unlinkProvider(providerId);
+    toast('Способ входа отвязан');
+    renderPrefsProviders();
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось отвязать способ входа', 'error');
+  }
 }
 
 /** Переключить тему оформления (тёмная по умолчанию). */
@@ -4114,12 +4475,41 @@ dom.googleBtn.addEventListener('click', async () => {
   hideAuthError();
   setAuthLoading(true);
   try {
-    await Auth.loginWithGoogle();
+    const result = await Auth.loginWithGoogle();
+    // Email уже занят аккаунтом с паролем: просим пароль и привязываем Google.
+    if (result?.needsLink) {
+      pendingGoogleLink = { email: result.email, pendingCredential: result.pendingCredential };
+      dom.authLinkPanel.classList.remove('hidden');
+      dom.authLinkPassword.value = '';
+      dom.authLinkPassword.focus();
+    }
   } catch (error) {
     showAuthError(Auth.getAuthErrorMessage(error));
   } finally {
     setAuthLoading(false);
   }
+});
+
+// Завершение привязки Google к существующему аккаунту (пароль + link).
+dom.authLinkSubmit.addEventListener('click', async () => {
+  if (!pendingGoogleLink) return;
+  hideAuthError();
+  dom.authLinkSubmit.disabled = true;
+  try {
+    await Auth.completeGoogleLink(pendingGoogleLink.email, dom.authLinkPassword.value, pendingGoogleLink.pendingCredential);
+    pendingGoogleLink = null;
+    dom.authLinkPanel.classList.add('hidden');
+    // Дальше сработает watchAuthState и откроет мессенджер.
+  } catch (error) {
+    showAuthError(Auth.getAuthErrorMessage(error));
+  } finally {
+    dom.authLinkSubmit.disabled = false;
+  }
+});
+dom.authLinkCancel.addEventListener('click', () => {
+  pendingGoogleLink = null;
+  dom.authLinkPanel.classList.add('hidden');
+  hideAuthError();
 });
 
 // --- Юзернеймы: «@Test» и «test» — одно и то же ---
@@ -4354,8 +4744,8 @@ dom.blockedClose.addEventListener('click', () => dom.blockedOverlay.classList.ad
 dom.blockedOverlay.addEventListener('click', (event) => {
   if (event.target === dom.blockedOverlay) dom.blockedOverlay.classList.add('hidden');
 });
-dom.profileBlockedBtn.addEventListener('click', () => {
-  closeProfileModal();
+dom.prefsBlockedBtn.addEventListener('click', () => {
+  closePrefsModal();
   openBlockedModal();
 });
 
@@ -4367,6 +4757,13 @@ dom.settingsOverlay.addEventListener('click', (event) => {
 });
 dom.settingsTypeBtns.forEach((btn) => {
   btn.addEventListener('click', () => setSettingsTypeChoice(btn.dataset.settingsType));
+});
+dom.settingsAdminAdd.addEventListener('click', addSettingsAdmin);
+dom.settingsAdminInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault(); // не отправляем форму настроек
+    addSettingsAdmin();
+  }
 });
 dom.settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -4383,6 +4780,11 @@ dom.settingsForm.addEventListener('submit', async (event) => {
       groupType: chat.type === 'group' ? settingsTypeChoice : undefined,
       username: dom.settingsUsername.value,
     });
+    // Логотип канала: сохраняем, только если его трогали.
+    if (chat.type === 'channel' && chatAvatarDraft.touched) {
+      const avatar = chatAvatarDraft.removed ? null : draftAvatar(chatAvatarDraft);
+      await Chat.updateChatAvatar(settingsChatId, state.user.uid, avatar);
+    }
     closeSettingsModal();
     toast('Настройки сохранены', 'success');
   } catch (error) {
