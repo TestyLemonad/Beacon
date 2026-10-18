@@ -6,12 +6,16 @@
  *   /users/$uid              { username, firstName, lastName?, bio?, avatar?, email, createdAt }
  *   /usernames/$username     $uid                       — индекс поиска людей
  *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
- *                              admins?, subscribersCount?, createdAt, lastMessage? }
+ *                              admins?, subscribersCount?, createdAt, lastMessage?,
+ *                              pinned? }
  *   /channel_usernames/$username  $chat_id              — индекс поиска каналов
  *   /group_usernames/$username    $chat_id              — индекс поиска публичных групп
- *   /messages/$chat_id       { $msg_id: { sender, text, timestamp } }
+ *   /messages/$chat_id       { $msg_id: { sender, text, timestamp, editedAt?,
+ *                              replyTo?, forwardedFrom?, reactions? } }
+ *   /chats/$chat_id/pinned   { $msg_id: { ts, text, sender } }  — закреплённые
  *   /user_chats/$uid         { $chat_id: true }
  *   /user_blocks/$uid        { $blocked_uid: true }     — чёрный список
+ *   /user_message_deletes/$uid/$chat_id/$msg_id  true   — «удалено у меня»
  *
  * Юзернеймы уникальны: они захватываются транзакцией в узлах-индексах
  * /usernames, /channel_usernames и /group_usernames.
@@ -32,7 +36,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=5';
+import { db } from '../firebase-config.js?v=6';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -755,9 +759,12 @@ export function canPostToChat(chat, uid) {
  *   1) новое сообщение -> /messages/$chat_id/$msg_id;
  *   2) превью и время  -> /chats/$chat_id/lastMessage.
  *
+ * options.replyTo       — { msgId, sender, text } для ответа на сообщение;
+ * options.forwardedFrom — { uid, name } для пересланного сообщения.
+ *
  * @returns {Promise<string|null>} id созданного сообщения (null, если текст пустой)
  */
-export async function sendMessage(chatId, senderUid, text) {
+export async function sendMessage(chatId, senderUid, text, options = {}) {
   if (!chatId || !senderUid) throw new Error('Не указан чат или отправитель');
 
   const body = String(text || '').trim();
@@ -766,6 +773,8 @@ export async function sendMessage(chatId, senderUid, text) {
   const timestamp = nowSeconds();
   const messageId = push(ref(db, `messages/${chatId}`)).key;
   const message = { sender: senderUid, text: body, timestamp };
+  if (options.replyTo) message.replyTo = options.replyTo;
+  if (options.forwardedFrom) message.forwardedFrom = options.forwardedFrom;
 
   const updates = {
     [`messages/${chatId}/${messageId}`]: message,
@@ -774,4 +783,130 @@ export async function sendMessage(chatId, senderUid, text) {
 
   await update(ref(db), updates);
   return messageId;
+}
+
+/* ============================================================
+ *  Сообщения: правка, удаление, реакции, закреп, пересылка
+ * ============================================================ */
+
+/** Максимальная длина цитаты (ответ, закреп, пересылка). */
+export const MESSAGE_SNIPPET_LIMIT = 120;
+
+/** Однострочный сниппет текста сообщения для цитат и превью. */
+export function messageSnippet(text, limit = MESSAGE_SNIPPET_LIMIT) {
+  const body = String(text || '').replace(/\s+/g, ' ').trim();
+  return body.length > limit ? body.slice(0, limit - 1) + '…' : body;
+}
+
+/**
+ * Изменить текст своего сообщения (ставит метку editedAt).
+ * Если сообщение — последнее в чате, обновляет и превью lastMessage.
+ * @returns {Promise<void>}
+ */
+export async function editMessage(chatId, msgId, editorUid, text) {
+  const body = String(text || '').trim();
+  if (!body) throw new Error('Сообщение не может быть пустым');
+
+  const snapshot = await get(ref(db, `messages/${chatId}/${msgId}`));
+  const message = snapshot.val();
+  if (!message) throw new Error('Сообщение не найдено');
+  if (message.sender !== editorUid) throw new Error('Редактировать можно только свои сообщения');
+
+  const updates = {
+    [`messages/${chatId}/${msgId}/text`]: body,
+    [`messages/${chatId}/${msgId}/editedAt`]: nowSeconds(),
+  };
+
+  // Если это последнее сообщение — синхронизируем превью в списке чатов.
+  const lastSnapshot = await get(query(ref(db, `messages/${chatId}`), limitToLast(1)));
+  const last = lastSnapshot.val() || {};
+  if (Object.keys(last)[0] === msgId) {
+    updates[`chats/${chatId}/lastMessage/text`] = body;
+  }
+
+  await update(ref(db), updates);
+}
+
+/**
+ * Удалить своё сообщение для всех: сообщение + закреп + превью.
+ * @returns {Promise<void>}
+ */
+export async function deleteMessage(chatId, msgId, deleterUid) {
+  const snapshot = await get(ref(db, `messages/${chatId}/${msgId}`));
+  const message = snapshot.val();
+  if (!message) return;
+  if (message.sender !== deleterUid) throw new Error('Удалить у всех можно только свои сообщения');
+
+  await update(ref(db), {
+    [`messages/${chatId}/${msgId}`]: null,
+    [`chats/${chatId}/pinned/${msgId}`]: null,
+  });
+
+  // Обновляем превью последнего сообщения (или убираем).
+  const lastSnapshot = await get(query(ref(db, `messages/${chatId}`), limitToLast(1)));
+  const entries = Object.entries(lastSnapshot.val() || {});
+  const last = entries.length
+    ? { text: entries[0][1].text, sender: entries[0][1].sender, timestamp: entries[0][1].timestamp }
+    : null;
+  await update(ref(db), { [`chats/${chatId}/lastMessage`]: last });
+}
+
+/**
+ * «Удалить у меня»: пометка /user_message_deletes/$uid/$chat_id/$msg_id.
+ * Сообщение исчезает только у этого пользователя, в БД остаётся.
+ * @returns {Promise<void>}
+ */
+export async function deleteMessageLocally(uid, chatId, msgId) {
+  if (!uid || !chatId || !msgId) throw new Error('Некорректные параметры');
+  await update(ref(db), { [`user_message_deletes/${uid}/${chatId}/${msgId}`]: true });
+}
+
+/**
+ * Подписка на список сообщений, удалённых локально /user_message_deletes/$uid.
+ * @param {(map: object) => void} onChange — { $chat_id: { $msg_id: true } }
+ * @returns {() => void} функция отписки
+ */
+export function subscribeToUserMessageDeletes(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_message_deletes/${uid}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на локально удалённые сообщения:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/**
+ * Поставить/снять реакцию. Включение и выключение — кликом по той же.
+ * Хранение: /messages/$chat_id/$msg_id/reactions/$emoji/$uid = true.
+ * @param {boolean} active — true поставить, false снять
+ * @returns {Promise<void>}
+ */
+export async function setReaction(chatId, msgId, emoji, uid, active) {
+  const clean = String(emoji || '').trim();
+  if (!clean) throw new Error('Пустая реакция');
+  await update(ref(db), { [`messages/${chatId}/${msgId}/reactions/${clean}/${uid}`]: active ? true : null });
+}
+
+/**
+ * Закрепить или открепить сообщение.
+ * Храним снимок последнего текста, чтобы закреп отображался,
+ * даже если сообщение вне загруженного окна истории.
+ * @param {boolean} pinned — true закрепить, false снять
+ * @returns {Promise<void>}
+ */
+export async function setPinned(chatId, msgId, pinned, snapshot = null) {
+  if (pinned) {
+    const stored = snapshot || {};
+    await update(ref(db), {
+      [`chats/${chatId}/pinned/${msgId}`]: {
+        ts: nowSeconds(),
+        text: messageSnippet(stored.text || ''),
+        sender: stored.sender || '',
+      },
+    });
+    return;
+  }
+  await update(ref(db), { [`chats/${chatId}/pinned/${msgId}`]: null });
 }

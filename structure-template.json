@@ -69,6 +69,13 @@
         "user2_id": true,
         "user3_id": true
       },
+      "pinned": {
+        "msg_2": {
+          "ts": 1728724500,
+          "text": "Кто взял запасной фитиль?",
+          "sender": "user2_id"
+        }
+      },
       "lastMessage": {
         "text": "Кто взял запасной фитиль?",
         "sender": "user2_id",
@@ -124,14 +131,41 @@
       "msg_1": {
         "sender": "user1_id",
         "text": "Смена сегодня твоя?",
-        "timestamp": 1728723605
+        "timestamp": 1728723605,
+        "reactions": {
+          "👍": { "user2_id": true }
+        }
+      },
+      "msg_5": {
+        "sender": "user2_id",
+        "text": "Твоя. Заступаю в полночь",
+        "timestamp": 1728723660,
+        "replyTo": {
+          "msgId": "msg_1",
+          "sender": "user1_id",
+          "text": "Смена сегодня твоя?"
+        }
       }
     },
     "chat_group_1": {
       "msg_2": {
         "sender": "user2_id",
         "text": "Кто взял запасной фитиль?",
-        "timestamp": 1728723900
+        "timestamp": 1728723900,
+        "editedAt": 1728723950,
+        "reactions": {
+          "😂": { "user1_id": true, "user3_id": true },
+          "🔥": { "user1_id": true }
+        }
+      },
+      "msg_4": {
+        "sender": "user3_id",
+        "text": "Держите: сводка по ветру на берегу",
+        "timestamp": 1728724050,
+        "forwardedFrom": {
+          "uid": "user2_id",
+          "name": "Игнат Береговой"
+        }
       }
     },
     "channel_1": {
@@ -153,6 +187,14 @@
     "user2_id": {
       "chat_private_1": true,
       "chat_group_1": true
+    }
+  },
+
+  "user_message_deletes": {
+    "user1_id": {
+      "chat_group_1": {
+        "msg_9": true
+      }
     }
   }
 }

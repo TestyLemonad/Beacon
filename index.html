@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -231,6 +231,16 @@
           </div>
         </header>
 
+        <!-- Закреп: показывается самое свежее, клик листает закрепы по кругу -->
+        <button id="pin-bar" class="pin-bar hidden" type="button" title="Следующий закреп">
+          <span class="pin-bar-icon">📌</span>
+          <span class="pin-bar-body">
+            <span id="pin-bar-title" class="pin-bar-title"></span>
+            <span id="pin-bar-text" class="pin-bar-text"></span>
+          </span>
+          <span id="pin-bar-count" class="pin-bar-count"></span>
+        </button>
+
         <div id="messages" class="messages"></div>
 
         <!-- Плашка для каналов: писать могут только администраторы -->
@@ -252,6 +262,15 @@
           </svg>
           Пользователь в чёрном списке
           <button id="private-unblock-btn" class="unsubscribe-btn" type="button">Разблокировать</button>
+        </div>
+
+        <!-- Плашка «ответ / редактирование» над полем ввода -->
+        <div id="composer-context" class="composer-context hidden">
+          <div class="composer-context-body">
+            <span id="composer-context-title" class="composer-context-title"></span>
+            <span id="composer-context-text" class="composer-context-text"></span>
+          </div>
+          <button id="composer-context-cancel" class="icon-btn" type="button" title="Отменить" aria-label="Отменить">×</button>
         </div>
 
         <form id="message-form" class="composer">
@@ -515,10 +534,56 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       Меню сообщения: ПКМ или долгое нажатие на мобильных
+       ============================================================ -->
+  <div id="msg-menu-overlay" class="msg-menu-overlay hidden">
+    <div id="msg-menu" class="msg-menu">
+      <div class="msg-menu-top">
+        <div id="msg-menu-reactions" class="msg-menu-reactions"></div>
+        <button id="msg-menu-more" class="msg-more-btn" type="button" title="Все реакции" aria-label="Все реакции">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
+      <div id="msg-menu-all" class="msg-menu-all hidden"></div>
+      <div id="msg-menu-actions" class="msg-menu-actions"></div>
+    </div>
+  </div>
+
+  <!-- Выбор удаления собственного сообщения -->
+  <div id="delete-choice-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Удалить сообщение?</h3>
+        <button id="delete-choice-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <p class="modal-text">Это ваше сообщение. Удалить его у всех участников или только у себя?</p>
+      <div class="modal-actions">
+        <button id="delete-choice-all" class="btn danger" type="button">Удалить у всех</button>
+        <button id="delete-choice-local" class="btn ghost" type="button">Только у меня</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Пересылка сообщения: выбор чата -->
+  <div id="forward-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Переслать в…</h3>
+        <button id="forward-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div id="forward-list" class="blocked-list"></div>
+      <p id="forward-empty" class="search-empty hidden">Нет других чатов для пересылки</p>
+    </div>
+  </div>
+
   <!-- Всплывающие уведомления -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=5"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

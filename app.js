@@ -6,10 +6,12 @@
  *  - состояние приложения (профиль, чаты, активный чат, поиск, предпросмотр канала);
  *  - подписки RTDB и их очистка;
  *  - обработчики UI: список чатов, поиск по юзернеймам, сообщения,
- *    модальные окна «Новый чат» и «Профиль».
+ *    модальные окна «Новый чат» и «Профиль»;
+ *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
+ *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=5';
-import * as Chat from './services/chat.js?v=5';
+import * as Auth from './services/auth.js?v=6';
+import * as Chat from './services/chat.js?v=6';
 
 /* ============================================================
  *  DOM
@@ -122,6 +124,30 @@ const dom = {
   privateUnblockBtn: $('private-unblock-btn'),
   previewHeading: $('preview-heading'),
 
+  // Сообщения: закреп, ответ/правка, меню сообщения, удаление, пересылка
+  pinBar: $('pin-bar'),
+  pinBarTitle: $('pin-bar-title'),
+  pinBarText: $('pin-bar-text'),
+  pinBarCount: $('pin-bar-count'),
+  composerContext: $('composer-context'),
+  composerContextTitle: $('composer-context-title'),
+  composerContextText: $('composer-context-text'),
+  composerContextCancel: $('composer-context-cancel'),
+  msgMenuOverlay: $('msg-menu-overlay'),
+  msgMenu: $('msg-menu'),
+  msgMenuReactions: $('msg-menu-reactions'),
+  msgMenuMore: $('msg-menu-more'),
+  msgMenuAll: $('msg-menu-all'),
+  msgMenuActions: $('msg-menu-actions'),
+  deleteChoiceOverlay: $('delete-choice-overlay'),
+  deleteChoiceClose: $('delete-choice-close'),
+  deleteChoiceAll: $('delete-choice-all'),
+  deleteChoiceLocal: $('delete-choice-local'),
+  forwardOverlay: $('forward-overlay'),
+  forwardClose: $('forward-close'),
+  forwardList: $('forward-list'),
+  forwardEmpty: $('forward-empty'),
+
   // Создание группы: тип, юзернейм, описание
   groupDescription: $('group-description'),
   groupTypeBtns: Array.from(document.querySelectorAll('[data-group-type]')),
@@ -185,9 +211,18 @@ const state = {
   channelPreview: null,     // { chatId, chat } — предпросмотр канала из поиска
   search: { query: '', loading: false, users: [], groups: [], channels: [], localChats: [] },
   blocked: new Set(),       // uid пользователей в моём чёрном списке
+  localDeleted: new Set(),  // «chatId/msgId» сообщений, удалённых только у меня
+  composerMode: null,       // { type: 'edit'|'reply', message } — плашка над полем ввода
+  msgMenuMessage: null,     // сообщение, открытое в контекстном меню
+  msgMenuPos: null,         // { x, y } — точка открытия меню
+  msgMenuExpanded: false,   // раскрыт ли полный набор реакций
+  pendingDeleteMessage: null, // сообщение, ждущее выбора «у всех / только у меня»
+  forwardMessage: null,     // сообщение, которое пересылаем
+  pinIndex: 0,              // какой по счёту закреп показан в плашке
   subscriptions: {
     userChats: null,
     messages: null,
+    messageDeletes: null,   // подписка /user_message_deletes/$uid
     chatMeta: new Map(),    // chatId -> unsubscribe для /chats/$chat_id
   },
 };
@@ -206,6 +241,15 @@ let settingsChatId = null;          // чат, открытый в окне на
 
 /** Палитра аватарок-заглушек. */
 const AVATAR_COLORS = ['#f0a24a', '#e06c75', '#61afef', '#98c379', '#c678dd', '#56b6c2', '#d19a66', '#8f9ff5'];
+
+/** Шесть быстрых реакций в меню сообщения. */
+const REACTIONS_TOP = ['👍', '❤️', '🔥', '😂', '😮', '😢'];
+
+/** Полный набор реакций (раскрывается стрелочкой). */
+const REACTIONS_ALL = [
+  ...REACTIONS_TOP,
+  '🎉', '🥰', '👎', '😡', '🤔', '💯', '🙏', '👀', '⚡', '🌊', '⚓', '💡',
+];
 
 /** Стабильный цвет аватарки по произвольному seed (uid или id чата). */
 function avatarColor(seed) {
@@ -433,6 +477,7 @@ function sortedChats() {
 function buildChatListItem(tag, chatId, chat) {
   const item = createEl(tag, `chat-item${chatId === state.activeChatId ? ' active' : ''}`);
   item.dataset.chatId = chatId;
+  item.tabIndex = 0; // фокус для клавиатуры и ТВ-пульта
 
   const avatar = createEl('div', 'avatar');
   applyChatAvatar(avatar, chatId, chat);
@@ -532,6 +577,7 @@ async function runSearch(rawQuery) {
 /** Строка результата «пользователь». */
 function buildUserRow(user) {
   const item = createEl('div', 'chat-item');
+  item.tabIndex = 0;
   const avatar = createEl('div', 'avatar');
   applyProfileAvatar(avatar, user, user.uid);
 
@@ -554,6 +600,7 @@ function buildUserRow(user) {
 function buildChannelRow(channel) {
   const subscribed = state.myChatIds.has(channel.chatId);
   const item = createEl('div', 'chat-item');
+  item.tabIndex = 0;
 
   const avatar = createEl('div', 'avatar');
   applyAvatar(avatar, channel.chatId, (channel.title || '?').charAt(0).toUpperCase());
@@ -585,6 +632,7 @@ function buildChannelRow(channel) {
 function buildGroupRow(group) {
   const member = state.myChatIds.has(group.chatId);
   const item = createEl('div', 'chat-item');
+  item.tabIndex = 0;
 
   const avatar = createEl('div', 'avatar');
   applyAvatar(avatar, group.chatId, (group.title || '?').trim().charAt(0).toUpperCase());
@@ -675,6 +723,9 @@ async function openPrivateChatWith(peerUid) {
 function selectChat(chatId) {
   state.channelPreview = null;
   closeChatMenu();
+  closeMsgMenu();
+  cancelComposerMode();
+  state.pinIndex = 0;
 
   const chatChanged = state.activeChatId !== chatId;
   state.activeChatId = chatId;
@@ -704,6 +755,9 @@ function selectChat(chatId) {
 /** Полностью снять активный чат (например, отписались от канала). */
 function closeActiveChat() {
   closeChatMenu();
+  closeMsgMenu();
+  cancelComposerMode();
+  state.pinIndex = 0;
   state.subscriptions.messages?.();
   state.subscriptions.messages = null;
   state.activeChatId = null;
@@ -827,12 +881,16 @@ function renderMessages() {
 
   container.innerHTML = '';
 
-  // Сообщения пользователей из чёрного списка не показываем.
-  const visible = state.messages.filter((message) => !state.blocked.has(message.sender));
+  // Не показываем сообщения из чёрного списка и «удалённые у меня».
+  const visible = state.messages.filter((message) => (
+    !state.blocked.has(message.sender)
+    && !state.localDeleted.has(`${state.activeChatId}/${message.id}`)
+  ));
   if (!visible.length) {
     container.append(createEl('p', 'messages-empty', state.messages.length
-      ? 'Сообщения скрыты: отправитель в чёрном списке'
+      ? 'Сообщения скрыты'
       : 'В этом чате пока нет сообщений'));
+    renderPinBar();
     return;
   }
 
@@ -859,24 +917,184 @@ function renderMessages() {
     container.scrollTop = prevScrollTop;
   }
 
+  renderPinBar();
   hydrateUsers(senderUids);
+}
+
+/** Найти DOM-элемент сообщения в ленте по id. */
+function findMessageElement(msgId) {
+  return dom.messages.querySelector(`[data-msg-id="${CSS.escape(String(msgId))}"]`);
+}
+
+/** Прокрутить к сообщению и подсветить его. false — сообщение не загружено. */
+function flashMessage(msgId) {
+  const el = findMessageElement(msgId);
+  if (!el) return false;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.remove('flash');
+  void el.offsetWidth; // перезапуск анимации
+  el.classList.add('flash');
+  window.setTimeout(() => el.classList.remove('flash'), 1200);
+  return true;
 }
 
 /** Собрать DOM одного сообщения. */
 function buildMessageElement(message, showSender) {
   const own = message.sender === state.user?.uid;
+  const chat = state.chats.get(state.activeChatId) || null;
   const wrap = createEl('div', `message ${own ? 'own' : 'other'}`);
+  wrap.dataset.msgId = message.id;
+  wrap.tabIndex = 0; // ТВ-пульт и клавиатура: Enter открывает меню
 
   if (showSender) {
     wrap.append(createEl('div', 'message-sender', own ? 'Вы' : getSenderName(message.sender)));
   }
 
   const bubble = createEl('div', 'bubble');
+
+  // Пересланное сообщение.
+  if (message.forwardedFrom) {
+    const fwd = createEl('div', 'bubble-forward');
+    fwd.append(createEl('span', 'bubble-forward-icon', '↪'));
+    fwd.append(createEl('span', '', `Пересланное от ${message.forwardedFrom.name || 'пользователя'}`));
+    bubble.append(fwd);
+  }
+
+  // Цитата: ответ на сообщение.
+  if (message.replyTo) {
+    const quote = createEl('button', 'bubble-reply');
+    quote.type = 'button';
+    quote.append(createEl('span', 'bubble-reply-name', getSenderName(message.replyTo.sender)));
+    quote.append(createEl('span', 'bubble-reply-text', message.replyTo.text || ''));
+    quote.addEventListener('click', () => {
+      if (!flashMessage(message.replyTo.msgId)) toast('Сообщение не подгружено в историю');
+    });
+    bubble.append(quote);
+  }
+
   bubble.append(createEl('span', 'bubble-text', message.text || ''));
-  bubble.append(createEl('span', 'bubble-time', formatTime(message.timestamp)));
+
+  // Служебная строка: закреп, «изм.», время.
+  const meta = createEl('span', 'bubble-meta');
+  if (chat?.pinned?.[message.id]) meta.append(createEl('span', 'bubble-pin', '📌'));
+  if (message.editedAt) meta.append(createEl('span', 'bubble-edited', 'изм.'));
+  meta.append(createEl('span', 'bubble-time', formatTime(message.timestamp)));
+  bubble.append(meta);
+
+  // Реакции под сообщением.
+  const reactions = Object.entries(message.reactions || {})
+    .map(([emoji, users]) => ({
+      emoji,
+      count: Object.keys(users || {}).length,
+      mine: Boolean(users?.[state.user?.uid]),
+    }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  if (reactions.length) {
+    const row = createEl('div', 'bubble-reactions');
+    for (const item of reactions) {
+      const pill = createEl('button', `reaction-pill${item.mine ? ' mine' : ''}`);
+      pill.type = 'button';
+      pill.title = item.mine ? 'Убрать реакцию' : 'Поставить реакцию';
+      pill.append(createEl('span', 'reaction-emoji', item.emoji));
+      pill.append(createEl('span', 'reaction-count', String(item.count)));
+      pill.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleReaction(message, item.emoji);
+      });
+      row.append(pill);
+    }
+    bubble.append(row);
+  }
+
   wrap.append(bubble);
 
+  // Меню сообщения: ПКМ на десктопе, долгое нажатие на тач-экранах.
+  wrap.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    openMsgMenu(message, event.clientX, event.clientY);
+  });
+
+  let longPressTimer = null;
+  const cancelLongPress = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+  wrap.addEventListener('touchstart', (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      openMsgMenu(message, touch.clientX, touch.clientY);
+    }, 480);
+  }, { passive: true });
+  wrap.addEventListener('touchend', cancelLongPress);
+  wrap.addEventListener('touchmove', cancelLongPress, { passive: true });
+  wrap.addEventListener('touchcancel', cancelLongPress);
+
+  // ТВ-пульт и клавиатура: Enter на сообщении открывает меню.
+  wrap.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const rect = wrap.getBoundingClientRect();
+    openMsgMenu(message, rect.left + 40, rect.bottom - 6);
+  });
+
   return wrap;
+}
+
+/* ============================================================
+ *  Закреплённые сообщения
+ * ============================================================ */
+
+/** Закрепы активного чата: свежие сверху. */
+function sortedPins() {
+  const chat = state.chats.get(state.activeChatId) || null;
+  return Object.entries(chat?.pinned || {})
+    .map(([msgId, pin]) => ({
+      msgId,
+      ts: Number(pin?.ts) || 0,
+      text: pin?.text || '',
+      sender: pin?.sender || '',
+    }))
+    .sort((a, b) => b.ts - a.ts);
+}
+
+/** Перерисовать плашку закрепа (показываем один, клик листает по кругу). */
+function renderPinBar() {
+  const pins = sortedPins();
+  if (!pins.length) {
+    dom.pinBar.classList.add('hidden');
+    dom.pinBarTitle.textContent = '';
+    dom.pinBarText.textContent = '';
+    dom.pinBarCount.textContent = '';
+    return;
+  }
+
+  state.pinIndex = ((state.pinIndex % pins.length) + pins.length) % pins.length;
+  const pin = pins[state.pinIndex];
+
+  dom.pinBar.classList.remove('hidden');
+  dom.pinBarTitle.textContent = pin.sender ? getSenderName(pin.sender) : 'Закреплённое сообщение';
+  dom.pinBarText.textContent = pin.text || 'Без текста';
+  dom.pinBarCount.textContent = `${state.pinIndex + 1}/${pins.length}`;
+
+  hydrateUsers(pins.map((item) => item.sender).filter(Boolean));
+}
+
+/** Клик по плашке: перейти к текущему закрепу и показать следующий. */
+function cyclePin() {
+  const pins = sortedPins();
+  if (!pins.length) return;
+
+  const pin = pins[state.pinIndex % pins.length];
+  if (!flashMessage(pin.msgId)) toast('Сообщение не подгружено в историю');
+
+  state.pinIndex = (state.pinIndex + 1) % pins.length;
+  renderPinBar();
 }
 
 /* ============================================================
@@ -925,16 +1143,28 @@ function startSubscriptions() {
     handleUserChatsUpdate,
     () => toast('Не удалось загрузить список чатов', 'error'),
   );
+  state.subscriptions.messageDeletes = Chat.subscribeToUserMessageDeletes(
+    state.user.uid,
+    (map) => {
+      state.localDeleted = new Set();
+      for (const [chatId, msgs] of Object.entries(map)) {
+        for (const msgId of Object.keys(msgs || {})) state.localDeleted.add(`${chatId}/${msgId}`);
+      }
+      if (state.activeChatId) renderMessages();
+    },
+  );
 }
 
 /** Снять все подписки и очистить состояние (при выходе). */
 function teardownSubscriptions() {
   state.subscriptions.userChats?.();
   state.subscriptions.messages?.();
+  state.subscriptions.messageDeletes?.();
   for (const unsubscribe of state.subscriptions.chatMeta.values()) unsubscribe();
 
   state.subscriptions.userChats = null;
   state.subscriptions.messages = null;
+  state.subscriptions.messageDeletes = null;
   state.subscriptions.chatMeta.clear();
   state.chats.clear();
   state.myChatIds = new Set();
@@ -943,6 +1173,9 @@ function teardownSubscriptions() {
   state.stickToBottom = true;
   state.channelPreview = null;
   state.blocked = new Set();
+  state.localDeleted = new Set();
+  closeMsgMenu();
+  cancelComposerMode();
 
   exitSearchMode();
   dom.chatList.innerHTML = '';
@@ -1438,8 +1671,37 @@ function toast(message, type = 'info') {
 }
 
 /* ============================================================
- *  Отправка сообщений
+ *  Отправка, ответ и редактирование сообщений
  * ============================================================ */
+
+/** Плашка над полем ввода: обычный режим / «ответ» / «редактирование». */
+function setComposerMode(mode) {
+  state.composerMode = mode;
+
+  if (!mode) {
+    dom.composerContext.classList.add('hidden');
+    dom.messageInput.value = '';
+    return;
+  }
+
+  dom.composerContext.classList.remove('hidden');
+  if (mode.type === 'edit') {
+    dom.composerContextTitle.textContent = 'Редактирование';
+    dom.messageInput.value = mode.message.text || '';
+  } else {
+    dom.composerContextTitle.textContent = `Ответ ${getSenderName(mode.message.sender)}`;
+    dom.messageInput.value = '';
+  }
+  dom.composerContextText.textContent = Chat.messageSnippet(mode.message.text, 90);
+  dom.messageInput.focus();
+}
+
+/** Сбросить режим ответа/правки (например, при смене чата). */
+function cancelComposerMode() {
+  state.composerMode = null;
+  dom.composerContext.classList.add('hidden');
+  dom.messageInput.value = '';
+}
 
 async function handleSendMessage(event) {
   event.preventDefault();
@@ -1451,19 +1713,294 @@ async function handleSendMessage(event) {
   const chat = state.chats.get(state.activeChatId);
   if (!Chat.canPostToChat(chat, state.user.uid)) return;
 
+  const mode = state.composerMode;
+
   // Оптимистично очищаем поле; при ошибке вернём текст обратно.
   dom.messageInput.value = '';
+  dom.composerContext.classList.add('hidden');
+  state.composerMode = null;
   state.stickToBottom = true;
 
   try {
-    await Chat.sendMessage(state.activeChatId, state.user.uid, text);
+    if (mode?.type === 'edit') {
+      await Chat.editMessage(state.activeChatId, mode.message.id, state.user.uid, text);
+    } else if (mode?.type === 'reply') {
+      await Chat.sendMessage(state.activeChatId, state.user.uid, text, {
+        replyTo: {
+          msgId: mode.message.id,
+          sender: mode.message.sender,
+          text: Chat.messageSnippet(mode.message.text),
+        },
+      });
+    } else {
+      await Chat.sendMessage(state.activeChatId, state.user.uid, text);
+    }
   } catch (error) {
     console.error(error);
-    toast('Не удалось отправить сообщение', 'error');
+    toast(mode?.type === 'edit' ? 'Не удалось изменить сообщение' : 'Не удалось отправить сообщение', 'error');
     dom.messageInput.value = text;
+    if (mode) {
+      state.composerMode = mode;
+      dom.composerContext.classList.remove('hidden');
+    }
   }
 
   dom.messageInput.focus();
+}
+
+/* ============================================================
+ *  Меню сообщения: реакции, ответ, правка, пересылка, закреп
+ * ============================================================ */
+
+/** Поставить/снять реакцию (из меню или кликом по пилюле под сообщением). */
+async function toggleReaction(message, emoji) {
+  if (!state.activeChatId || !state.user) return;
+  const mine = Boolean(message.reactions?.[emoji]?.[state.user.uid]);
+  try {
+    await Chat.setReaction(state.activeChatId, message.id, emoji, state.user.uid, !mine);
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось поставить реакцию', 'error');
+  }
+}
+
+/** Позиционировать меню сообщения в границах окна. */
+function positionMsgMenu() {
+  const { x = 0, y = 0 } = state.msgMenuPos || {};
+  const rect = dom.msgMenu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+  dom.msgMenu.style.left = `${left}px`;
+  dom.msgMenu.style.top = `${top}px`;
+}
+
+/** Открыть меню сообщения рядом с точкой (x, y). */
+function openMsgMenu(message, x, y) {
+  if (!message || !state.activeChatId) return;
+  state.msgMenuMessage = message;
+  state.msgMenuPos = { x, y };
+  state.msgMenuExpanded = false;
+
+  renderMsgMenuReactions(message);
+  renderMsgMenuActions(message);
+
+  dom.msgMenuAll.classList.add('hidden');
+  dom.msgMenuMore.classList.remove('expanded');
+  dom.msgMenuOverlay.classList.remove('hidden');
+  positionMsgMenu();
+}
+
+/** Закрыть меню сообщения. */
+function closeMsgMenu() {
+  dom.msgMenuOverlay.classList.add('hidden');
+  state.msgMenuMessage = null;
+}
+
+/** Кнопка-эмодзи для меню. */
+function buildReactionButton(message, emoji) {
+  const btn = createEl('button', 'msg-reaction-btn', emoji);
+  btn.type = 'button';
+  if (message.reactions?.[emoji]?.[state.user?.uid]) btn.classList.add('active');
+  btn.addEventListener('click', () => {
+    closeMsgMenu();
+    toggleReaction(message, emoji);
+  });
+  return btn;
+}
+
+/** Ряд из шести быстрых реакций + полный набор под стрелочкой. */
+function renderMsgMenuReactions(message) {
+  dom.msgMenuReactions.innerHTML = '';
+  REACTIONS_TOP.forEach((emoji) => dom.msgMenuReactions.append(buildReactionButton(message, emoji)));
+
+  dom.msgMenuAll.innerHTML = '';
+  REACTIONS_ALL.forEach((emoji) => dom.msgMenuAll.append(buildReactionButton(message, emoji)));
+}
+
+/** Действия в меню сообщения: ответ, правка, копия, пересылка, закреп, удаление. */
+function renderMsgMenuActions(message) {
+  const chat = state.chats.get(state.activeChatId) || null;
+  const own = message.sender === state.user?.uid;
+  const canPost = Chat.canPostToChat(chat, state.user?.uid);
+  const pinned = Boolean(chat?.pinned?.[message.id]);
+
+  dom.msgMenuActions.innerHTML = '';
+  const add = (label, handler, className = 'msg-menu-action') => {
+    const btn = createEl('button', className, label);
+    btn.type = 'button';
+    btn.addEventListener('click', handler);
+    dom.msgMenuActions.append(btn);
+    return btn;
+  };
+
+  if (canPost) {
+    add('Ответить', () => {
+      closeMsgMenu();
+      setComposerMode({ type: 'reply', message });
+    });
+  }
+  if (own) {
+    add('Изменить', () => {
+      closeMsgMenu();
+      setComposerMode({ type: 'edit', message });
+    });
+  }
+  add('Копировать', () => {
+    closeMsgMenu();
+    copyMessageText(message);
+  });
+  add('Переслать', () => {
+    closeMsgMenu();
+    openForwardModal(message);
+  });
+  if (canPost) {
+    add(pinned ? 'Открепить' : 'Закрепить', async () => {
+      closeMsgMenu();
+      try {
+        await Chat.setPinned(state.activeChatId, message.id, !pinned, message);
+        toast(pinned ? 'Закреп снят' : 'Сообщение закреплено');
+      } catch (error) {
+        console.error(error);
+        toast('Не удалось обновить закреп', 'error');
+      }
+    });
+  }
+  add('Удалить', () => {
+    closeMsgMenu();
+    requestDeleteMessage(message);
+  }, 'msg-menu-action danger');
+}
+
+/** Скопировать текст сообщения в буфер обмена (с запасным способом). */
+async function copyMessageText(message) {
+  const text = message.text || '';
+  let copied = false;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    }
+  } catch (error) {
+    console.error(error);
+  }
+
+  if (!copied) {
+    try {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.append(area);
+      area.select();
+      copied = document.execCommand('copy');
+      area.remove();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  toast(copied ? 'Скопировано' : 'Не удалось скопировать', copied ? 'success' : 'error');
+}
+
+/** Удаление: чужое — сразу «у меня», своё — с выбором «у всех / только у меня». */
+function requestDeleteMessage(message) {
+  if (message.sender !== state.user?.uid) {
+    removeMessageLocally(message);
+    return;
+  }
+  state.pendingDeleteMessage = message;
+  dom.deleteChoiceOverlay.classList.remove('hidden');
+}
+
+/** Закрыть диалог выбора удаления. */
+function closeDeleteChoice() {
+  dom.deleteChoiceOverlay.classList.add('hidden');
+  state.pendingDeleteMessage = null;
+}
+
+/** «Удалить у меня»: сообщение исчезает только у текущего пользователя. */
+async function removeMessageLocally(message) {
+  if (!state.activeChatId || !state.user) return;
+  try {
+    await Chat.deleteMessageLocally(state.user.uid, state.activeChatId, message.id);
+    toast('Сообщение удалено у вас');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось удалить сообщение', 'error');
+  }
+}
+
+/** «Удалить у всех»: настоящее удаление своего сообщения из БД. */
+async function removeMessageForEveryone(message) {
+  if (!state.activeChatId || !state.user) return;
+  try {
+    await Chat.deleteMessage(state.activeChatId, message.id, state.user.uid);
+    toast('Сообщение удалено у всех');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось удалить сообщение', 'error');
+  }
+}
+
+/* --- Пересылка сообщения --- */
+
+/** Открыть окно выбора чата для пересылки. */
+function openForwardModal(message) {
+  state.forwardMessage = message;
+
+  const targets = sortedChats().filter(([chatId, chat]) => (
+    chatId !== state.activeChatId && Chat.canPostToChat(chat, state.user?.uid)
+  ));
+
+  dom.forwardList.innerHTML = '';
+  dom.forwardEmpty.classList.toggle('hidden', targets.length > 0);
+
+  for (const [chatId, chat] of targets) {
+    const item = createEl('div', 'chat-item');
+    item.dataset.chatId = chatId;
+    item.tabIndex = 0;
+
+    const avatar = createEl('div', 'avatar');
+    applyChatAvatar(avatar, chatId, chat);
+
+    const body = createEl('div', 'chat-item-body');
+    const top = createEl('div', 'chat-item-top');
+    top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
+    const bottom = createEl('div', 'chat-item-bottom');
+    const kind = chat.type === 'channel' ? 'Канал' : chat.type === 'group' ? 'Группа' : 'Личный чат';
+    bottom.append(createEl('span', 'chat-item-preview', kind));
+    body.append(top, bottom);
+
+    item.append(avatar, body);
+    item.addEventListener('click', () => forwardMessageTo(chatId));
+    dom.forwardList.append(item);
+  }
+
+  dom.forwardOverlay.classList.remove('hidden');
+}
+
+/** Закрыть окно пересылки. */
+function closeForwardModal() {
+  dom.forwardOverlay.classList.add('hidden');
+  state.forwardMessage = null;
+}
+
+/** Переслать выбранное сообщение в чат chatId. */
+async function forwardMessageTo(chatId) {
+  const message = state.forwardMessage;
+  if (!message || !state.user) return;
+  closeForwardModal();
+
+  try {
+    await Chat.sendMessage(chatId, state.user.uid, message.text, {
+      forwardedFrom: { uid: message.sender, name: getSenderName(message.sender) },
+    });
+    toast('Переслано', 'success');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось переслать сообщение', 'error');
+  }
 }
 
 /* ============================================================
@@ -1932,6 +2469,18 @@ dom.settingsDelete.addEventListener('click', async () => {
 // --- Escape закрывает верхнюю открытую модалку ---
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (!dom.msgMenuOverlay.classList.contains('hidden')) {
+    closeMsgMenu();
+    return;
+  }
+  if (!dom.deleteChoiceOverlay.classList.contains('hidden')) {
+    closeDeleteChoice();
+    return;
+  }
+  if (!dom.forwardOverlay.classList.contains('hidden')) {
+    closeForwardModal();
+    return;
+  }
   if (!dom.chatMenuOverlay.classList.contains('hidden')) {
     closeChatMenu();
     return;
@@ -1996,6 +2545,56 @@ dom.chatMenuBtn.addEventListener('click', openChatMenu);
 dom.chatMenuClose.addEventListener('click', closeChatMenu);
 dom.chatMenuOverlay.addEventListener('click', (event) => {
   if (event.target === dom.chatMenuOverlay) closeChatMenu();
+});
+
+// Меню сообщения: ПКМ / долгое нажатие; стрелочка раскрывает все реакции.
+dom.msgMenuOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.msgMenuOverlay) closeMsgMenu();
+});
+dom.msgMenu.addEventListener('contextmenu', (event) => event.preventDefault());
+dom.msgMenuMore.addEventListener('click', () => {
+  state.msgMenuExpanded = !state.msgMenuExpanded;
+  dom.msgMenuAll.classList.toggle('hidden', !state.msgMenuExpanded);
+  dom.msgMenuMore.classList.toggle('expanded', state.msgMenuExpanded);
+  positionMsgMenu();
+});
+
+// Плашка ответа/редактирования над полем ввода.
+dom.composerContextCancel.addEventListener('click', cancelComposerMode);
+
+// Плашка закрепа: клик листает закрепы и прыгает к сообщению.
+dom.pinBar.addEventListener('click', cyclePin);
+
+// Диалог выбора «удалить у всех / только у меня».
+dom.deleteChoiceClose.addEventListener('click', closeDeleteChoice);
+dom.deleteChoiceOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.deleteChoiceOverlay) closeDeleteChoice();
+});
+dom.deleteChoiceAll.addEventListener('click', async () => {
+  const message = state.pendingDeleteMessage;
+  closeDeleteChoice();
+  if (message) await removeMessageForEveryone(message);
+});
+dom.deleteChoiceLocal.addEventListener('click', async () => {
+  const message = state.pendingDeleteMessage;
+  closeDeleteChoice();
+  if (message) await removeMessageLocally(message);
+});
+
+// Пересылка: окно выбора чата.
+dom.forwardClose.addEventListener('click', closeForwardModal);
+dom.forwardOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.forwardOverlay) closeForwardModal();
+});
+
+// ТВ-пульт и клавиатура: Enter/Space на строке чата открывают её.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const target = event.target;
+  if (target instanceof HTMLElement && target.classList.contains('chat-item')) {
+    event.preventDefault();
+    target.click();
+  }
 });
 
 // Разблокировка из плашки над композером.
