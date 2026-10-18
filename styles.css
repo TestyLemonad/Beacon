@@ -1473,12 +1473,22 @@ html[data-theme='light'] .toast.success {
   transform: translateY(-1px);
 }
 .message.own .reaction-pill {
-  background: rgba(0, 0, 0, 0.18);
-  border-color: rgba(0, 0, 0, 0.25);
+  background: rgba(34, 24, 10, 0.2);
+  border-color: rgba(34, 24, 10, 0.4);
 }
 .reaction-pill.mine {
   border-color: var(--accent);
   background: rgba(255, 184, 77, 0.22);
+}
+/* На своих (ярких) сообщениях «моя» реакция — плотная тёмная пилюля,
+   чтобы отличие от обычной было очевидным. */
+.message.own .reaction-pill.mine {
+  background: rgba(34, 24, 10, 0.85);
+  border-color: rgba(34, 24, 10, 0.95);
+  color: #ffcf8a;
+}
+.message.own .reaction-pill.mine .reaction-count {
+  color: #ffcf8a;
 }
 html[data-theme='light'] .reaction-pill {
   background: rgba(0, 0, 0, 0.05);
