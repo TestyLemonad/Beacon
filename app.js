@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=8';
-import * as Chat from './services/chat.js?v=8';
+import * as Auth from './services/auth.js?v=11';
+import * as Chat from './services/chat.js?v=11';
 
 /* ============================================================
  *  DOM
@@ -161,6 +161,8 @@ const dom = {
   prefsPrivacyToggle: $('prefs-privacy-toggle'),
   prefsArchiveBtn: $('prefs-archive-btn'),
   prefsArchiveCount: $('prefs-archive-count'),
+  prefsAdminField: $('prefs-admin-field'),
+  prefsAdminToggle: $('prefs-admin-toggle'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -244,6 +246,10 @@ const dom = {
 
   // Уведомления
   toast: $('toast'),
+
+  // Экран блокировки (бан)
+  bannedScreen: $('banned-screen'),
+  bannedLogout: $('banned-logout'),
 };
 
 /* ============================================================
@@ -285,6 +291,15 @@ const state = {
   typingMap: new Map(),     // uid -> { name, ts } в активном чате
   settings: { lastSeenPrivacy: 'all' }, // мои настройки
 
+  // Супер-админ (тестовые права) и баны
+  rootAdmins: new Set(),    // uid из /root_admins
+  bannedUsers: new Set(),   // uid из /banned_users (метки в меню чата)
+  myBan: null,              // моя запись бана { by, at } или null
+
+  // Счётчики непрочитанных сообщений: chatId -> { key, count }
+  unreadCounts: new Map(),
+  unreadFetches: new Set(),
+
   // Опросы, комментарии, просмотры (активный чат)
   pollVotes: new Map(),     // msgId -> { uid: { optionId: true } }
   chatComments: new Map(),  // postId -> { commentId: { sender, text, timestamp } }
@@ -305,6 +320,9 @@ const state = {
     userReads: null,        // /user_reads/$uid
     userSettings: null,     // /user_settings/$uid
     presence: null,         // .info/connected
+    myBan: null,            // /banned_users/$uid
+    bans: null,             // /banned_users
+    rootAdmins: null,       // /root_admins
     chatScoped: [],         // подписки активного чата (typing, голоса, комментарии…)
     chatScopedId: null,     // id чата, для которого настроены подписки chatScoped
   },
@@ -502,6 +520,51 @@ const CHAT_TYPE_ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
 };
 
+/** Векторные иконки интерфейса (24×24, штрих — currentColor). */
+const ICONS = {
+  check:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6.5 9.5 17 4 11.5"/></svg>',
+  checks:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="17.5 6.5 8 16 3 11"/><polyline points="21 9.5 14.5 16"/></svg>',
+  pin:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l-.5 5.2 2.2 3.3a1 1 0 0 1-.83 1.55H7.13a1 1 0 0 1-.83-1.55l2.2-3.3z"/><path d="M12 14v7"/></svg>',
+  archive:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v11h16V9"/><line x1="10" y1="13" x2="14" y2="13"/></svg>',
+  folder:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  eye:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  comment:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>',
+  forward:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>',
+  chart:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>',
+  ban:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  close:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
+  plus:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  back:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+};
+
+/** Собрать span с SVG-иконкой из набора ICONS. */
+function createIcon(name, className = '') {
+  const span = createEl('span', className ? `svg-icon ${className}` : 'svg-icon');
+  span.innerHTML = ICONS[name] || '';
+  return span;
+}
+
+/** Включены ли у меня админ-права: супер-админ + переключатель в настройках. */
+function adminRightsOn() {
+  const uid = state.user?.uid;
+  return Boolean(uid && state.rootAdmins.has(uid) && state.settings?.adminMode !== false);
+}
+
 /** Для личного чата — uid собеседника (все uid, кроме моего). */
 function getPrivatePeerUid(chat) {
   if (!chat || chat.type !== 'private') return null;
@@ -660,6 +723,53 @@ function visibleChats() {
   });
 }
 
+/** Ключ кэша счётчика непрочитанных: меняется при новом сообщении/прочтении. */
+function unreadKey(chatId, chat) {
+  return `${chat?.lastMessage?.timestamp || 0}:${Number(state.reads.get(chatId)) || 0}`;
+}
+
+/** Обновить значок непрочитанных в конкретном элементе списка. */
+function applyUnreadBadge(item, count) {
+  if (!item) return;
+  const bottom = item.querySelector('.chat-item-bottom');
+  if (!bottom) return;
+  const old = bottom.querySelector('.unread-dot, .unread-badge');
+
+  if (count > 0) {
+    const badge = createEl('span', 'unread-badge', count > 99 ? '99+' : String(count));
+    if (old) old.replaceWith(badge);
+    else bottom.prepend(badge);
+  } else {
+    if (old) old.remove();
+    item.classList.remove('unread');
+  }
+}
+
+/** Догрузить точный счётчик непрочитанных (с кэшем по последнему сообщению). */
+function ensureUnreadCount(item, chatId, chat) {
+  if (!state.user || !isChatUnread(chatId, chat)) return;
+
+  const key = unreadKey(chatId, chat);
+  const cached = state.unreadCounts.get(chatId);
+  if (cached && cached.key === key) {
+    applyUnreadBadge(item, cached.count);
+    return;
+  }
+
+  const fetchKey = `${chatId}:${key}`;
+  if (state.unreadFetches.has(fetchKey)) return;
+  state.unreadFetches.add(fetchKey);
+
+  Chat.countUnreadMessages(chatId, state.user.uid, Number(state.reads.get(chatId)) || 0)
+    .then((count) => {
+      state.unreadCounts.set(chatId, { key, count });
+      document.querySelectorAll(`.chat-item[data-chat-id="${CSS.escape(chatId)}"]`)
+        .forEach((el) => applyUnreadBadge(el, count));
+    })
+    .catch((error) => console.error('Не удалось посчитать непрочитанные:', error))
+    .finally(() => state.unreadFetches.delete(fetchKey));
+}
+
 /** Элемент списка чатов (используется и в сайдбаре, и в результатах поиска). */
 function buildChatListItem(tag, chatId, chat) {
   const pinned = Boolean(getChatMeta(chatId).pinnedAt);
@@ -678,7 +788,7 @@ function buildChatListItem(tag, chatId, chat) {
 
   const top = createEl('div', 'chat-item-top');
   top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
-  if (pinned) top.append(createEl('span', 'chat-pin', '📌'));
+  if (pinned) top.append(createIcon('pin', 'chat-pin'));
   if (chat.lastMessage?.timestamp) {
     top.append(createEl('span', 'chat-item-time', formatListTime(chat.lastMessage.timestamp)));
   }
@@ -718,6 +828,8 @@ function buildChatListItem(tag, chatId, chat) {
   item.addEventListener('touchend', cancelLongPress);
   item.addEventListener('touchmove', cancelLongPress, { passive: true });
   item.addEventListener('touchcancel', cancelLongPress);
+
+  if (unread) ensureUnreadCount(item, chatId, chat);
 
   return item;
 }
@@ -1360,6 +1472,7 @@ function selectChat(chatId) {
     if (chat) setupChatScoped(chatId, chat);
   }
 
+  restoreDraftIntoComposer(); // черновик этого чата — в поле ввода
   markActiveChatRead();
   renderChatList();
   renderMainPanel();
@@ -1756,7 +1869,7 @@ function buildMessageElement(message, showSender) {
   // Пересланное сообщение.
   if (message.forwardedFrom) {
     const fwd = createEl('div', 'bubble-forward');
-    fwd.append(createEl('span', 'bubble-forward-icon', '↪'));
+    fwd.append(createIcon('forward', 'bubble-forward-icon'));
     fwd.append(createEl('span', '', `Пересланное от ${message.forwardedFrom.name || 'пользователя'}`));
     bubble.append(fwd);
   }
@@ -1789,19 +1902,28 @@ function buildMessageElement(message, showSender) {
 
   // Служебная строка: закреп, «изм.», галочки/просмотры, время.
   const meta = createEl('span', 'bubble-meta');
-  if (chat?.pinned?.[message.id]) meta.append(createEl('span', 'bubble-pin', '📌'));
+  if (chat?.pinned?.[message.id]) meta.append(createIcon('pin', 'bubble-pin'));
   if (message.editedAt) meta.append(createEl('span', 'bubble-edited', 'изм.'));
 
   // Галочки прочтения в личных чатах — у своих сообщений (идея 6).
   if (own && chat?.type === 'private') {
     const read = Number(message.timestamp) <= state.peerReadTs;
-    meta.append(createEl('span', `bubble-ticks${read ? ' read' : ''}`, read ? '✓✓' : '✓'));
+    const ticks = createIcon(read ? 'checks' : 'check', 'bubble-ticks');
+    if (read) ticks.classList.add('read');
+    ticks.title = read ? 'Прочитано' : 'Отправлено';
+    meta.append(ticks);
   }
 
   // Просмотры постов канала (идея 14).
   if (chat?.type === 'channel') {
     const views = Object.keys(state.chatViews.get(message.id) || {}).length;
-    if (views > 0) meta.append(createEl('span', 'bubble-views', `👁 ${views}`));
+    if (views > 0) {
+      const viewsEl = createEl('span', 'bubble-views');
+      viewsEl.append(createIcon('eye', 'bubble-views-icon'));
+      viewsEl.append(createEl('span', '', String(views)));
+      viewsEl.title = `Просмотры: ${views}`;
+      meta.append(viewsEl);
+    }
   }
 
   meta.append(createEl('span', 'bubble-time', formatTime(message.timestamp)));
@@ -1814,7 +1936,7 @@ function buildMessageElement(message, showSender) {
     const btn = createEl('button', 'bubble-comments');
     btn.type = 'button';
     btn.title = 'Комментарии';
-    btn.append(createEl('span', '', '💬'));
+    btn.append(createIcon('comment', 'bubble-comments-icon'));
     btn.append(createEl('span', 'bubble-comments-count', String(count)));
     btn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -2008,7 +2130,11 @@ function startSubscriptions() {
     state.chatMeta = new Map(Object.entries(map || {}));
     renderChatList();
     if (!dom.archiveOverlay.classList.contains('hidden')) renderArchiveList();
-    if (!dom.chatCtxOverlay.classList.contains('hidden')) renderChatCtxMenu();
+    if (!dom.chatCtxOverlay.classList.contains('hidden')) {
+      // Если открыто подменю папок — остаёмся в нём (обновляем галочки).
+      if (!dom.chatCtxFolders.classList.contains('hidden')) renderChatCtxFolders();
+      else renderChatCtxMenu();
+    }
     dom.prefsArchiveCount.textContent = String(archivedChats().length);
   });
 
@@ -2032,6 +2158,17 @@ function startSubscriptions() {
   });
   state.subscriptions.presence = Chat.startPresence(uid);
 
+  // Супер-администраторы и баны (тестовые права модерации).
+  state.subscriptions.rootAdmins = Chat.subscribeToRootAdmins((map) => {
+    state.rootAdmins = new Set(Object.keys(map || {}).filter((key) => map[key]));
+    renderPrefsModal();
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+  });
+  state.subscriptions.bans = Chat.subscribeToBans((map) => {
+    state.bannedUsers = new Set(Object.keys(map || {}).filter((key) => map[key]));
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+  });
+
   // «Избранное» — чат с самим собой; создаётся при первом входе.
   Chat.ensureSavedChat(uid).catch((error) => console.error('Не удалось создать «Избранное»:', error));
 }
@@ -2048,6 +2185,9 @@ function teardownSubscriptions() {
   state.subscriptions.userReads?.();
   state.subscriptions.userSettings?.();
   state.subscriptions.presence?.();
+  state.subscriptions.myBan?.();
+  state.subscriptions.bans?.();
+  state.subscriptions.rootAdmins?.();
   for (const unsubscribe of state.subscriptions.chatMeta.values()) unsubscribe();
   clearChatScoped();
   clearInterval(typingTick);
@@ -2062,6 +2202,9 @@ function teardownSubscriptions() {
   state.subscriptions.userReads = null;
   state.subscriptions.userSettings = null;
   state.subscriptions.presence = null;
+  state.subscriptions.myBan = null;
+  state.subscriptions.bans = null;
+  state.subscriptions.rootAdmins = null;
   state.subscriptions.chatMeta.clear();
   state.chats.clear();
   state.myChatIds = new Set();
@@ -2076,6 +2219,11 @@ function teardownSubscriptions() {
   state.activeFolder = 'all';
   state.reads = new Map();
   state.presence = new Map();
+  state.rootAdmins = new Set();
+  state.bannedUsers = new Set();
+  state.myBan = null;
+  state.unreadCounts = new Map();
+  state.unreadFetches = new Set();
   state.msgCache = new Map();
   state.viewedMessages = new Set();
   closeMsgMenu();
@@ -2086,6 +2234,7 @@ function teardownSubscriptions() {
   closePollModal();
   closeCommentsModal();
   closeStatsModal();
+  hideBannedScreen();
 
   exitSearchMode();
   dom.chatList.innerHTML = '';
@@ -2101,6 +2250,7 @@ function showAuthScreen() {
   dom.messengerScreen.classList.add('hidden');
   dom.onboardingScreen.classList.add('hidden');
   dom.authScreen.classList.remove('hidden');
+  hideBannedScreen();
   document.body.classList.remove('chat-open');
   dom.authPassword.value = '';
   hideAuthError();
@@ -2584,6 +2734,49 @@ function toast(message, type = 'info') {
  *  Отправка, ответ и редактирование сообщений
  * ============================================================ */
 
+/* --- Черновики: localStorage, отдельный для каждого чата --- */
+
+const DRAFT_PREFIX = 'beacon-draft:';
+
+/** Ключ черновика чата в localStorage. */
+function draftKey(chatId) {
+  return `${DRAFT_PREFIX}${chatId}`;
+}
+
+/** Сохранить черновик чата (пустой текст — удаляем запись). */
+function saveDraft(chatId, value) {
+  if (!chatId) return;
+  try {
+    const text = String(value ?? '');
+    if (text.trim()) localStorage.setItem(draftKey(chatId), text);
+    else localStorage.removeItem(draftKey(chatId));
+  } catch (error) { /* приватный режим — черновик просто не сохранится */ }
+}
+
+/** Черновик чата ('' — черновика нет). */
+function loadDraft(chatId) {
+  if (!chatId) return '';
+  try {
+    return localStorage.getItem(draftKey(chatId)) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+/** Убрать черновик чата (после отправки). */
+function clearDraft(chatId) {
+  if (!chatId) return;
+  try {
+    localStorage.removeItem(draftKey(chatId));
+  } catch (error) { /* ignore */ }
+}
+
+/** Подставить черновик активного чата в поле ввода. */
+function restoreDraftIntoComposer() {
+  dom.messageInput.value = loadDraft(state.activeChatId);
+  autoGrowComposer();
+}
+
 /** Плашка над полем ввода: обычный режим / «ответ» / «редактирование». */
 function setComposerMode(mode) {
   state.composerMode = mode;
@@ -2613,7 +2806,7 @@ function cancelComposerMode() {
   state.composerMode = null;
   dom.composerContext.classList.add('hidden');
   dom.messageInput.value = '';
-  autoGrowComposer();
+  restoreDraftIntoComposer(); // вернуть в поле черновик чата
 }
 
 /** Авторастягивание поля ввода: от одной строки до 148 px. */
@@ -2667,6 +2860,7 @@ async function handleSendMessage(event) {
   dom.messageInput.value = '';
   autoGrowComposer();
   clearOwnTyping();
+  if (mode?.type !== 'edit') clearDraft(state.activeChatId);
   dom.composerContext.classList.add('hidden');
   state.composerMode = null;
   state.stickToBottom = true;
@@ -2690,6 +2884,7 @@ async function handleSendMessage(event) {
     toast(mode?.type === 'edit' ? 'Не удалось изменить сообщение' : 'Не удалось отправить сообщение', 'error');
     dom.messageInput.value = text;
     autoGrowComposer();
+    if (mode?.type !== 'edit') saveDraft(state.activeChatId, text);
     if (mode) {
       state.composerMode = mode;
       dom.composerContext.classList.remove('hidden');
@@ -2871,9 +3066,10 @@ async function copyMessageText(message) {
   toast(copied ? 'Скопировано' : 'Не удалось скопировать', copied ? 'success' : 'error');
 }
 
-/** Удаление: чужое — сразу «у меня», своё — с выбором «у всех / только у меня». */
+/** Удаление: своё — выбор «у всех / только у меня»; чужое — сразу «у меня» (супер-админ может удалить у всех). */
 function requestDeleteMessage(message) {
-  if (message.sender !== state.user?.uid) {
+  const own = message.sender === state.user?.uid;
+  if (!own && !adminRightsOn()) {
     removeMessageLocally(message);
     return;
   }
@@ -3029,6 +3225,34 @@ async function setBlocked(peerUid, blocked) {
   }
 }
 
+/** Забанить/разбанить пользователя — супер-админ, режим тестирования. */
+async function setUserBanned(targetUid, banned) {
+  if (!targetUid || !state.user) return;
+  const name = getSenderName(targetUid);
+
+  if (banned && !window.confirm(`Забанить ${name}? Пользователь не сможет пользоваться мессенджером.`)) return;
+
+  try {
+    if (banned) await Chat.banUser(targetUid, state.user.uid);
+    else await Chat.unbanUser(targetUid);
+    toast(banned ? `${name} забанен` : `${name} разбанен`);
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось изменить бан', 'error');
+  }
+}
+
+/** Показать экран блокировки (бан). */
+function showBannedScreen() {
+  dom.bannedScreen.classList.remove('hidden');
+}
+
+/** Скрыть экран блокировки. */
+function hideBannedScreen() {
+  dom.bannedScreen.classList.add('hidden');
+}
+
 /** Список заблокированных в модальном окне. */
 function renderBlockedList() {
   const uids = [...state.blocked];
@@ -3117,10 +3341,12 @@ function closeChatMenu() {
   dom.chatMenuOverlay.classList.add('hidden');
 }
 
-/** Кнопка-действие в меню чата. */
-function addChatMenuAction(label, onClick) {
-  const btn = createEl('button', 'btn ghost menu-action', label);
+/** Кнопка-действие в меню чата (опционально с SVG-иконкой). */
+function addChatMenuAction(label, onClick, iconName = null) {
+  const btn = createEl('button', 'btn ghost menu-action');
   btn.type = 'button';
+  if (iconName) btn.append(createIcon(iconName, 'menu-action-icon'));
+  btn.append(document.createTextNode(label));
   btn.addEventListener('click', onClick);
   dom.chatMenuActions.append(btn);
   return btn;
@@ -3159,6 +3385,7 @@ function renderChatMenu() {
 
   // Кнопки действий.
   dom.chatMenuActions.innerHTML = '';
+  const rootAdmin = adminRightsOn();
 
   if (chat.type === 'private') {
     if (peerUid) {
@@ -3166,8 +3393,16 @@ function renderChatMenu() {
       addChatMenuAction(blocked ? 'Разблокировать' : 'Заблокировать', () => {
         setBlocked(peerUid, !blocked);
       });
+
+      // Бан пользователя: только супер-админ с включёнными админ-правами.
+      if (rootAdmin && peerUid !== myUid) {
+        const banned = state.bannedUsers.has(peerUid);
+        addChatMenuAction(banned ? 'Разбанить пользователя' : 'Забанить пользователя', () => {
+          setUserBanned(peerUid, !banned);
+        }, 'ban');
+      }
     }
-  } else if (isOwner) {
+  } else if (isOwner || rootAdmin) {
     addChatMenuAction('Настройки', () => {
       closeChatMenu();
       openSettingsModal();
@@ -3177,12 +3412,12 @@ function renderChatMenu() {
     addChatMenuAction('Отписаться от канала', unsubscribeFromActiveChannel);
   }
 
-  // Статистика канала — только для администраторов (идея 14).
-  if (chat.type === 'channel' && chat.admins?.[myUid]) {
-    addChatMenuAction('📊 Статистика канала', () => {
+  // Статистика канала — администраторам канала и супер-админу (идея 14).
+  if (chat.type === 'channel' && (chat.admins?.[myUid] || rootAdmin)) {
+    addChatMenuAction('Статистика канала', () => {
       closeChatMenu();
       openStatsModal();
-    });
+    }, 'chart');
   }
 
   // Участники группы либо администраторы канала.
@@ -3292,14 +3527,17 @@ function renderChatCtxMenu() {
   const meta = getChatMeta(chatId);
   dom.chatCtxActions.innerHTML = '';
 
-  const addAction = (label, handler) => {
-    const btn = createEl('button', 'ctx-action', label);
+  const addAction = (icon, label, handler) => {
+    const btn = createEl('button', 'ctx-action');
     btn.type = 'button';
+    if (icon) btn.append(createIcon(icon, 'ctx-icon'));
+    btn.append(createEl('span', 'ctx-label', label));
     btn.addEventListener('click', handler);
     dom.chatCtxActions.append(btn);
+    return btn;
   };
 
-  addAction(`📌 ${meta.pinnedAt ? 'Открепить' : 'Закрепить'}`, async () => {
+  addAction('pin', meta.pinnedAt ? 'Открепить' : 'Закрепить', async () => {
     closeChatCtxMenu();
     try {
       await Chat.setChatPinned(state.user.uid, chatId, !meta.pinnedAt);
@@ -3310,7 +3548,7 @@ function renderChatCtxMenu() {
     }
   });
 
-  addAction(`🗄 ${meta.archived ? 'Вернуть из архива' : 'Архивировать'}`, async () => {
+  addAction('archive', meta.archived ? 'Вернуть из архива' : 'Архивировать', async () => {
     closeChatCtxMenu();
     try {
       await Chat.setChatArchived(state.user.uid, chatId, !meta.archived);
@@ -3321,30 +3559,64 @@ function renderChatCtxMenu() {
     }
   });
 
-  dom.chatCtxFolders.classList.remove('hidden');
-  renderChatCtxFolders();
+  addAction('folder', 'Переместить в папку', openChatCtxFolders);
+
+  // Основной вид — действия; папки открываются кнопкой «Переместить в папку».
+  dom.chatCtxActions.classList.remove('hidden');
+  dom.chatCtxFolders.classList.add('hidden');
   positionChatCtxMenu();
 }
 
-/** Список папок в меню чата: отметки и создание новой папки. */
+/** Показать подменю «Переместить в папку». */
+function openChatCtxFolders() {
+  dom.chatCtxActions.classList.add('hidden');
+  dom.chatCtxFolders.classList.remove('hidden');
+  renderChatCtxFolders();
+}
+
+/** Вернуться к списку действий меню. */
+function closeChatCtxFolders() {
+  dom.chatCtxFolders.classList.add('hidden');
+  dom.chatCtxActions.classList.remove('hidden');
+  positionChatCtxMenu();
+}
+
+/** Список папок в меню чата: отметки, удаление папки и создание новой. */
 function renderChatCtxFolders() {
   const chatId = state.chatCtxChatId;
   if (!chatId) return;
 
   const meta = getChatMeta(chatId);
   dom.chatCtxFolders.innerHTML = '';
-  dom.chatCtxFolders.append(createEl('div', 'ctx-title', 'Переместить в папку'));
+
+  // Шапка подменю: кнопка «Назад» + заголовок.
+  const head = createEl('div', 'ctx-subhead');
+  const backBtn = createEl('button', 'ctx-back-btn');
+  backBtn.type = 'button';
+  backBtn.title = 'Назад';
+  backBtn.append(createIcon('back'));
+  backBtn.addEventListener('click', closeChatCtxFolders);
+  head.append(backBtn, createEl('span', 'ctx-title', 'Переместить в папку'));
+  dom.chatCtxFolders.append(head);
 
   const folders = [...state.folders.entries()].sort((a, b) => (
     (Number(a[1]?.createdAt) || 0) - (Number(b[1]?.createdAt) || 0)
   ));
 
+  if (!folders.length) {
+    dom.chatCtxFolders.append(createEl('div', 'ctx-empty', 'Папок пока нет — создайте первую ниже.'));
+  }
+
   for (const [folderId, folder] of folders) {
     const member = Boolean(meta.folders?.[folderId]);
-    const btn = createEl('button', 'ctx-action');
+    const row = createEl('div', 'ctx-folder-row');
+
+    const btn = createEl('button', `ctx-action${member ? ' ctx-action-active' : ''}`);
     btn.type = 'button';
-    btn.append(createEl('span', 'ctx-check', member ? '✓' : ''));
-    btn.append(createEl('span', '', folder?.name || 'Папка'));
+    const check = createEl('span', 'ctx-check');
+    if (member) check.append(createIcon('check'));
+    btn.append(check);
+    btn.append(createEl('span', 'ctx-label', folder?.name || 'Папка'));
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
@@ -3356,7 +3628,18 @@ function renderChatCtxFolders() {
       }
       // Подписка на папки перерисует меню (если оно ещё открыто).
     });
-    dom.chatCtxFolders.append(btn);
+
+    const del = createEl('button', 'ctx-folder-del');
+    del.type = 'button';
+    del.title = 'Удалить папку';
+    del.append(createIcon('trash'));
+    del.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deleteFolderWithConfirm(folderId, folder?.name || 'Папка');
+    });
+
+    row.append(btn, del);
+    dom.chatCtxFolders.append(row);
   }
 
   // Создание новой папки и сразу добавление в неё чата.
@@ -3402,6 +3685,18 @@ function renderChatCtxFolders() {
   positionChatCtxMenu();
 }
 
+/** Удалить папку после подтверждения (чат остаётся в «Все чаты»). */
+async function deleteFolderWithConfirm(folderId, name) {
+  if (!window.confirm(`Удалить папку «${name}»? Чаты из неё останутся в «Все чаты».`)) return;
+  try {
+    await Chat.deleteUserFolder(state.user.uid, folderId);
+    toast(`Папка «${name}» удалена`);
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось удалить папку', 'error');
+  }
+}
+
 /* ============================================================
  *  Настройки пользователя (клик по логотипу): тема, приватность, архив
  * ============================================================ */
@@ -3428,6 +3723,11 @@ function renderPrefsModal() {
   });
 
   dom.prefsArchiveCount.textContent = String(archivedChats().length);
+
+  // Админ-права: поле видно только супер-администраторам.
+  const isRoot = Boolean(state.user && state.rootAdmins.has(state.user.uid));
+  dom.prefsAdminField.classList.toggle('hidden', !isRoot);
+  dom.prefsAdminToggle.checked = isRoot && state.settings?.adminMode !== false;
 }
 
 /** Переключить тему оформления (тёмная по умолчанию). */
@@ -3496,9 +3796,10 @@ function addPollOptionRow(value = '') {
   input.maxLength = 100;
   input.value = value;
 
-  const remove = createEl('button', 'poll-option-remove', '✕');
+  const remove = createEl('button', 'poll-option-remove');
   remove.type = 'button';
   remove.title = 'Удалить вариант';
+  remove.append(createIcon('close'));
   remove.addEventListener('click', () => {
     if (dom.pollOptions.children.length <= 2) {
       toast('Нужно минимум два варианта');
@@ -3632,14 +3933,15 @@ function renderComments(map) {
 
     item.append(avatar, body);
 
-    if (comment.sender === state.user?.uid) {
-      const del = createEl('button', 'comment-delete', '✕');
+    if (comment.sender === state.user?.uid || adminRightsOn()) {
+      const del = createEl('button', 'comment-delete');
       del.type = 'button';
       del.title = 'Удалить комментарий';
+      del.append(createIcon('close'));
       del.addEventListener('click', async () => {
         del.disabled = true;
         try {
-          await Chat.deleteComment(state.commentsPost.chatId, state.commentsPost.msgId, comment.id);
+          await Chat.deleteComment(state.commentsPost.chatId, state.commentsPost.msgId, comment.id, state.user.uid);
         } catch (error) {
           console.error(error);
           toast('Не удалось удалить комментарий', 'error');
@@ -3864,6 +4166,23 @@ dom.logoutBtn.addEventListener('click', () => {
   });
 });
 
+// Полоса папок: колесо мыши прокручивает её по горизонтали.
+dom.foldersBar.addEventListener('wheel', (event) => {
+  const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+  if (!delta) return;
+  const before = dom.foldersBar.scrollLeft;
+  dom.foldersBar.scrollLeft = before + delta;
+  if (dom.foldersBar.scrollLeft !== before) event.preventDefault();
+}, { passive: false });
+
+// Экран блокировки (бан): выход из аккаунта.
+dom.bannedLogout.addEventListener('click', () => {
+  Auth.logout().catch((error) => {
+    console.error(error);
+    toast('Не удалось выйти из аккаунта', 'error');
+  });
+});
+
 // --- Настройки (клик по логотипу): тема, приватность визита, архив ---
 dom.settingsBtn.addEventListener('click', openPrefsModal);
 dom.prefsClose.addEventListener('click', closePrefsModal);
@@ -3891,6 +4210,19 @@ dom.prefsPrivacyToggle.addEventListener('click', async (event) => {
 dom.prefsArchiveBtn.addEventListener('click', () => {
   closePrefsModal();
   openArchiveModal();
+});
+dom.prefsAdminToggle.addEventListener('change', async () => {
+  if (!state.user) return;
+  const enabled = dom.prefsAdminToggle.checked;
+  try {
+    await Chat.setAdminMode(state.user.uid, enabled);
+    state.settings.adminMode = enabled;
+    toast(enabled ? 'Админ-права включены' : 'Админ-права выключены');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось изменить админ-права', 'error');
+    renderPrefsModal();
+  }
 });
 
 // --- Архив чатов ---
@@ -4155,6 +4487,7 @@ dom.messageInput.addEventListener('keydown', (event) => {
 dom.messageInput.addEventListener('input', () => {
   autoGrowComposer();
   if (dom.messageInput.value.trim()) notifyTyping();
+  if (!state.composerMode) saveDraft(state.activeChatId, dom.messageInput.value);
 });
 dom.messageInput.addEventListener('paste', () => {
   window.setTimeout(autoGrowComposer, 0);
@@ -4290,7 +4623,24 @@ Auth.watchAuthState(async (user) => {
 
   if (state.user !== user) return; // пользователь успел выйти, пока грузили
 
-  // Профиль ещё не заполнен — показываем онбординг.
+  // Бан администратором: состояние + живая подписка
+  // (снятие бана возвращает пользователя в мессенджер).
+  state.subscriptions.myBan?.();
+  state.myBan = await Chat.getBan(user.uid).catch(() => null);
+  if (state.user !== user) return;
+  state.subscriptions.myBan = Chat.subscribeToMyBan(user.uid, (record) => {
+    const wasBanned = Boolean(state.myBan);
+    state.myBan = record;
+    if (record) {
+      showBannedScreen();
+    } else {
+      hideBannedScreen();
+      if (wasBanned && state.user && Chat.isProfileComplete(state.profile)) enterMessenger();
+    }
+  });
+
+  // Профиль ещё не заполнен — онбординг; забанен — экран блокировки.
   if (!Chat.isProfileComplete(state.profile)) showOnboardingScreen();
+  else if (state.myBan) showBannedScreen();
   else enterMessenger();
 });

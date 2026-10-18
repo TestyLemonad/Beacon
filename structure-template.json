@@ -240,7 +240,7 @@
   },
 
   "user_settings": {
-    "user1_id": { "lastSeenPrivacy": "all" },
+    "user1_id": { "lastSeenPrivacy": "all", "adminMode": true },
     "user2_id": { "lastSeenPrivacy": "nobody" }
   },
 
@@ -314,5 +314,13 @@
     "user1_id": {
       "folder_1": { "name": "Смена", "createdAt": 1728724350 }
     }
+  },
+
+  "root_admins": {
+    "user1_id": true
+  },
+
+  "banned_users": {
+    "user3_id": { "by": "user1_id", "at": 1728724600 }
   }
 }

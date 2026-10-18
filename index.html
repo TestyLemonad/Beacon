@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=8" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -617,6 +617,16 @@
           <p class="field-hint">Если скрыт, собеседники не увидят, когда вы были в сети.</p>
         </div>
 
+        <!-- Админ-права: видны только супер-администраторам -->
+        <div class="field hidden" id="prefs-admin-field">
+          <label>Админ-права</label>
+          <label class="check-row">
+            <input type="checkbox" id="prefs-admin-toggle" />
+            <span>Включены (режим тестирования)</span>
+          </label>
+          <p class="field-hint">Позволяют банить пользователей и удалять чужие чаты, сообщения и комментарии. Выключите переключатель, чтобы проверить мессенджер как обычный пользователь.</p>
+        </div>
+
         <div class="field">
           <label>Архив</label>
           <button id="prefs-archive-btn" class="btn ghost full" type="button">
@@ -714,10 +724,25 @@
     </div>
   </div>
 
+  <!-- Экран блокировки: аккаунт забанен администратором -->
+  <div id="banned-screen" class="banned-screen hidden">
+    <div class="banned-card">
+      <div class="banned-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+        </svg>
+      </div>
+      <h2>Доступ ограничен</h2>
+      <p>Ваш аккаунт заблокирован администратором.<br />Если это ошибка — свяжитесь с поддержкой.</p>
+      <button id="banned-logout" class="btn ghost" type="button">Выйти из аккаунта</button>
+    </div>
+  </div>
+
   <!-- Всплывающие уведомления -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

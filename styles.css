@@ -742,6 +742,10 @@ textarea:-webkit-autofill {
 .modal {
   width: 100%;
   max-width: 440px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1406,8 +1410,9 @@ html[data-theme='light'] .toast.success {
   font-weight: 600;
   opacity: 0.85;
 }
-.bubble-forward-icon {
-  font-size: 13px;
+.bubble-forward-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .bubble-reply {
@@ -1451,8 +1456,9 @@ html[data-theme='light'] .toast.success {
   opacity: 1;
   align-self: auto;
 }
-.bubble-pin {
-  font-size: 10px;
+.bubble-pin svg {
+  width: 12px;
+  height: 12px;
 }
 .bubble-edited {
   font-size: 10px;
@@ -2052,12 +2058,25 @@ textarea:focus-visible {
   transform: scale(0.96);
 }
 
+/* Векторные иконки: контейнер выравнивает SVG по строке */
+.svg-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.svg-icon svg {
+  display: block;
+}
+
 /* Папки чатов: полоса под поиском, первая — «Все чаты» */
 .folders-bar {
   display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   padding: 0 16px 10px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 .folders-bar::-webkit-scrollbar {
@@ -2090,9 +2109,14 @@ textarea:focus-visible {
   font-weight: 600;
 }
 .chat-pin {
-  font-size: 11px;
+  display: inline-flex;
   margin-left: 6px;
-  opacity: 0.85;
+  color: var(--accent-text);
+  opacity: 0.9;
+}
+.chat-pin svg {
+  width: 13px;
+  height: 13px;
 }
 .chat-item.unread .chat-item-title {
   font-weight: 700;
@@ -2107,12 +2131,29 @@ textarea:focus-visible {
   background: var(--accent);
   flex-shrink: 0;
 }
+.unread-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
 
 /* Галочки прочтения и просмотры под сообщением */
 .bubble-ticks {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-muted);
-  letter-spacing: -1px;
+}
+.bubble-ticks svg {
+  width: 15px;
+  height: 15px;
 }
 .bubble-ticks.read {
   color: var(--accent-text);
@@ -2124,8 +2165,15 @@ textarea:focus-visible {
   color: var(--accent-contrast);
 }
 .bubble-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   color: var(--text-muted);
+}
+.bubble-views svg {
+  width: 13px;
+  height: 13px;
 }
 .message.own .bubble-views {
   color: rgba(34, 24, 10, 0.6);
@@ -2262,6 +2310,10 @@ textarea:focus-visible {
 .bubble-comments-count {
   font-weight: 700;
 }
+.bubble-comments svg {
+  width: 13px;
+  height: 13px;
+}
 .message.own .bubble-comments {
   border-color: rgba(34, 24, 10, 0.3);
   background: rgba(34, 24, 10, 0.08);
@@ -2303,6 +2355,10 @@ textarea:focus-visible {
   z-index: 58;
   min-width: 214px;
   max-width: 280px;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 14px;
   background: var(--bg-elevated);
@@ -2335,9 +2391,16 @@ textarea:focus-visible {
   background: var(--bg-hover);
 }
 .ctx-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 16px;
-  text-align: center;
+  flex-shrink: 0;
   color: var(--accent-text);
+}
+.ctx-check svg {
+  width: 13px;
+  height: 13px;
 }
 .ctx-divider {
   height: 1px;
@@ -2376,6 +2439,87 @@ textarea:focus-visible {
   color: var(--text);
 }
 
+/* Подменю «Переместить в папку»: шапка, строки, удаление папки */
+.ctx-subhead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 2px 4px;
+}
+.ctx-subhead .ctx-title {
+  padding: 0;
+}
+.ctx-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ctx-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ctx-back-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.ctx-icon {
+  color: var(--text-muted);
+}
+.ctx-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.ctx-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctx-action-active .ctx-label {
+  color: var(--accent-text);
+}
+.ctx-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ctx-folder-row .ctx-action {
+  flex: 1;
+  min-width: 0;
+}
+.ctx-folder-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.75;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+.ctx-folder-del:hover {
+  background: var(--bg-hover);
+  color: var(--danger);
+  opacity: 1;
+}
+.ctx-folder-del svg {
+  width: 14px;
+  height: 14px;
+}
+.ctx-empty {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* Присутствие в меню чата */
 .chat-menu-presence {
   font-size: 13px;
@@ -2412,14 +2556,20 @@ textarea:focus-visible {
   flex: 1;
 }
 .poll-option-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
   border-radius: 8px;
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 16px;
   line-height: 1;
   transition: background 0.12s ease, color 0.12s ease;
+}
+.poll-option-remove svg {
+  width: 14px;
+  height: 14px;
 }
 .poll-option-remove:hover {
   background: var(--bg-hover);
@@ -2502,6 +2652,9 @@ textarea:focus-visible {
   word-break: break-word;
 }
 .comment-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   align-self: flex-start;
   width: 26px;
   height: 26px;
@@ -2509,6 +2662,10 @@ textarea:focus-visible {
   color: var(--text-muted);
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.comment-delete svg {
+  width: 13px;
+  height: 13px;
 }
 .comment-item:hover .comment-delete {
   opacity: 1;
@@ -2678,4 +2835,54 @@ textarea:focus-visible {
   color: var(--accent-text);
   border-radius: 3px;
   padding: 0 1px;
+}
+
+/* Иконка в кнопках меню чата (например, статистика) */
+.menu-action-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Экран блокировки (бан аккаунта) */
+.banned-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--bg);
+}
+.banned-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+  padding: 32px 28px;
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.banned-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(255, 107, 107, 0.12);
+  color: var(--danger);
+}
+.banned-card h2 {
+  font-size: 19px;
+}
+.banned-card p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
 }

@@ -17,7 +17,7 @@
  *   /user_blocks/$uid        { $blocked_uid: true }     — чёрный список
  *   /user_message_deletes/$uid/$chat_id/$msg_id  true   — «удалено у меня»
  *   /presence/$uid           { online: bool, lastSeen }  — онлайн-статусы
- *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody' }
+ *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody', adminMode?: bool }
  *   /user_reads/$uid/$chat_id   ts (unix-секунды)       — докуда дочитано
  *   /typing/$chat_id/$uid    { name, ts }               — «печатает…»
  *   /poll_votes/$chat_id/$msg_id/$uid  { $option_id: true } — голоса в опросах
@@ -26,6 +26,8 @@
  *   /user_chat_meta/$uid/$chat_id  { archived?, pinnedAt?, folders?: { $folder_id: true } }
  *   /user_folders/$uid/$folder_id  { name, createdAt }  — папки чатов
  *   /chats/saved_$uid        { type: 'saved', owner, users } — «Избранное»
+ *   /root_admins/$uid        true                       — супер-администраторы (тестовые права)
+ *   /banned_users/$uid       { by, at }                 — забаненные пользователи
  *
  * Поля сообщения (дополнительно): poll? { question, multiple, options: [{ id, text }] },
  * savedFrom? { chatId, chatTitle, msgId, sender, text } — закладка из «Избранного».
@@ -51,7 +53,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=8';
+import { db } from '../firebase-config.js?v=11';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -580,7 +582,9 @@ export async function updateChatSettings(chatId, requesterUid, data) {
   if (chat.type !== 'group' && chat.type !== 'channel') {
     throw new Error('Настройки доступны только для групп и каналов');
   }
-  if (chat.owner !== requesterUid) throw new Error('Изменять настройки может только владелец');
+  if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
+    throw new Error('Изменять настройки может только владелец');
+  }
 
   const cleanTitle = String(data.title || '').trim();
   const cleanDescription = String(data.description || '').trim();
@@ -637,7 +641,9 @@ export async function deleteChat(chatId, requesterUid) {
   if (chat.type !== 'group' && chat.type !== 'channel') {
     throw new Error('Удалять можно только группы и каналы');
   }
-  if (chat.owner !== requesterUid) throw new Error('Удалять может только владелец');
+  if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
+    throw new Error('Удалять может только владелец');
+  }
 
   const updates = {
     [`chats/${chatId}`]: null,
@@ -764,6 +770,72 @@ export async function getBlockedUids(ownerUid) {
 }
 
 /* ============================================================
+ *  Супер-администраторы и баны (режим тестирования мессенджера)
+ * ============================================================ */
+
+/** Является ли пользователь супер-администратором: /root_admins/$uid. */
+export async function isRootAdmin(uid) {
+  if (!uid) return false;
+  const snapshot = await get(ref(db, `root_admins/${uid}`));
+  return snapshot.exists();
+}
+
+/** Подписка на список супер-администраторов: { $uid: true }. */
+export function subscribeToRootAdmins(onChange, onError = null) {
+  return onValue(
+    ref(db, 'root_admins'),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на root_admins:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Подписка на все записи банов: { $uid: { by, at } }. */
+export function subscribeToBans(onChange, onError = null) {
+  return onValue(
+    ref(db, 'banned_users'),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на banned_users:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Запись бана конкретного пользователя: /banned_users/$uid (null — не забанен). */
+export function subscribeToMyBan(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `banned_users/${uid}`),
+    (snapshot) => onChange(snapshot.val() || null),
+    (error) => {
+      console.error('Ошибка подписки на бан:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Запись бана пользователя (одноразово): { by, at } | null. */
+export async function getBan(uid) {
+  if (!uid) return null;
+  const snapshot = await get(ref(db, `banned_users/${uid}`));
+  return snapshot.val() || null;
+}
+
+/** Забанить пользователя: /banned_users/$uid = { by, at }. */
+export async function banUser(uid, byUid) {
+  if (!uid || !byUid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `banned_users/${uid}`), { by: byUid, at: serverTimestamp() });
+}
+
+/** Разбанить пользователя. */
+export async function unbanUser(uid) {
+  if (!uid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `banned_users/${uid}`), null);
+}
+
+/* ============================================================
  *  Права и отправка сообщений
  * ============================================================ */
 
@@ -860,7 +932,9 @@ export async function deleteMessage(chatId, msgId, deleterUid) {
   const snapshot = await get(ref(db, `messages/${chatId}/${msgId}`));
   const message = snapshot.val();
   if (!message) return;
-  if (message.sender !== deleterUid) throw new Error('Удалить у всех можно только свои сообщения');
+  if (message.sender !== deleterUid && !(await isRootAdmin(deleterUid))) {
+    throw new Error('Удалить у всех можно только свои сообщения');
+  }
 
   await update(ref(db), {
     [`messages/${chatId}/${msgId}`]: null,
@@ -1013,6 +1087,16 @@ export async function setLastSeenPrivacy(uid, value) {
   await set(ref(db, `user_settings/${uid}/lastSeenPrivacy`), clean);
 }
 
+/**
+ * Переключатель админ-прав для тестирования: /user_settings/$uid/adminMode.
+ * false — права приостановлены, поведение как у обычного пользователя.
+ * @returns {Promise<void>}
+ */
+export async function setAdminMode(uid, enabled) {
+  if (!uid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `user_settings/${uid}/adminMode`), enabled ? true : false);
+}
+
 /* ============================================================
  *  Индикатор «печатает…»
  * ============================================================ */
@@ -1096,6 +1180,23 @@ export function subscribeToChatReads(uid, chatId, onChange, onError = null) {
       if (onError) onError(error);
     },
   );
+}
+
+/**
+ * Сколько чужих сообщений в чате новее ts (для счётчика непрочитанных).
+ * Берём последние 100 сообщений — индексов в правилах БД не требуется.
+ * @returns {Promise<number>}
+ */
+export async function countUnreadMessages(chatId, uid, sinceTs) {
+  if (!chatId || !uid) return 0;
+  const from = Math.floor(Number(sinceTs) || 0);
+  const snapshot = await get(query(ref(db, `messages/${chatId}`), limitToLast(100)));
+  let count = 0;
+  snapshot.forEach((child) => {
+    const message = child.val() || {};
+    if (message.sender !== uid && (Number(message.timestamp) || 0) > from) count += 1;
+  });
+  return count;
 }
 
 /* ============================================================
@@ -1194,9 +1295,16 @@ export async function sendComment(chatId, postId, senderUid, text) {
   return commentId;
 }
 
-/** Удалить комментарий. */
-export async function deleteComment(chatId, postId, commentId) {
+/** Удалить комментарий (свой или любой — если requesterUid супер-админ). */
+export async function deleteComment(chatId, postId, commentId, requesterUid = null) {
   if (!chatId || !postId || !commentId) throw new Error('Некорректные параметры');
+  if (requesterUid) {
+    const snapshot = await get(ref(db, `comments/${chatId}/${postId}/${commentId}`));
+    const comment = snapshot.val();
+    if (comment && comment.sender !== requesterUid && !(await isRootAdmin(requesterUid))) {
+      throw new Error('Удалять можно только свои комментарии');
+    }
+  }
   await set(ref(db, `comments/${chatId}/${postId}/${commentId}`), null);
 }
 
@@ -1302,6 +1410,23 @@ export async function createUserFolder(uid, name) {
   const folderId = push(ref(db, `user_folders/${uid}`)).key;
   await set(ref(db, `user_folders/${uid}/${folderId}`), { name: clean, createdAt: nowSeconds() });
   return folderId;
+}
+
+/** Удалить папку и убрать её из всех чатов пользователя. */
+export async function deleteUserFolder(uid, folderId) {
+  if (!uid || !folderId) throw new Error('Некорректные параметры');
+
+  const snapshot = await get(ref(db, `user_chat_meta/${uid}`));
+  const meta = snapshot.val() || {};
+  const updates = { [`user_folders/${uid}/${folderId}`]: null };
+
+  for (const [chatId, item] of Object.entries(meta)) {
+    if (item && item.folders && item.folders[folderId]) {
+      updates[`user_chat_meta/${uid}/${chatId}/folders/${folderId}`] = null;
+    }
+  }
+
+  await update(ref(db), updates);
 }
 
 /** Подписка на папки чатов: { $folder_id: { name, createdAt } }. */
