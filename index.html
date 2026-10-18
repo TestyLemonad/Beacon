@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -119,27 +119,15 @@
     <!-- Боковая панель: профиль, поиск, список чатов -->
     <aside id="sidebar">
       <header class="sidebar-header">
-        <img src="icon.png" alt="Beacon" class="logo" />
+        <button id="settings-btn" class="logo-btn" type="button" title="Настройки" aria-label="Настройки">
+          <img src="icon.png" alt="" class="logo" />
+        </button>
         <div class="brand">
           <h1>Beacon</h1>
           <span id="current-user-name" class="current-user">…</span>
         </div>
         <button id="profile-btn" class="avatar-btn" type="button" title="Профиль" aria-label="Профиль">
           <span id="sidebar-avatar" class="avatar avatar-sm"></span>
-        </button>
-        <button id="theme-btn" class="icon-btn" type="button" title="Тёмная / светлая тема" aria-label="Переключить тему">
-          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5" />
-            <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-            <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          </svg>
         </button>
         <button id="logout-btn" class="icon-btn" type="button" title="Выйти" aria-label="Выйти">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
@@ -162,6 +150,9 @@
           <button id="search-clear" class="search-clear hidden" type="button" aria-label="Очистить">×</button>
         </div>
       </div>
+
+      <!-- Папки чатов: первая всегда «Все чаты» -->
+      <div id="folders-bar" class="folders-bar" role="tablist" aria-label="Папки чатов"></div>
 
       <div id="chat-list-wrap" class="chat-list-wrap">
         <ul id="chat-list" class="chat-list"></ul>
@@ -274,7 +265,15 @@
         </div>
 
         <form id="message-form" class="composer">
-          <input id="message-input" type="text" placeholder="Сообщение..." autocomplete="off" />
+          <button id="poll-btn" class="composer-icon-btn" type="button" title="Создать опрос" aria-label="Создать опрос">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round">
+              <line x1="6" y1="20" x2="6" y2="12" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="18" y1="20" x2="18" y2="9" />
+            </svg>
+          </button>
+          <textarea id="message-input" rows="1" placeholder="Сообщение..." autocomplete="off"></textarea>
           <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -526,6 +525,7 @@
       </div>
       <p id="chat-menu-description" class="chat-menu-description hidden"></p>
       <p id="chat-menu-username" class="chat-menu-username"></p>
+      <p id="chat-menu-presence" class="chat-menu-presence hidden"></p>
       <div id="chat-menu-actions" class="chat-menu-actions"></div>
       <div id="chat-menu-members-block" class="chat-menu-members hidden">
         <p id="chat-menu-members-title" class="chat-menu-members-title"></p>
@@ -580,10 +580,144 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       Меню чата в списке: ПКМ или долгое нажатие
+       (закрепить / архивировать / переместить в папку)
+       ============================================================ -->
+  <div id="chat-ctx-overlay" class="msg-menu-overlay hidden">
+    <div id="chat-ctx-menu" class="ctx-menu">
+      <div id="chat-ctx-actions" class="ctx-actions"></div>
+      <div id="chat-ctx-folders" class="ctx-folders hidden"></div>
+    </div>
+  </div>
+
+  <!-- Настройки пользователя: открываются по нажатию на логотип -->
+  <div id="prefs-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Настройки</h3>
+        <button id="prefs-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Тема оформления</label>
+          <div class="segmented" id="prefs-theme-toggle">
+            <button class="seg-btn" type="button" data-theme-choice="dark">Тёмная</button>
+            <button class="seg-btn" type="button" data-theme-choice="light">Светлая</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Последний визит</label>
+          <div class="segmented" id="prefs-privacy-toggle">
+            <button class="seg-btn" type="button" data-privacy-choice="all">Виден всем</button>
+            <button class="seg-btn" type="button" data-privacy-choice="nobody">Скрыт</button>
+          </div>
+          <p class="field-hint">Если скрыт, собеседники не увидят, когда вы были в сети.</p>
+        </div>
+
+        <div class="field">
+          <label>Архив</label>
+          <button id="prefs-archive-btn" class="btn ghost full" type="button">
+            Открыть архив (<span id="prefs-archive-count">0</span>)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Архив: чаты, убранные из основного списка -->
+  <div id="archive-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Архив</h3>
+        <button id="archive-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div id="archive-list" class="blocked-list"></div>
+      <p id="archive-empty" class="sidebar-empty hidden">
+        Архив пуст.<br />Архивировать чат можно правым кликом по нему в списке.
+      </p>
+    </div>
+  </div>
+
+  <!-- Создание опроса -->
+  <div id="poll-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Новый опрос</h3>
+        <button id="poll-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <form id="poll-form" class="create-form">
+        <div class="field">
+          <label for="poll-question">Вопрос</label>
+          <input id="poll-question" class="input" type="text" placeholder="Кто заступает на ночную вахту?" autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label>Варианты ответа</label>
+          <div id="poll-options" class="poll-options"></div>
+          <button id="poll-add-option" class="btn ghost full" type="button">+ Добавить вариант</button>
+        </div>
+
+        <label class="check-row">
+          <input id="poll-multiple" type="checkbox" />
+          <span>Разрешить несколько ответов</span>
+        </label>
+
+        <p id="poll-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="poll-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="poll-submit" class="btn primary" type="submit">Создать опрос</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Комментарии к посту канала -->
+  <div id="comments-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Комментарии</h3>
+        <button id="comments-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div id="comments-post" class="comments-post"></div>
+      <div id="comments-list" class="comments-list"></div>
+      <p id="comments-empty" class="search-empty hidden">Комментариев пока нет — будьте первым!</p>
+      <form id="comments-form" class="comments-form">
+        <input id="comments-input" type="text" placeholder="Комментарий..." autocomplete="off" />
+        <button id="comments-send" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Статистика канала: только для администраторов -->
+  <div id="stats-overlay" class="overlay hidden">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="stats-heading">Статистика канала</h3>
+        <button id="stats-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div id="stats-cards" class="stats-cards"></div>
+      <h4 class="stats-subtitle">Просмотры за 14 дней</h4>
+      <div id="stats-chart" class="stats-chart"></div>
+      <h4 class="stats-subtitle">Лучшие посты</h4>
+      <div id="stats-top" class="blocked-list"></div>
+    </div>
+  </div>
+
   <!-- Всплывающие уведомления -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

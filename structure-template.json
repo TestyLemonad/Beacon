@@ -111,9 +111,17 @@
         "user1_id": true
       },
       "lastMessage": {
-        "text": "Сегодня туман — держим свет ярче обычного",
+        "text": "📊 Куда светить сегодня?",
         "sender": "user1_id",
-        "timestamp": 1728724000
+        "timestamp": 1728724200
+      }
+    },
+    "saved_user1_id": {
+      "type": "saved",
+      "owner": "user1_id",
+      "createdAt": 1728723605,
+      "users": {
+        "user1_id": true
       }
     }
   },
@@ -173,6 +181,33 @@
         "sender": "user1_id",
         "text": "Сегодня туман — держим свет ярче обычного",
         "timestamp": 1728724000
+      },
+      "msg_6": {
+        "sender": "user1_id",
+        "text": "",
+        "timestamp": 1728724200,
+        "poll": {
+          "question": "Куда светить сегодня?",
+          "multiple": false,
+          "options": [
+            { "id": "o1", "text": "На северный фарватер" },
+            { "id": "o2", "text": "На южную отмель" }
+          ]
+        }
+      }
+    },
+    "saved_user1_id": {
+      "msg_7": {
+        "sender": "user1_id",
+        "text": "Кто взял запасной фитиль?",
+        "timestamp": 1728724300,
+        "savedFrom": {
+          "chatId": "chat_group_1",
+          "chatTitle": "Ночная смена на маяке",
+          "msgId": "msg_2",
+          "sender": "user2_id",
+          "text": "Кто взял запасной фитиль?"
+        }
       }
     }
   },
@@ -182,7 +217,8 @@
       "chat_private_1": true,
       "chat_group_1": true,
       "chat_group_2": true,
-      "channel_1": true
+      "channel_1": true,
+      "saved_user1_id": true
     },
     "user2_id": {
       "chat_private_1": true,
@@ -195,6 +231,88 @@
       "chat_group_1": {
         "msg_9": true
       }
+    }
+  },
+
+  "presence": {
+    "user1_id": { "online": true, "lastSeen": 1728724500 },
+    "user2_id": { "online": false, "lastSeen": 1728723900 }
+  },
+
+  "user_settings": {
+    "user1_id": { "lastSeenPrivacy": "all" },
+    "user2_id": { "lastSeenPrivacy": "nobody" }
+  },
+
+  "user_reads": {
+    "user1_id": {
+      "chat_private_1": 1728723660,
+      "channel_1": 1728724200
+    },
+    "user2_id": {
+      "chat_private_1": 1728723720
+    }
+  },
+
+  "typing": {
+    "chat_private_1": {
+      "user2_id": { "name": "Игнат Береговой", "ts": 1728723700 }
+    }
+  },
+
+  "poll_votes": {
+    "channel_1": {
+      "msg_6": {
+        "user2_id": { "o1": true },
+        "user3_id": { "o1": true, "o2": true }
+      }
+    }
+  },
+
+  "comments": {
+    "channel_1": {
+      "msg_3": {
+        "comment_1": {
+          "sender": "user2_id",
+          "text": "Туман сегодня как молоко — свет точно пригодится",
+          "timestamp": 1728724100
+        },
+        "comment_2": {
+          "sender": "user3_id",
+          "text": "Принял, заступаю в ночь",
+          "timestamp": 1728724150
+        }
+      }
+    }
+  },
+
+  "views": {
+    "channel_1": {
+      "msg_3": {
+        "user2_id": 1728724050,
+        "user3_id": 1728724060
+      },
+      "msg_6": {
+        "user2_id": 1728724250
+      }
+    }
+  },
+
+  "user_chat_meta": {
+    "user1_id": {
+      "chat_group_1": {
+        "pinnedAt": 1728724400,
+        "folders": { "folder_1": true }
+      },
+      "chat_private_1": {
+        "archived": true
+      }
+    }
+  },
+
+  "user_folders": {
+    "user1_id": {
+      "folder_1": { "name": "Смена", "createdAt": 1728724350 }
     }
   }
 }

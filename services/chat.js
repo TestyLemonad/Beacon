@@ -16,6 +16,19 @@
  *   /user_chats/$uid         { $chat_id: true }
  *   /user_blocks/$uid        { $blocked_uid: true }     — чёрный список
  *   /user_message_deletes/$uid/$chat_id/$msg_id  true   — «удалено у меня»
+ *   /presence/$uid           { online: bool, lastSeen }  — онлайн-статусы
+ *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody' }
+ *   /user_reads/$uid/$chat_id   ts (unix-секунды)       — докуда дочитано
+ *   /typing/$chat_id/$uid    { name, ts }               — «печатает…»
+ *   /poll_votes/$chat_id/$msg_id/$uid  { $option_id: true } — голоса в опросах
+ *   /comments/$chat_id/$post_id/$comment_id  { sender, text, timestamp }
+ *   /views/$chat_id/$msg_id/$uid  ts                    — уникальные просмотры поста
+ *   /user_chat_meta/$uid/$chat_id  { archived?, pinnedAt?, folders?: { $folder_id: true } }
+ *   /user_folders/$uid/$folder_id  { name, createdAt }  — папки чатов
+ *   /chats/saved_$uid        { type: 'saved', owner, users } — «Избранное»
+ *
+ * Поля сообщения (дополнительно): poll? { question, multiple, options: [{ id, text }] },
+ * savedFrom? { chatId, chatTitle, msgId, sender, text } — закладка из «Избранного».
  *
  * Юзернеймы уникальны: они захватываются транзакцией в узлах-индексах
  * /usernames, /channel_usernames и /group_usernames.
@@ -27,6 +40,8 @@ import {
   update,
   push,
   onValue,
+  onDisconnect,
+  serverTimestamp,
   query,
   limitToLast,
   limitToFirst,
@@ -36,7 +51,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=7';
+import { db } from '../firebase-config.js?v=8';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -447,6 +462,7 @@ export async function subscribeToChannel(uid, chatId) {
 export async function unsubscribeFromChannel(uid, chatId) {
   const updates = {
     [`user_chats/${uid}/${chatId}`]: null,
+    [`user_chat_meta/${uid}/${chatId}`]: null,
     [`chats/${chatId}/subscribersCount`]: increment(-1),
   };
   await update(ref(db), updates);
@@ -626,6 +642,10 @@ export async function deleteChat(chatId, requesterUid) {
   const updates = {
     [`chats/${chatId}`]: null,
     [`messages/${chatId}`]: null,
+    [`comments/${chatId}`]: null,
+    [`views/${chatId}`]: null,
+    [`poll_votes/${chatId}`]: null,
+    [`typing/${chatId}`]: null,
   };
   if (chat.username) {
     const indexNode = chat.type === 'channel' ? 'channel_usernames' : 'group_usernames';
@@ -635,7 +655,10 @@ export async function deleteChat(chatId, requesterUid) {
   // Убираем чат из списков всех пользователей: у каналов подписчики заранее неизвестны.
   const allUserChats = (await get(ref(db, 'user_chats'))).val() || {};
   for (const [uid, chatsMap] of Object.entries(allUserChats)) {
-    if (chatsMap && chatsMap[chatId]) updates[`user_chats/${uid}/${chatId}`] = null;
+    if (chatsMap && chatsMap[chatId]) {
+      updates[`user_chats/${uid}/${chatId}`] = null;
+      updates[`user_chat_meta/${uid}/${chatId}`] = null;
+    }
   }
 
   await update(ref(db), updates);
@@ -760,7 +783,8 @@ export function canPostToChat(chat, uid) {
  *   2) превью и время  -> /chats/$chat_id/lastMessage.
  *
  * options.replyTo       — { msgId, sender, text } для ответа на сообщение;
- * options.forwardedFrom — { uid, name } для пересланного сообщения.
+ * options.forwardedFrom — { uid, name } для пересланного сообщения;
+ * options.savedFrom     — { chatId, chatTitle, msgId, sender, text } для закладки.
  *
  * @returns {Promise<string|null>} id созданного сообщения (null, если текст пустой)
  */
@@ -775,6 +799,7 @@ export async function sendMessage(chatId, senderUid, text, options = {}) {
   const message = { sender: senderUid, text: body, timestamp };
   if (options.replyTo) message.replyTo = options.replyTo;
   if (options.forwardedFrom) message.forwardedFrom = options.forwardedFrom;
+  if (options.savedFrom) message.savedFrom = options.savedFrom;
 
   const updates = {
     [`messages/${chatId}/${messageId}`]: message,
@@ -840,6 +865,9 @@ export async function deleteMessage(chatId, msgId, deleterUid) {
   await update(ref(db), {
     [`messages/${chatId}/${msgId}`]: null,
     [`chats/${chatId}/pinned/${msgId}`]: null,
+    [`poll_votes/${chatId}/${msgId}`]: null,
+    [`comments/${chatId}/${msgId}`]: null,
+    [`views/${chatId}/${msgId}`]: null,
   });
 
   // Обновляем превью последнего сообщения (или убираем).
@@ -909,4 +937,457 @@ export async function setPinned(chatId, msgId, pinned, snapshot = null) {
     return;
   }
   await update(ref(db), { [`chats/${chatId}/pinned/${msgId}`]: null });
+}
+
+/* ============================================================
+ *  Присутствие: онлайн-статусы и «был(а) недавно»
+ * ============================================================ */
+
+/**
+ * Включить присутствие пользователя: /presence/$uid.
+ * При подключении пишем { online: true, lastSeen }, а при обрыве связи
+ * onDisconnect сам выставит { online: false, lastSeen: серверное время }.
+ * @returns {() => void} функция отписки
+ */
+export function startPresence(uid) {
+  if (!uid) return () => {};
+  const presenceRef = ref(db, `presence/${uid}`);
+  return onValue(ref(db, '.info/connected'), (snapshot) => {
+    if (snapshot.val() !== true) return;
+    onDisconnect(presenceRef)
+      .set({ online: false, lastSeen: serverTimestamp() })
+      .catch(() => {});
+    set(presenceRef, { online: true, lastSeen: nowSeconds() }).catch(() => {});
+  });
+}
+
+/** Явно пометить пользователя офлайн (выход из аккаунта). */
+export async function setOfflinePresence(uid) {
+  if (!uid) return;
+  await set(ref(db, `presence/${uid}`), { online: false, lastSeen: nowSeconds() }).catch(() => {});
+}
+
+/**
+ * Подписка на присутствие пользователя.
+ * @param {(presence: {online: boolean, lastSeen: number}|null) => void} onChange
+ */
+export function subscribeToPresence(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `presence/${uid}`),
+    (snapshot) => onChange(snapshot.val() || null),
+    (error) => {
+      console.error('Ошибка подписки на присутствие:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Настройки пользователя (приватность последнего визита)
+ * ============================================================ */
+
+/** Настройки пользователя /user_settings/$uid ({} — если не заданы). */
+export async function getUserSettings(uid) {
+  const snapshot = await get(ref(db, `user_settings/${uid}`));
+  return snapshot.val() || {};
+}
+
+/** Подписка на настройки пользователя. */
+export function subscribeToUserSettings(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_settings/${uid}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на настройки пользователя:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/**
+ * Приватность последнего визита: 'all' — виден всем, 'nobody' — скрыт.
+ * @returns {Promise<void>}
+ */
+export async function setLastSeenPrivacy(uid, value) {
+  const clean = value === 'nobody' ? 'nobody' : 'all';
+  await set(ref(db, `user_settings/${uid}/lastSeenPrivacy`), clean);
+}
+
+/* ============================================================
+ *  Индикатор «печатает…»
+ * ============================================================ */
+
+/** Через сколько секунд запись «печатает…» считается устаревшей. */
+export const TYPING_TTL = 5;
+
+/** Пути typing, для которых уже зарегистрирован onDisconnect (за сессию). */
+const typingOnDisconnect = new Set();
+
+/**
+ * Отметить, что пользователь печатает в чате: /typing/$chat_id/$uid = { name, ts }.
+ * Для каждого чата один раз за сессию регистрируется onDisconnect remove.
+ * @returns {Promise<void>}
+ */
+export async function setTyping(chatId, uid, name) {
+  if (!chatId || !uid) return;
+  const path = `typing/${chatId}/${uid}`;
+  if (!typingOnDisconnect.has(path)) {
+    typingOnDisconnect.add(path);
+    onDisconnect(ref(db, path)).remove().catch(() => {});
+  }
+  await set(ref(db, path), { name: String(name || '').slice(0, 64), ts: nowSeconds() });
+}
+
+/** Убрать отметку «печатает…». */
+export async function clearTyping(chatId, uid) {
+  if (!chatId || !uid) return;
+  await set(ref(db, `typing/${chatId}/${uid}`), null).catch(() => {});
+}
+
+/**
+ * Подписка на отметки «печатает…» в чате.
+ * @param {(map: object) => void} onChange — { $uid: { name, ts } }
+ */
+export function subscribeToTyping(chatId, onChange, onError = null) {
+  return onValue(
+    ref(db, `typing/${chatId}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на «печатает…»:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Прочтения: галочки ✓ / ✓✓ и непрочитанные
+ * ============================================================ */
+
+/**
+ * Отметить чат прочитанным до timestamp (unix-секунды):
+ * /user_reads/$uid/$chat_id = ts.
+ */
+export async function markChatRead(uid, chatId, ts) {
+  if (!uid || !chatId) return;
+  const value = Math.floor(Number(ts) || 0);
+  if (!value) return;
+  await set(ref(db, `user_reads/${uid}/${chatId}`), value).catch(() => {});
+}
+
+/** Подписка на прочтения всех чатов пользователя: { $chat_id: ts }. */
+export function subscribeToUserReads(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_reads/${uid}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на прочтения:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Подписка на прочтение одного чата пользователем: ts (0 — не читал). */
+export function subscribeToChatReads(uid, chatId, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_reads/${uid}/${chatId}`),
+    (snapshot) => onChange(Number(snapshot.val()) || 0),
+    (error) => {
+      console.error('Ошибка подписки на прочтения чата:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Опросы
+ * ============================================================ */
+
+/** Максимальное количество вариантов ответа в опросе. */
+export const POLL_MAX_OPTIONS = 10;
+
+/**
+ * Отправить опрос: сообщение с полем poll и превью «📊 вопрос».
+ * @param {{ question: string, options: string[], multiple?: boolean }} data
+ * @returns {Promise<string>} id сообщения-опроса
+ */
+export async function sendPollMessage(chatId, senderUid, { question, options = [], multiple = false } = {}) {
+  if (!chatId || !senderUid) throw new Error('Не указан чат или отправитель');
+
+  const cleanQuestion = String(question || '').trim();
+  const cleanOptions = options.map((text) => String(text || '').trim()).filter(Boolean);
+  if (!cleanQuestion) throw new Error('Укажите вопрос опроса');
+  if (cleanOptions.length < 2) throw new Error('Нужно минимум два варианта');
+  if (cleanOptions.length > POLL_MAX_OPTIONS) throw new Error(`Не больше ${POLL_MAX_OPTIONS} вариантов`);
+
+  const timestamp = nowSeconds();
+  const messageId = push(ref(db, `messages/${chatId}`)).key;
+  const message = {
+    sender: senderUid,
+    text: '',
+    timestamp,
+    poll: {
+      question: cleanQuestion,
+      multiple: Boolean(multiple),
+      options: cleanOptions.map((text, index) => ({ id: 'o' + (index + 1), text })),
+    },
+  };
+
+  await update(ref(db), {
+    [`messages/${chatId}/${messageId}`]: message,
+    [`chats/${chatId}/lastMessage`]: { text: '📊 ' + cleanQuestion, sender: senderUid, timestamp },
+  });
+  return messageId;
+}
+
+/**
+ * Проголосовать / отозвать голос.
+ * Одиночный выбор: клик по выбранному — снять голос, по другому — переключить.
+ * Множественный: клик по варианту включает/выключает его.
+ * @returns {Promise<void>}
+ */
+export async function votePoll(chatId, msgId, uid, optionId, multiple = false) {
+  const voteRef = ref(db, `poll_votes/${chatId}/${msgId}/${uid}`);
+  const current = (await get(voteRef)).val() || {};
+
+  let next = {};
+  if (multiple) {
+    next = { ...current };
+    if (next[optionId]) delete next[optionId];
+    else next[optionId] = true;
+  } else if (!current[optionId]) {
+    next[optionId] = true;
+  }
+
+  await set(voteRef, Object.keys(next).length ? next : null);
+}
+
+/** Подписка на голоса всех опросов чата: { $msg_id: { $uid: { $option_id: true } } }. */
+export function subscribeToPollVotes(chatId, onChange, onError = null) {
+  return onValue(
+    ref(db, `poll_votes/${chatId}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на голоса опросов:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Комментарии к постам каналов
+ * ============================================================ */
+
+/**
+ * Добавить комментарий к посту: /comments/$chat_id/$post_id/$comment_id.
+ * @returns {Promise<string|null>} id комментария (null — если текст пустой)
+ */
+export async function sendComment(chatId, postId, senderUid, text) {
+  const body = String(text || '').trim();
+  if (!body) return null;
+
+  const commentId = push(ref(db, `comments/${chatId}/${postId}`)).key;
+  await set(ref(db, `comments/${chatId}/${postId}/${commentId}`), {
+    sender: senderUid,
+    text: body,
+    timestamp: nowSeconds(),
+  });
+  return commentId;
+}
+
+/** Удалить комментарий. */
+export async function deleteComment(chatId, postId, commentId) {
+  if (!chatId || !postId || !commentId) throw new Error('Некорректные параметры');
+  await set(ref(db, `comments/${chatId}/${postId}/${commentId}`), null);
+}
+
+/**
+ * Подписка на комментарии одного поста.
+ * @param {(map: object) => void} onChange — { $comment_id: { sender, text, timestamp } }
+ */
+export function subscribeToPostComments(chatId, postId, onChange, onError = null) {
+  return onValue(
+    ref(db, `comments/${chatId}/${postId}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на комментарии:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/**
+ * Подписка на все комментарии чата (для счётчиков на постах):
+ * { $post_id: { $comment_id: { sender, text, timestamp } } }.
+ */
+export function subscribeToChatComments(chatId, onChange, onError = null) {
+  return onValue(
+    ref(db, `comments/${chatId}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на комментарии канала:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Просмотры постов канала
+ * ============================================================ */
+
+/** Зафиксировать уникальный просмотр: /views/$chat_id/$msg_id/$uid = ts. */
+export async function recordView(chatId, msgId, uid) {
+  if (!chatId || !msgId || !uid) return;
+  await set(ref(db, `views/${chatId}/${msgId}/${uid}`), nowSeconds()).catch(() => {});
+}
+
+/**
+ * Подписка на просмотры чата: { $msg_id: { $uid: ts } }.
+ */
+export function subscribeToChatViews(chatId, onChange, onError = null) {
+  return onValue(
+    ref(db, `views/${chatId}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на просмотры:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  Папки чатов, архив и закреп (личные настройки списка)
+ * ============================================================ */
+
+/**
+ * Подписка на личные настройки списка чатов:
+ * { $chat_id: { archived?, pinnedAt?, folders?: { $folder_id: true } } }.
+ */
+export function subscribeToUserChatMeta(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_chat_meta/${uid}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на настройки чатов:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Архивировать (true) или вернуть из архива (false) чат. */
+export async function setChatArchived(uid, chatId, archived) {
+  if (!uid || !chatId) throw new Error('Некорректные параметры');
+  await update(ref(db), { [`user_chat_meta/${uid}/${chatId}/archived`]: archived ? true : null });
+}
+
+/** Закрепить (true) или открепить (false) чат наверху списка. */
+export async function setChatPinned(uid, chatId, pinned) {
+  if (!uid || !chatId) throw new Error('Некорректные параметры');
+  await update(ref(db), { [`user_chat_meta/${uid}/${chatId}/pinnedAt`]: pinned ? nowSeconds() : null });
+}
+
+/** Добавить (member=true) или убрать (false) чат в папке. */
+export async function toggleChatFolder(uid, chatId, folderId, member) {
+  if (!uid || !chatId || !folderId) throw new Error('Некорректные параметры');
+  await update(ref(db), {
+    [`user_chat_meta/${uid}/${chatId}/folders/${folderId}`]: member ? true : null,
+  });
+}
+
+/** Создать папку чатов: /user_folders/$uid/$folder_id { name, createdAt }. */
+export async function createUserFolder(uid, name) {
+  const clean = String(name || '').trim();
+  if (!clean) throw new Error('Укажите название папки');
+  if (clean.length > 40) throw new Error('Название папки слишком длинное');
+
+  const folderId = push(ref(db, `user_folders/${uid}`)).key;
+  await set(ref(db, `user_folders/${uid}/${folderId}`), { name: clean, createdAt: nowSeconds() });
+  return folderId;
+}
+
+/** Подписка на папки чатов: { $folder_id: { name, createdAt } }. */
+export function subscribeToUserFolders(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `user_folders/${uid}`),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на папки:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/* ============================================================
+ *  «Избранное»: чат с самим собой для заметок и закладок
+ * ============================================================ */
+
+/** Детерминированный id чата «Избранное». */
+export function buildSavedChatId(uid) {
+  return `saved_${uid}`;
+}
+
+/** Создать «Избранное» при первом входе (идемпотентно). */
+export async function ensureSavedChat(uid) {
+  if (!uid) return null;
+  const chatId = buildSavedChatId(uid);
+  const snapshot = await get(ref(db, `chats/${chatId}`));
+  if (!snapshot.exists()) {
+    await update(ref(db), {
+      [`chats/${chatId}`]: {
+        type: 'saved',
+        owner: uid,
+        createdAt: nowSeconds(),
+        users: { [uid]: true },
+      },
+      [`user_chats/${uid}/${chatId}`]: true,
+    });
+  }
+  return chatId;
+}
+
+/**
+ * Сохранить сообщение в «Избранное»: копия с полем savedFrom,
+ * по которому можно вернуться к исходному сообщению.
+ */
+export async function saveToFavorites(uid, source, text) {
+  const chatId = await ensureSavedChat(uid);
+  const body = String(text || '').trim();
+  if (!body) throw new Error('Нечего сохранять');
+
+  return sendMessage(chatId, uid, body, {
+    savedFrom: {
+      chatId: source.chatId,
+      chatTitle: source.chatTitle || '',
+      msgId: source.msgId,
+      sender: source.sender || '',
+      text: source.text || '',
+    },
+  });
+}
+
+/* ============================================================
+ *  Чтение истории для поиска и статистики
+ * ============================================================ */
+
+/**
+ * Последние $limit сообщений чата (для поиска по тексту).
+ * @returns {Promise<Array<object>>} сообщения по возрастанию времени
+ */
+export async function fetchRecentMessages(chatId, limit = 150) {
+  const snapshot = await get(query(ref(db, `messages/${chatId}`), limitToLast(limit)));
+  const value = snapshot.val() || {};
+  return Object.entries(value)
+    .map(([id, message]) => ({ id, ...message }))
+    .sort((a, b) => (a.timestamp - b.timestamp) || String(a.id).localeCompare(String(b.id)));
+}
+
+/** Все сообщения чата одной выборкой (для статистики канала). */
+export async function getChatMessages(chatId) {
+  const snapshot = await get(ref(db, `messages/${chatId}`));
+  return snapshot.val() || {};
+}
+
+/** Все просмотры чата одной выборкой: { $msg_id: { $uid: ts } }. */
+export async function getChatViews(chatId) {
+  const snapshot = await get(ref(db, `views/${chatId}`));
+  return snapshot.val() || {};
 }
