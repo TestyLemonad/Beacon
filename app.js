@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=15';
-import * as Chat from './services/chat.js?v=15';
+import * as Auth from './services/auth.js?v=17';
+import * as Chat from './services/chat.js?v=17';
 
 /* ============================================================
  *  DOM
@@ -151,6 +151,15 @@ const dom = {
   forwardClose: $('forward-close'),
   forwardList: $('forward-list'),
   forwardEmpty: $('forward-empty'),
+
+  // Промо-канал @dev: «подписаться или скрыть»
+  devPromoOverlay: $('dev-promo-overlay'),
+  devPromoClose: $('dev-promo-close'),
+  devPromoAvatar: $('dev-promo-avatar'),
+  devPromoTitle: $('dev-promo-title'),
+  devPromoMeta: $('dev-promo-meta'),
+  devPromoSubscribe: $('dev-promo-subscribe'),
+  devPromoHide: $('dev-promo-hide'),
 
   // Меню чата в списке (ПКМ): закрепить / архив / папки
   chatCtxOverlay: $('chat-ctx-overlay'),
@@ -311,6 +320,7 @@ const state = {
   peerSettings: {},         // настройки собеседника (приватность визита)
   typingMap: new Map(),     // uid -> { name, ts } в активном чате
   settings: { lastSeenPrivacy: 'all' }, // мои настройки
+  devPromoChat: null,       // данные канала @dev для промо-строки вверху списка
 
   // Супер-админ (тестовые права) и баны
   rootAdmins: new Set(),    // uid из /root_admins
@@ -340,6 +350,7 @@ const state = {
     userFolders: null,      // /user_folders/$uid
     userReads: null,        // /user_reads/$uid
     userSettings: null,     // /user_settings/$uid
+    devPromo: null,         // /chats/$devChannelId — данные промо-канала @dev
     presence: null,         // .info/connected
     myBan: null,            // /banned_users/$uid
     bans: null,             // /banned_users
@@ -361,6 +372,9 @@ let typingTimer = null;             // таймер «печатает…» (с�
 let typingLastSent = 0;             // когда последний раз писали «печатает…» (unix-секунды)
 let typingTick = null;              // интервал пересчёта строки «печатает…»
 let messagesObserver = null;        // IntersectionObserver просмотров постов
+
+/** Канал-промо @dev: показывается вверху списка, пока пользователь не подписан и не скрыл его. */
+const DEV_CHANNEL_ID = '-P4EgAjn7KM6VFk2-rc_';
 
 /* ============================================================
  *  Утилиты
@@ -801,6 +815,44 @@ function ensureUnreadCount(item, chatId, chat) {
     .finally(() => state.unreadFetches.delete(fetchKey));
 }
 
+/** Показывать ли промо-строку @dev: канал загружен, я не подписан и не скрыл его. */
+function isDevPromoVisible() {
+  if (!state.user || !state.devPromoChat) return false;
+  if (state.myChatIds.has(DEV_CHANNEL_ID)) return false;
+  return !state.settings?.hideDevPromo;
+}
+
+/** Промо-строка канала @dev вверху списка: до выбора «подписаться / скрыть». */
+function buildDevPromoItem() {
+  const chat = state.devPromoChat;
+  const item = createEl('li', 'chat-item dev-promo');
+  item.dataset.chatId = DEV_CHANNEL_ID;
+  item.tabIndex = 0; // фокус для клавиатуры и ТВ-пульта
+
+  const avatar = createEl('div', 'avatar');
+  applyChatAvatar(avatar, DEV_CHANNEL_ID, chat);
+
+  const body = createEl('div', 'chat-item-body');
+
+  const top = createEl('div', 'chat-item-top');
+  top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
+  top.append(createEl('span', 'dev-promo-badge', 'Канал'));
+
+  const bottom = createEl('div', 'chat-item-bottom');
+  bottom.append(createEl('span', 'chat-item-preview', chat.description || 'Официальный канал проекта — подпишитесь или скройте'));
+  const typeIcon = createEl('span', 'chat-type-icon');
+  typeIcon.innerHTML = CHAT_TYPE_ICONS.channel || '';
+  bottom.append(typeIcon);
+
+  body.append(top, bottom);
+  item.append(avatar, body);
+  item.addEventListener('click', openDevPromoModal);
+  // Промо-строка — не обычный чат: контекстное меню (закрепить/архив/папки) ей не нужно.
+  item.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  return item;
+}
+
 /** Элемент списка чатов (используется и в сайдбаре, и в результатах поиска). */
 function buildChatListItem(tag, chatId, chat) {
   const pinned = Boolean(getChatMeta(chatId).pinnedAt);
@@ -868,13 +920,17 @@ function buildChatListItem(tag, chatId, chat) {
 /** Отрисовать список диалогов (архив в него не попадает). */
 function renderChatList() {
   const chats = visibleChats();
+  const showPromo = isDevPromoVisible();
   dom.chatList.innerHTML = '';
-  dom.chatListEmpty.classList.toggle('hidden', chats.length > 0);
+  dom.chatListEmpty.classList.toggle('hidden', chats.length > 0 || showPromo);
   dom.chatListEmpty.innerHTML = state.activeFolder !== 'all' && state.myChatIds.size
     ? 'В этой папке пока нет чатов.<br />Добавить чат можно правым кликом по нему в «Все чаты».'
     : 'У вас пока нет чатов.<br />Создайте первый или найдите канал через поиск!';
 
   const uidsToHydrate = [];
+
+  // Канал @dev — самым верхним, пока пользователь не подписан и не скрыл его.
+  if (showPromo) dom.chatList.append(buildDevPromoItem());
 
   for (const [chatId, chat] of chats) {
     dom.chatList.append(buildChatListItem('li', chatId, chat));
@@ -2161,6 +2217,12 @@ function startSubscriptions() {
     },
   );
 
+  // Промо-канал @dev: данные для верхней строки списка (пока не подписан).
+  state.subscriptions.devPromo = Chat.subscribeToChat(DEV_CHANNEL_ID, (chat) => {
+    state.devPromoChat = chat || null;
+    renderChatList();
+  });
+
   // Архив, закреп и папки — личные настройки списка чатов.
   state.subscriptions.userMeta = Chat.subscribeToUserChatMeta(uid, (map) => {
     state.chatMeta = new Map(Object.entries(map || {}));
@@ -2191,6 +2253,7 @@ function startSubscriptions() {
   state.subscriptions.userSettings = Chat.subscribeToUserSettings(uid, (settings) => {
     state.settings = { lastSeenPrivacy: 'all', ...(settings || {}) };
     renderPrefsModal();
+    renderChatList(); // скрытие промо-канала @dev могло измениться с другого устройства
   });
   state.subscriptions.presence = Chat.startPresence(uid);
 
@@ -2220,6 +2283,7 @@ function teardownSubscriptions() {
   state.subscriptions.userFolders?.();
   state.subscriptions.userReads?.();
   state.subscriptions.userSettings?.();
+  state.subscriptions.devPromo?.();
   state.subscriptions.presence?.();
   state.subscriptions.myBan?.();
   state.subscriptions.bans?.();
@@ -2237,6 +2301,7 @@ function teardownSubscriptions() {
   state.subscriptions.userFolders = null;
   state.subscriptions.userReads = null;
   state.subscriptions.userSettings = null;
+  state.subscriptions.devPromo = null;
   state.subscriptions.presence = null;
   state.subscriptions.myBan = null;
   state.subscriptions.bans = null;
@@ -2248,6 +2313,7 @@ function teardownSubscriptions() {
   state.messages = [];
   state.stickToBottom = true;
   state.channelPreview = null;
+  state.devPromoChat = null;
   state.blocked = new Set();
   state.localDeleted = new Set();
   state.chatMeta = new Map();
@@ -3333,6 +3399,31 @@ function openBlockedModal() {
   renderBlockedList();
 }
 
+/* ============================================================
+ *  Промо-канал @dev: верхняя строка списка чатов
+ * ============================================================ */
+
+/** Открыть диалог «подписаться или скрыть» для канала @dev. */
+function openDevPromoModal() {
+  renderDevPromoModal();
+  dom.devPromoOverlay.classList.remove('hidden');
+}
+
+/** Закрыть диалог промо-канала (крестик, клик по фону, Escape). */
+function closeDevPromoModal() {
+  dom.devPromoOverlay.classList.add('hidden');
+  dom.devPromoSubscribe.disabled = false;
+  dom.devPromoHide.disabled = false;
+}
+
+/** Наполнить диалог данными канала @dev. */
+function renderDevPromoModal() {
+  const chat = state.devPromoChat || {};
+  applyChatAvatar(dom.devPromoAvatar, DEV_CHANNEL_ID, chat);
+  dom.devPromoTitle.textContent = getChatTitle(chat);
+  dom.devPromoMeta.textContent = getChatStatus(chat);
+}
+
 /** Открыть настройки чата (действие «Настройки» в меню чата). */
 function openSettingsModal() {
   const chat = state.chats.get(state.activeChatId);
@@ -3695,7 +3786,7 @@ function renderChatMenu() {
       openSettingsModal();
     });
   }
-  if (chat.type === 'channel' && !chat.admins?.[myUid] && state.myChatIds.has(state.activeChatId)) {
+  if (chat.type === 'channel' && chat.owner !== myUid && state.myChatIds.has(state.activeChatId)) {
     addChatMenuAction('Отписаться от канала', unsubscribeFromActiveChannel);
   }
 
@@ -3750,19 +3841,25 @@ function renderChatMenu() {
   }
 }
 
-/** Отписаться от канала (действие в меню чата). */
+/** Отписаться от канала (действие в меню чата). Админ при выходе теряет права. */
 async function unsubscribeFromActiveChannel() {
   const chat = state.chats.get(state.activeChatId);
   if (!chat || chat.type !== 'channel') return;
-  if (!window.confirm(`Отписаться от канала «${getChatTitle(chat)}»?`)) return;
+  if (chat.owner === state.user.uid) return;
+
+  const isAdmin = Boolean(chat.admins?.[state.user.uid]);
+  const question = isAdmin
+    ? `Покинуть канал «${getChatTitle(chat)}»? Права администратора будут сняты.`
+    : `Отписаться от канала «${getChatTitle(chat)}»?`;
+  if (!window.confirm(question)) return;
 
   try {
     await Chat.unsubscribeFromChannel(state.user.uid, state.activeChatId);
     closeChatMenu();
-    toast('Вы отписались от канала');
+    toast(isAdmin ? 'Вы покинули канал' : 'Вы отписались от канала');
   } catch (error) {
     console.error(error);
-    toast('Не удалось отписаться от канала', 'error');
+    toast(error.message || 'Не удалось отписаться от канала', 'error');
   }
 }
 
@@ -4026,11 +4123,11 @@ function renderPrefsProviders() {
   const canUnlink = providers.length > 1;
 
   const rows = [
-    { id: 'password', label: 'Пароль (email)', icon: 'key', linkable: false },
-    { id: 'google.com', label: 'Google', icon: 'google', linkable: true },
+    { id: 'password', label: 'Пароль (email)', icon: 'key' },
+    { id: 'google.com', label: 'Google', icon: 'google' },
   ];
 
-  rows.forEach(({ id, label, icon, linkable }) => {
+  rows.forEach(({ id, label, icon }) => {
     const linked = providers.includes(id);
     const row = createEl('div', 'provider-row');
 
@@ -4050,11 +4147,22 @@ function renderPrefsProviders() {
       } else {
         row.append(createEl('span', 'provider-hint', 'единственный способ'));
       }
-    } else if (linkable) {
+    } else if (id === 'google.com') {
       const btn = createEl('button', 'btn ghost provider-btn', 'Привязать');
       btn.type = 'button';
       btn.addEventListener('click', () => linkGoogleClick(btn));
       row.append(btn);
+    } else if (id === 'password') {
+      // Аккаунт без пароля (например, только Google): можно задать пароль —
+      // после этого вход доступен любым из привязанных способов.
+      const input = createEl('input', 'provider-pass-input');
+      input.type = 'password';
+      input.placeholder = 'Новый пароль';
+      input.autocomplete = 'new-password';
+      const btn = createEl('button', 'btn ghost provider-btn', 'Задать пароль');
+      btn.type = 'button';
+      btn.addEventListener('click', () => linkPasswordClick(input, btn));
+      row.append(input, btn);
     } else {
       row.append(createEl('span', 'provider-hint', 'не привязан'));
     }
@@ -4075,6 +4183,30 @@ async function linkGoogleClick(btn) {
     toast(Auth.getAuthErrorMessage(error), 'error');
   } finally {
     btn.disabled = false;
+  }
+}
+
+/** Задать пароль аккаунту без пароля (например, созданному через Google). */
+async function linkPasswordClick(input, btn) {
+  const password = String(input.value || '');
+  if (password.length < 6) {
+    toast('Пароль — минимум 6 символов', 'error');
+    input.focus();
+    return;
+  }
+
+  btn.disabled = true;
+  input.disabled = true;
+  try {
+    await Auth.linkPassword(password);
+    toast('Пароль привязан — можно входить любым способом', 'success');
+    renderPrefsProviders();
+  } catch (error) {
+    console.error(error);
+    toast(Auth.getAuthErrorMessage(error), 'error');
+  } finally {
+    btn.disabled = false;
+    input.disabled = false;
   }
 }
 
@@ -4825,6 +4957,10 @@ document.addEventListener('keydown', (event) => {
     closeChatCtxMenu();
     return;
   }
+  if (!dom.devPromoOverlay.classList.contains('hidden')) {
+    closeDevPromoModal();
+    return;
+  }
   if (!dom.statsOverlay.classList.contains('hidden')) {
     closeStatsModal();
     return;
@@ -4984,6 +5120,45 @@ dom.deleteChoiceLocal.addEventListener('click', async () => {
 dom.forwardClose.addEventListener('click', closeForwardModal);
 dom.forwardOverlay.addEventListener('click', (event) => {
   if (event.target === dom.forwardOverlay) closeForwardModal();
+});
+
+// Промо-канал @dev: «подписаться» или «скрыть» прямо из списка чатов.
+dom.devPromoClose.addEventListener('click', closeDevPromoModal);
+dom.devPromoOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.devPromoOverlay) closeDevPromoModal();
+});
+dom.devPromoSubscribe.addEventListener('click', async () => {
+  if (!state.user) return;
+  dom.devPromoSubscribe.disabled = true;
+  dom.devPromoHide.disabled = true;
+  try {
+    await Chat.subscribeToChannel(state.user.uid, DEV_CHANNEL_ID);
+    toast('Вы подписались на канал', 'success');
+    closeDevPromoModal();
+    selectChat(DEV_CHANNEL_ID);
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось подписаться на канал', 'error');
+    dom.devPromoSubscribe.disabled = false;
+    dom.devPromoHide.disabled = false;
+  }
+});
+dom.devPromoHide.addEventListener('click', async () => {
+  if (!state.user) return;
+  dom.devPromoSubscribe.disabled = true;
+  dom.devPromoHide.disabled = true;
+  try {
+    await Chat.setDevPromoHidden(state.user.uid, true);
+    state.settings = { ...state.settings, hideDevPromo: true };
+    renderChatList();
+    closeDevPromoModal();
+    toast('Канал скрыт — найти его можно через поиск', 'success');
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось скрыть канал', 'error');
+    dom.devPromoSubscribe.disabled = false;
+    dom.devPromoHide.disabled = false;
+  }
 });
 
 // ТВ-пульт и клавиатура: Enter/Space на строке чата открывают её.

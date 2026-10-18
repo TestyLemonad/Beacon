@@ -118,6 +118,11 @@
       "admins": {
         "user1_id": true
       },
+      "subscribers": {
+        "user1_id": true,
+        "user2_id": true
+      },
+      "auto_subscribed": {},
       "lastMessage": {
         "text": "📊 Куда светить сегодня?",
         "sender": "user1_id",
@@ -248,7 +253,7 @@
   },
 
   "user_settings": {
-    "user1_id": { "lastSeenPrivacy": "all", "adminMode": true },
+    "user1_id": { "lastSeenPrivacy": "all", "adminMode": true, "hideDevPromo": true },
     "user2_id": { "lastSeenPrivacy": "nobody" }
   },
 

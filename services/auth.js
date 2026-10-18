@@ -23,7 +23,7 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=15';
+import { auth, db } from '../firebase-config.js?v=17';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -115,6 +115,21 @@ export async function linkGoogle() {
   if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
   const credential = await linkWithPopup(auth.currentUser, googleProvider);
   return credential.user;
+}
+
+/**
+ * Привязать пароль (email) к аккаунту, созданному другим способом входа
+ * (например, только через Google). После этого вход возможен любым способом.
+ * @param {string} newPassword — минимум 6 символов
+ * @returns {Promise<object>} Firebase user
+ */
+export async function linkPassword(newPassword) {
+  if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
+  const email = auth.currentUser.email;
+  if (!email) throw new Error('У аккаунта нет email — пароль привязать нельзя');
+  const credential = EmailAuthProvider.credential(email, String(newPassword || ''));
+  const result = await linkWithCredential(auth.currentUser, credential);
+  return result.user;
 }
 
 /**

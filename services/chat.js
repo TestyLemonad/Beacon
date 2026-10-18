@@ -6,8 +6,11 @@
  *   /users/$uid              { username, firstName, lastName?, bio?, avatar?, email, createdAt }
  *   /usernames/$username     $uid                       — индекс поиска людей
  *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
- *                              admins?, subscribersCount?, createdAt, lastMessage?,
- *                              pinned? }
+ *                              admins?, subscribersCount?, subscribers?, auto_subscribed?,
+ *                              avatar?, createdAt, lastMessage?, pinned? }
+ *                              subscribers / auto_subscribed — карта $uid: подписчики канала
+ *                              и те, кого подписали автоматически при выдаче админки
+ *                              (снимаешь админа — откатываем такую подписку)
  *   /channel_usernames/$username  $chat_id              — индекс поиска каналов
  *   /group_usernames/$username    $chat_id              — индекс поиска публичных групп
  *   /messages/$chat_id       { $msg_id: { sender, text, timestamp, editedAt?,
@@ -17,7 +20,7 @@
  *   /user_blocks/$uid        { $blocked_uid: true }     — чёрный список
  *   /user_message_deletes/$uid/$chat_id/$msg_id  true   — «удалено у меня»
  *   /presence/$uid           { online: bool, lastSeen }  — онлайн-статусы
- *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody', adminMode?: bool }
+ *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody', adminMode?: bool, hideDevPromo?: true }
  *   /user_reads/$uid/$chat_id   ts (unix-секунды)       — докуда дочитано
  *   /typing/$chat_id/$uid    { name, ts }               — «печатает…»
  *   /poll_votes/$chat_id/$msg_id/$uid  { $option_id: true } — голоса в опросах
@@ -53,7 +56,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=15';
+import { db } from '../firebase-config.js?v=17';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -321,19 +324,22 @@ export async function createPrivateChat(myUid, peerUid) {
   const chatId = buildPrivateChatId(myUid, peerUid);
   const snapshot = await get(ref(db, `chats/${chatId}`));
 
-  const updates = {};
   if (!snapshot.exists()) {
-    updates[`chats/${chatId}`] = {
-      type: 'private',
-      createdAt: nowSeconds(),
-      users: { [myUid]: true, [peerUid]: true },
-    };
+    await update(ref(db), {
+      [`chats/${chatId}`]: {
+        type: 'private',
+        createdAt: nowSeconds(),
+        users: { [myUid]: true, [peerUid]: true },
+      },
+    });
   }
-  // Идемпотентно добавляем чат в списки обоих участников.
-  updates[`user_chats/${myUid}/${chatId}`] = true;
-  updates[`user_chats/${peerUid}/${chatId}`] = true;
 
-  await update(ref(db), updates);
+  // Идемпотентно добавляем чат в списки обоих участников — после создания
+  // узла чата, чтобы правила БД уже видели обоих участников.
+  await update(ref(db), {
+    [`user_chats/${myUid}/${chatId}`]: true,
+    [`user_chats/${peerUid}/${chatId}`]: true,
+  });
   return chatId;
 }
 
@@ -367,7 +373,6 @@ export async function createGroupChat(ownerUid, {
   }
 
   const chatId = push(ref(db, 'chats')).key;
-  if (isPublic) await claimGroupUsername(chatId, cleanUsername);
 
   const users = { [ownerUid]: true };
   if (!isPublic) {
@@ -376,26 +381,42 @@ export async function createGroupChat(ownerUid, {
     });
   }
 
+  // 1. Узел группы — до захвата юзернейма и списков: правила БД проверяют
+  //    владельца уже существующего чата.
+  await update(ref(db), {
+    [`chats/${chatId}`]: {
+      type: 'group',
+      groupType: isPublic ? 'public' : 'private',
+      title: cleanTitle,
+      owner: ownerUid,
+      createdAt: nowSeconds(),
+      users,
+      ...(cleanDescription ? { description: cleanDescription } : {}),
+      ...(isPublic ? { username: cleanUsername } : {}),
+    },
+  });
+
+  // 2. Захват юзернейма публичной группы (атомарно).
+  if (isPublic) {
+    try {
+      await claimGroupUsername(chatId, cleanUsername);
+    } catch (error) {
+      await set(ref(db, `chats/${chatId}`), null).catch(() => {});
+      throw error;
+    }
+  }
+
+  // 3. Списки участников — группа к этому моменту уже существует.
   const updates = {};
-  updates[`chats/${chatId}`] = {
-    type: 'group',
-    groupType: isPublic ? 'public' : 'private',
-    title: cleanTitle,
-    owner: ownerUid,
-    createdAt: nowSeconds(),
-    users,
-    ...(cleanDescription ? { description: cleanDescription } : {}),
-    ...(isPublic ? { username: cleanUsername } : {}),
-  };
   Object.keys(users).forEach((uid) => {
     updates[`user_chats/${uid}/${chatId}`] = true;
   });
-
   try {
     await update(ref(db), updates);
   } catch (error) {
-    // Не оставляем «висячий» юзернейм группы.
+    // Не оставляем «висячий» юзернейм и пустую группу.
     if (isPublic) await set(ref(db, `group_usernames/${cleanUsername}`), null).catch(() => {});
+    await set(ref(db, `chats/${chatId}`), null).catch(() => {});
     throw error;
   }
 
@@ -419,26 +440,37 @@ export async function createChannel(ownerUid, { username, title, description = '
   if (!cleanTitle) throw new Error('Укажите название канала');
 
   const chatId = push(ref(db, 'chats')).key;
-  await claimChannelUsername(chatId, cleanUsername);
 
-  const updates = {};
-  updates[`chats/${chatId}`] = {
-    type: 'channel',
-    username: cleanUsername,
-    title: cleanTitle,
-    description: cleanDescription,
-    owner: ownerUid,
-    createdAt: nowSeconds(),
-    subscribersCount: 1,
-    admins: { [ownerUid]: true },
-  };
-  updates[`user_chats/${ownerUid}/${chatId}`] = true;
+  // 1. Узел канала — до захвата юзернейма: правила БД проверяют владельца.
+  await update(ref(db), {
+    [`chats/${chatId}`]: {
+      type: 'channel',
+      username: cleanUsername,
+      title: cleanTitle,
+      description: cleanDescription,
+      owner: ownerUid,
+      createdAt: nowSeconds(),
+      subscribersCount: 1,
+      admins: { [ownerUid]: true },
+      subscribers: { [ownerUid]: true },
+    },
+  });
 
+  // 2. Захват юзернейма канала (атомарно).
   try {
-    await update(ref(db), updates);
+    await claimChannelUsername(chatId, cleanUsername);
   } catch (error) {
-    // Не оставляем «висячий» юзернейм канала.
+    await set(ref(db, `chats/${chatId}`), null).catch(() => {});
+    throw error;
+  }
+
+  // 3. Подписка владельца.
+  try {
+    await update(ref(db), { [`user_chats/${ownerUid}/${chatId}`]: true });
+  } catch (error) {
+    // Не оставляем «висячий» юзернейм и пустой канал.
     await set(ref(db, `channel_usernames/${cleanUsername}`), null).catch(() => {});
+    await set(ref(db, `chats/${chatId}`), null).catch(() => {});
     throw error;
   }
 
@@ -446,27 +478,49 @@ export async function createChannel(ownerUid, { username, title, description = '
 }
 
 /**
- * Подписаться на канал: запись в /user_chats + счётчик подписчиков.
+ * Подписаться на канал: запись в /user_chats, список подписчиков и счётчик.
+ * Повторный вызов для уже подписанного пользователя ничего не меняет.
  * @returns {Promise<void>}
  */
 export async function subscribeToChannel(uid, chatId) {
+  const already = (await get(ref(db, `user_chats/${uid}/${chatId}`))).val();
+  if (already) return;
+
   const updates = {
     [`user_chats/${uid}/${chatId}`]: true,
+    [`chats/${chatId}/subscribers/${uid}`]: true,
+    // Пользователь подписался сам — авто-подписка администратора не нужна.
+    [`chats/${chatId}/auto_subscribed/${uid}`]: null,
     [`chats/${chatId}/subscribersCount`]: increment(1),
   };
   await update(ref(db), updates);
 }
 
 /**
- * Отписаться от канала / покинуть его.
+ * Отписаться от канала / покинуть его. Администратор при выходе теряет
+ * права администратора; владелец выйти не может.
  * @returns {Promise<void>}
  */
 export async function unsubscribeFromChannel(uid, chatId) {
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.owner === uid) {
+    throw new Error(chat.type === 'channel'
+      ? 'Владелец не может отписаться от своего канала'
+      : 'Владелец не может покинуть свой чат');
+  }
+
+  const subscribed = Boolean((await get(ref(db, `user_chats/${uid}/${chatId}`))).val());
   const updates = {
     [`user_chats/${uid}/${chatId}`]: null,
     [`user_chat_meta/${uid}/${chatId}`]: null,
-    [`chats/${chatId}/subscribersCount`]: increment(-1),
+    [`chats/${chatId}/auto_subscribed/${uid}`]: null,
   };
+  // Покидая канал, администратор снимает с себя права администратора.
+  if (chat.admins?.[uid]) updates[`chats/${chatId}/admins/${uid}`] = null;
+  if (chat.subscribers?.[uid]) updates[`chats/${chatId}/subscribers/${uid}`] = null;
+  if (subscribed) updates[`chats/${chatId}/subscribersCount`] = increment(-1);
+
   await update(ref(db), updates);
 }
 
@@ -660,10 +714,13 @@ export async function addChannelAdmin(chatId, requesterUid, targetUid) {
 
   const updates = { [`chats/${chatId}/admins/${targetUid}`]: true };
 
-  // Подписываем нового админа, если он ещё не подписан на канал.
+  // Подписываем нового админа, если он ещё не подписан. Запоминаем, что
+  // подписка автоматическая: при снятии админа её откатим (см. removeChannelAdmin).
   const subscribed = (await get(ref(db, `user_chats/${targetUid}/${chatId}`))).val();
   if (!subscribed) {
     updates[`user_chats/${targetUid}/${chatId}`] = true;
+    updates[`chats/${chatId}/subscribers/${targetUid}`] = true;
+    updates[`chats/${chatId}/auto_subscribed/${targetUid}`] = true;
     updates[`chats/${chatId}/subscribersCount`] = increment(1);
   }
 
@@ -684,7 +741,25 @@ export async function removeChannelAdmin(chatId, requesterUid, targetUid) {
   }
   if (targetUid === chat.owner) throw new Error('Нельзя снять владельца канала');
 
-  await set(ref(db, `chats/${chatId}/admins/${targetUid}`), null);
+  // Если подписка была автоматической (при добавлении в админы) — при снятии
+  // админа откатываем её: канал не должен оставаться в подписках пользователя.
+  const autoSubscribed = Boolean(
+    (await get(ref(db, `chats/${chatId}/auto_subscribed/${targetUid}`))).val()
+  );
+
+  const updates = {
+    [`chats/${chatId}/admins/${targetUid}`]: null,
+    [`chats/${chatId}/auto_subscribed/${targetUid}`]: null,
+  };
+
+  if (autoSubscribed) {
+    updates[`user_chats/${targetUid}/${chatId}`] = null;
+    updates[`user_chat_meta/${targetUid}/${chatId}`] = null;
+    updates[`chats/${chatId}/subscribers/${targetUid}`] = null;
+    updates[`chats/${chatId}/subscribersCount`] = increment(-1);
+  }
+
+  await update(ref(db), updates);
 }
 
 /* ============================================================
@@ -755,27 +830,38 @@ export async function deleteChat(chatId, requesterUid) {
     throw new Error('Удалять может только владелец');
   }
 
-  const updates = {
-    [`chats/${chatId}`]: null,
-    [`messages/${chatId}`]: null,
-    [`comments/${chatId}`]: null,
-    [`views/${chatId}`]: null,
-    [`poll_votes/${chatId}`]: null,
-    [`typing/${chatId}`]: null,
-  };
+  const updates = {};
+
+  // 1. Убираем чат из списков участников (группы: участники и владелец;
+  //    каналы: владелец, админы и подписчики). Делаем это до удаления узла
+  //    чата: правила БД проверяют владельца ещё существующего чата.
+  const memberUids = new Set([
+    chat.owner,
+    ...Object.keys(chat.users || {}),
+    ...Object.keys(chat.admins || {}),
+    ...Object.keys(chat.subscribers || {}),
+  ]);
+  for (const uid of memberUids) {
+    if (!uid) continue;
+    updates[`user_chats/${uid}/${chatId}`] = null;
+    updates[`user_chat_meta/${uid}/${chatId}`] = null;
+  }
+
+  // 2. Содержимое чата.
+  updates[`messages/${chatId}`] = null;
+  updates[`comments/${chatId}`] = null;
+  updates[`views/${chatId}`] = null;
+  updates[`poll_votes/${chatId}`] = null;
+  updates[`typing/${chatId}`] = null;
+
+  // 3. Индекс юзернейма.
   if (chat.username) {
     const indexNode = chat.type === 'channel' ? 'channel_usernames' : 'group_usernames';
     updates[`${indexNode}/${chat.username}`] = null;
   }
 
-  // Убираем чат из списков всех пользователей: у каналов подписчики заранее неизвестны.
-  const allUserChats = (await get(ref(db, 'user_chats'))).val() || {};
-  for (const [uid, chatsMap] of Object.entries(allUserChats)) {
-    if (chatsMap && chatsMap[chatId]) {
-      updates[`user_chats/${uid}/${chatId}`] = null;
-      updates[`user_chat_meta/${uid}/${chatId}`] = null;
-    }
-  }
+  // 4. Сам узел чата — последним, чтобы предыдущие проверки видели владельца.
+  updates[`chats/${chatId}`] = null;
 
   await update(ref(db), updates);
 }
@@ -1046,12 +1132,14 @@ export async function deleteMessage(chatId, msgId, deleterUid) {
     throw new Error('Удалить у всех можно только свои сообщения');
   }
 
+  // Сначала связанные узлы, само сообщение — последним: правила БД проверяют
+  // авторство по ещё существующему сообщению.
   await update(ref(db), {
-    [`messages/${chatId}/${msgId}`]: null,
     [`chats/${chatId}/pinned/${msgId}`]: null,
     [`poll_votes/${chatId}/${msgId}`]: null,
     [`comments/${chatId}/${msgId}`]: null,
     [`views/${chatId}/${msgId}`]: null,
+    [`messages/${chatId}/${msgId}`]: null,
   });
 
   // Обновляем превью последнего сообщения (или убираем).
@@ -1205,6 +1293,16 @@ export async function setLastSeenPrivacy(uid, value) {
 export async function setAdminMode(uid, enabled) {
   if (!uid) throw new Error('Некорректный пользователь');
   await set(ref(db, `user_settings/${uid}/adminMode`), enabled ? true : false);
+}
+
+/**
+ * Скрыть промо-строку канала @dev в списке чатов:
+ * /user_settings/$uid/hideDevPromo. Поиск и подписка канала не блокируются.
+ * @returns {Promise<void>}
+ */
+export async function setDevPromoHidden(uid, hidden) {
+  if (!uid) throw new Error('Некорректный пользователь');
+  await set(ref(db, `user_settings/${uid}/hideDevPromo`), hidden ? true : null);
 }
 
 /* ============================================================

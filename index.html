@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=15" />
+  <link rel="stylesheet" href="styles.css?v=17" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -627,6 +627,28 @@
     </div>
   </div>
 
+  <!-- Промо-канал @dev: подписаться или скрыть -->
+  <div id="dev-promo-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Канал @dev</h3>
+        <button id="dev-promo-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+      <div class="dev-promo-head">
+        <div id="dev-promo-avatar" class="avatar"></div>
+        <div class="dev-promo-head-text">
+          <div id="dev-promo-title" class="dev-promo-name">Разработка Beacon</div>
+          <div id="dev-promo-meta" class="dev-promo-meta"></div>
+        </div>
+      </div>
+      <p class="modal-text">Подпишитесь, чтобы получать новости проекта, или скройте канал — позже его всегда можно найти через поиск и подписаться.</p>
+      <div class="modal-actions">
+        <button id="dev-promo-hide" class="btn ghost" type="button">Скрыть</button>
+        <button id="dev-promo-subscribe" class="btn primary" type="button">Подписаться</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Пересылка сообщения: выбор чата -->
   <div id="forward-overlay" class="overlay hidden">
     <div class="modal">
@@ -815,6 +837,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=15"></script>
+  <script type="module" src="app.js?v=17"></script>
 </body>
 </html>
