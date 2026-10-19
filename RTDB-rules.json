@@ -6,96 +6,114 @@
     "users": {
       ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        "username": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "firstName": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "lastName": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "bio": {
+          ".validate": "!newData.exists() || newData.isString()"
+        }
       }
     },
 
     "usernames": {
       ".read": "auth != null",
       "$name": {
-        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && (!newData.exists() || newData.val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && (!newData.exists() || newData.val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
+        ".validate": "!newData.exists() || newData.isString()"
       }
     },
 
     "channel_usernames": {
       ".read": "auth != null",
       "$name": {
-        ".write": "auth != null && ((!data.exists() && newData.isString() && root.child('chats').child(newData.val()).child('owner').val() === auth.uid) || (data.isString() && !newData.exists() && root.child('chats').child(data.val()).child('owner').val() === auth.uid) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && ((!data.exists() && newData.isString() && root.child('chats').child(newData.val()).child('owner').val() === auth.uid) || (data.isString() && !newData.exists() && root.child('chats').child(data.val()).child('owner').val() === auth.uid) || root.child('root_admins').child(auth.uid).val() === true)",
+        ".validate": "!newData.exists() || newData.isString()"
       }
     },
 
     "group_usernames": {
       ".read": "auth != null",
       "$name": {
-        ".write": "auth != null && ((!data.exists() && newData.isString() && root.child('chats').child(newData.val()).child('owner').val() === auth.uid) || (data.isString() && !newData.exists() && root.child('chats').child(data.val()).child('owner').val() === auth.uid) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && ((!data.exists() && newData.isString() && root.child('chats').child(newData.val()).child('owner').val() === auth.uid) || (data.isString() && !newData.exists() && root.child('chats').child(data.val()).child('owner').val() === auth.uid) || root.child('root_admins').child(auth.uid).val() === true)",
+        ".validate": "!newData.exists() || newData.isString()"
       }
     },
 
     "user_blocks": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
       }
     },
 
     "root_admins": {
       ".read": "auth != null",
-      ".write": "auth != null && (auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+      ".write": "auth != null && (auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+      "$uid": {
+        ".validate": "!newData.exists() || newData.isBoolean()"
+      }
     },
 
     "banned_users": {
       ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && (root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true"
       }
     },
 
     "user_settings": {
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
       }
     },
 
     "user_folders": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
       }
     },
 
     "user_message_deletes": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
       }
     },
 
     "user_chat_meta": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
         "$chatId": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
         }
       }
     },
 
     "user_chats": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
         "$chatId": {
           ".read": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid)",
-          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && root.child('chats').child($chatId).child('users').child($uid).val() === true) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && root.child('chats').child($chatId).child('users').child($uid).val() === true) || root.child('root_admins').child(auth.uid).val() === true)"
         }
       }
     },
 
     "user_reads": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
         "$chatId": {
           ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('user_chats').child(auth.uid).child($chatId).val() === true)",
-          ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
         }
       }
     },
@@ -103,68 +121,73 @@
     "presence": {
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
       }
     },
 
     "typing": {
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$uid": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
         }
       }
     },
 
     "chats": {
-      ".read": "auth != null",
       "$chatId": {
-        ".write": "auth != null && ((!data.exists() && newData.exists() && (newData.child('owner').val() === auth.uid || newData.child('users').child(auth.uid).val() === true)) || (data.exists() && !newData.exists() && (data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')) || (data.exists() && newData.exists() && (root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')))",
+        ".read": "auth != null && (!data.exists() || data.child('type').val() === 'channel' || (data.child('type').val() === 'group' && data.child('groupType').val() === 'public') || data.child('users').child(auth.uid).val() === true || data.child('admins').child(auth.uid).val() === true || data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!data.exists() && newData.exists() && (newData.child('owner').val() === auth.uid || newData.child('users').child(auth.uid).val() === true)) || (data.exists() && !newData.exists() && (data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)) || (data.exists() && newData.exists() && root.child('root_admins').child(auth.uid).val() === true))",
         "title": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || newData.isString()"
         },
         "description": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || newData.isString()"
         },
         "username": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || newData.isString()"
         },
         "groupType": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
         },
         "avatar": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
         },
         "subscribersCount": {
-          ".write": "auth != null"
+          ".write": "auth != null",
+          ".validate": "!newData.exists() || (newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1))"
         },
         "lastMessage": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || (newData.child('text').isString() && newData.child('sender').isString() && newData.child('timestamp').isNumber())"
         },
         "pinned": {
           "$msgId": {
-            ".write": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('root_admins').child(auth.uid).val() === true)"
           }
         },
         "users": {
           "$uid2": {
-            ".write": "auth != null && ((auth.uid === $uid2 && (!data.exists() || !newData.exists())) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && ((auth.uid === $uid2 && (!data.exists() || !newData.exists())) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
           }
         },
         "admins": {
           "$uid2": {
-            ".write": "auth != null && ((auth.uid === $uid2 && !newData.exists()) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && ((auth.uid === $uid2 && !newData.exists()) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
           }
         },
         "subscribers": {
           "$uid2": {
-            ".write": "auth != null && (auth.uid === $uid2 || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && (auth.uid === $uid2 || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
           }
         },
         "auto_subscribed": {
           "$uid2": {
-            ".write": "auth != null && (auth.uid === $uid2 || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && (auth.uid === $uid2 || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
           }
         }
       }
@@ -172,14 +195,16 @@
 
     "messages": {
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
-          ".write": "auth != null && ((data.exists() && data.child('sender').val() === auth.uid && (!newData.exists() || newData.child('sender').val() === auth.uid)) || (!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+          ".write": "auth != null && ((data.exists() && data.child('sender').val() === auth.uid && (!newData.exists() || newData.child('sender').val() === auth.uid)) || (!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || (newData.child('sender').isString() && newData.child('text').isString() && newData.child('timestamp').isNumber())",
           "reactions": {
             "$emoji": {
               "$uid": {
-                ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+                ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true)",
+                ".validate": "!newData.exists() || newData.isBoolean()"
               }
             }
           }
@@ -189,12 +214,12 @@
 
     "comments": {
       "$chatId": {
-        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$postId": {
-          ".read": "auth != null",
-          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($postId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+          ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($postId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
           "$commentId": {
-            ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || (data.exists() && data.child('sender').val() === auth.uid && !newData.exists()) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || (data.exists() && data.child('sender').val() === auth.uid && !newData.exists()) || root.child('root_admins').child(auth.uid).val() === true)"
           }
         }
       }
@@ -202,12 +227,12 @@
 
     "poll_votes": {
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
-          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
           "$uid": {
-            ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')"
+            ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true)"
           }
         }
       }
@@ -215,10 +240,10 @@
 
     "views": {
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
-          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true || auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
+          ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
           "$uid": {
             ".write": "auth != null && (auth.uid === $uid)"
           }
