@@ -1269,16 +1269,6 @@ textarea:-webkit-autofill {
   border-color: rgba(255, 184, 77, 0.55);
 }
 
-/* Смена пароля в настройках */
-.password-change-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.password-change-form .btn {
-  margin-top: 2px;
-}
-
 /* Привязка Google на экране входа */
 .auth-link-panel {
   margin-top: 14px;

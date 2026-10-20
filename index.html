@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=21" />
+  <link rel="stylesheet" href="styles.css?v=22" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -734,17 +734,9 @@
         </div>
 
         <div class="field hidden" id="prefs-password-field">
-          <label>Смена пароля</label>
-          <div class="password-change-form">
-            <input id="prefs-current-password" class="input" type="password" placeholder="Текущий пароль"
-                   autocomplete="current-password" />
-            <input id="prefs-new-password" class="input" type="password" placeholder="Новый пароль (минимум 6 символов)"
-                   autocomplete="new-password" />
-            <input id="prefs-repeat-password" class="input" type="password" placeholder="Повторите новый пароль"
-                   autocomplete="new-password" />
-            <button id="prefs-change-password" class="btn ghost full" type="button">Сменить пароль</button>
-          </div>
-          <p class="field-hint">После смены пароля входите с новым. Вход через Google останется доступен, если он привязан.</p>
+          <label>Пароль</label>
+          <button id="prefs-password-btn" class="btn ghost full" type="button">Сменить пароль</button>
+          <p class="field-hint">Откроется отдельное окно смены пароля.</p>
         </div>
 
         <div class="field">
@@ -754,6 +746,41 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Смена пароля: отдельное окно, открывается из настроек -->
+  <div id="password-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Смена пароля</h3>
+        <button id="password-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <form id="password-form" class="create-form">
+        <div class="field">
+          <label for="password-current">Текущий пароль</label>
+          <input id="password-current" class="input" type="password" placeholder="Введите текущий пароль"
+                 autocomplete="current-password" />
+        </div>
+        <div class="field">
+          <label for="password-new">Новый пароль</label>
+          <input id="password-new" class="input" type="password" placeholder="Минимум 6 символов"
+                 autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label for="password-repeat">Повторите новый пароль</label>
+          <input id="password-repeat" class="input" type="password" placeholder="Ещё раз новый пароль"
+                 autocomplete="new-password" />
+        </div>
+
+        <p id="password-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="password-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="password-submit" class="btn primary" type="submit">Сменить пароль</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -863,6 +890,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=21"></script>
+  <script type="module" src="app.js?v=22"></script>
 </body>
 </html>

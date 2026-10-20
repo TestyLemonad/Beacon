@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=21';
-import * as Chat from './services/chat.js?v=21';
+import * as Auth from './services/auth.js?v=22';
+import * as Chat from './services/chat.js?v=22';
 
 /* ============================================================
  *  DOM
@@ -180,10 +180,18 @@ const dom = {
   prefsBlockedCount: $('prefs-blocked-count'),
   prefsProviders: $('prefs-providers'),
   prefsPasswordField: $('prefs-password-field'),
-  prefsCurrentPassword: $('prefs-current-password'),
-  prefsNewPassword: $('prefs-new-password'),
-  prefsRepeatPassword: $('prefs-repeat-password'),
-  prefsChangePassword: $('prefs-change-password'),
+  prefsPasswordBtn: $('prefs-password-btn'),
+
+  // Смена пароля (отдельное окно)
+  passwordOverlay: $('password-overlay'),
+  passwordClose: $('password-close'),
+  passwordForm: $('password-form'),
+  passwordCurrent: $('password-current'),
+  passwordNew: $('password-new'),
+  passwordRepeat: $('password-repeat'),
+  passwordError: $('password-error'),
+  passwordCancel: $('password-cancel'),
+  passwordSubmit: $('password-submit'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -4303,14 +4311,12 @@ async function deleteFolderWithConfirm(folderId, name) {
  * ============================================================ */
 
 function openPrefsModal() {
-  dom.prefsCurrentPassword.value = '';
-  dom.prefsNewPassword.value = '';
-  dom.prefsRepeatPassword.value = '';
   renderPrefsModal();
   dom.prefsOverlay.classList.remove('hidden');
 }
 
 function closePrefsModal() {
+  closePasswordModal();
   dom.prefsOverlay.classList.add('hidden');
 }
 
@@ -4390,14 +4396,8 @@ function renderPrefsProviders() {
     dom.prefsProviders.append(row);
   });
 
-  // Смена пароля доступна только аккаунтам с привязанным паролем.
-  const hasPassword = providers.includes('password');
-  dom.prefsPasswordField.classList.toggle('hidden', !hasPassword);
-  if (!hasPassword) {
-    dom.prefsCurrentPassword.value = '';
-    dom.prefsNewPassword.value = '';
-    dom.prefsRepeatPassword.value = '';
-  }
+  // Кнопка смены пароля — только аккаунтам с привязанным паролем.
+  dom.prefsPasswordField.classList.toggle('hidden', !providers.includes('password'));
 }
 
 /** Привязать Google к текущему аккаунту (кнопка в настройках). */
@@ -4439,40 +4439,75 @@ async function linkPasswordClick(input, btn) {
   }
 }
 
-/** Сменить пароль аккаунта (блок «Смена пароля» в настройках). */
-async function changePasswordClick() {
-  const current = String(dom.prefsCurrentPassword.value || '');
-  const next = String(dom.prefsNewPassword.value || '');
-  const repeat = String(dom.prefsRepeatPassword.value || '');
+/** Открыть отдельное окно смены пароля. */
+function openPasswordModal() {
+  if (!Auth.getLinkedProviders().includes('password')) {
+    toast('Сначала задайте пароль в разделе «Способы входа»', 'error');
+    return;
+  }
+  resetPasswordForm();
+  dom.passwordOverlay.classList.remove('hidden');
+  dom.passwordCurrent.focus();
+}
 
+/** Закрыть окно смены пароля и очистить поля. */
+function closePasswordModal() {
+  dom.passwordOverlay.classList.add('hidden');
+  resetPasswordForm();
+}
+
+/** Привести окно смены пароля в исходное состояние. */
+function resetPasswordForm() {
+  dom.passwordCurrent.value = '';
+  dom.passwordNew.value = '';
+  dom.passwordRepeat.value = '';
+  dom.passwordError.textContent = '';
+  dom.passwordError.classList.add('hidden');
+  dom.passwordSubmit.disabled = false;
+  dom.passwordSubmit.textContent = 'Сменить пароль';
+}
+
+/** Показать ошибку в окне смены пароля. */
+function showPasswordError(message, focusEl = null) {
+  dom.passwordError.textContent = message;
+  dom.passwordError.classList.remove('hidden');
+  if (focusEl) focusEl.focus();
+}
+
+/** Отправить форму смены пароля. */
+async function submitPasswordChange(event) {
+  event.preventDefault();
+  const current = String(dom.passwordCurrent.value || '');
+  const next = String(dom.passwordNew.value || '');
+  const repeat = String(dom.passwordRepeat.value || '');
+
+  dom.passwordError.classList.add('hidden');
   if (!current) {
-    toast('Введите текущий пароль', 'error');
-    dom.prefsCurrentPassword.focus();
+    showPasswordError('Введите текущий пароль', dom.passwordCurrent);
     return;
   }
   if (next.length < 6) {
-    toast('Новый пароль — минимум 6 символов', 'error');
-    dom.prefsNewPassword.focus();
+    showPasswordError('Новый пароль — минимум 6 символов', dom.passwordNew);
     return;
   }
   if (next !== repeat) {
-    toast('Пароли не совпадают', 'error');
-    dom.prefsRepeatPassword.focus();
+    showPasswordError('Пароли не совпадают', dom.passwordRepeat);
     return;
   }
 
-  dom.prefsChangePassword.disabled = true;
+  dom.passwordSubmit.disabled = true;
+  dom.passwordSubmit.textContent = 'Меняем…';
   try {
     await Auth.changePassword(current, next);
-    dom.prefsCurrentPassword.value = '';
-    dom.prefsNewPassword.value = '';
-    dom.prefsRepeatPassword.value = '';
+    closePasswordModal();
     toast('Пароль изменён — входите с новым', 'success');
   } catch (error) {
     console.error(error);
-    toast(Auth.getAuthErrorMessage(error), 'error');
+    const wrong = error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential';
+    showPasswordError(Auth.getAuthErrorMessage(error), wrong ? dom.passwordCurrent : null);
   } finally {
-    dom.prefsChangePassword.disabled = false;
+    dom.passwordSubmit.disabled = false;
+    dom.passwordSubmit.textContent = 'Сменить пароль';
   }
 }
 
@@ -4995,15 +5030,13 @@ dom.prefsPrivacyToggle.addEventListener('click', async (event) => {
     toast('Не удалось сохранить настройку', 'error');
   }
 });
-dom.prefsChangePassword.addEventListener('click', changePasswordClick);
-[dom.prefsCurrentPassword, dom.prefsNewPassword, dom.prefsRepeatPassword].forEach((input) => {
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      changePasswordClick();
-    }
-  });
+dom.prefsPasswordBtn.addEventListener('click', openPasswordModal);
+dom.passwordClose.addEventListener('click', closePasswordModal);
+dom.passwordCancel.addEventListener('click', closePasswordModal);
+dom.passwordOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.passwordOverlay) closePasswordModal();
 });
+dom.passwordForm.addEventListener('submit', submitPasswordChange);
 dom.prefsArchiveBtn.addEventListener('click', () => {
   closePrefsModal();
   openArchiveModal();
