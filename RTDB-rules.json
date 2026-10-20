@@ -103,7 +103,7 @@
         ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
         "$chatId": {
           ".read": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid)",
-          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && root.child('chats').child($chatId).child('users').child($uid).val() === true) || root.child('root_admins').child(auth.uid).val() === true)"
+          ".write": "auth != null && (auth.uid === $uid || root.child('chats').child($chatId).child('owner').val() === auth.uid || (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && root.child('chats').child($chatId).child('users').child($uid).val() === true) || root.child('root_admins').child(auth.uid).val() === true || (newData.exists() && root.child('chats').child($chatId).child('type').val() === 'group' && root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true))"
         }
       }
     },
@@ -140,11 +140,11 @@
         ".read": "auth != null && (!data.exists() || data.child('type').val() === 'channel' || (data.child('type').val() === 'group' && data.child('groupType').val() === 'public') || data.child('users').child(auth.uid).val() === true || data.child('admins').child(auth.uid).val() === true || data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
         ".write": "auth != null && ((!data.exists() && newData.exists() && (newData.child('owner').val() === auth.uid || newData.child('users').child(auth.uid).val() === true)) || (data.exists() && !newData.exists() && (data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)) || (data.exists() && newData.exists() && root.child('root_admins').child(auth.uid).val() === true))",
         "title": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'group' && root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true))",
           ".validate": "!newData.exists() || newData.isString()"
         },
         "description": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'group' && root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true))",
           ".validate": "!newData.exists() || newData.isString()"
         },
         "username": {
@@ -155,7 +155,7 @@
           ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
         },
         "avatar": {
-          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'group' && root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true))"
         },
         "subscribersCount": {
           ".write": "auth != null",
@@ -172,7 +172,7 @@
         },
         "users": {
           "$uid2": {
-            ".write": "auth != null && ((auth.uid === $uid2 && (!data.exists() || !newData.exists())) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)"
+            ".write": "auth != null && ((auth.uid === $uid2 && (!data.exists() || !newData.exists())) || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (newData.exists() && root.child('chats').child($chatId).child('type').val() === 'group' && root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true))"
           }
         },
         "admins": {

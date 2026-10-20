@@ -17,13 +17,15 @@ import {
   linkWithPopup,
   linkWithCredential,
   unlink,
+  updatePassword,
+  reauthenticateWithCredential,
   EmailAuthProvider,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=19';
+import { auth, db } from '../firebase-config.js?v=21';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -133,6 +135,39 @@ export async function linkPassword(newPassword) {
 }
 
 /**
+ * Сменить пароль текущего аккаунта. Firebase требует недавнюю
+ * аутентификацию, поэтому сначала подтверждаем текущий пароль.
+ * @param {string} currentPassword — текущий пароль
+ * @param {string} newPassword — новый пароль (минимум 6 символов)
+ * @returns {Promise<object>} Firebase user
+ */
+export async function changePassword(currentPassword, newPassword) {
+  if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
+  const email = auth.currentUser.email;
+  if (!email) throw new Error('У аккаунта нет email — пароль изменить нельзя');
+  const hasPassword = auth.currentUser.providerData.some((provider) => provider.providerId === 'password');
+  if (!hasPassword) throw new Error('Сначала задайте пароль в разделе «Способы входа»');
+
+  const cleanNew = String(newPassword || '');
+  if (cleanNew.length < 6) throw new Error('Пароль — минимум 6 символов');
+
+  const credential = EmailAuthProvider.credential(email, String(currentPassword || ''));
+  try {
+    await reauthenticateWithCredential(auth.currentUser, credential);
+  } catch (error) {
+    if (error?.code === 'auth/invalid-credential' || error?.code === 'auth/wrong-password') {
+      const wrong = new Error('Неверный текущий пароль');
+      wrong.code = 'auth/wrong-password';
+      throw wrong;
+    }
+    throw error;
+  }
+
+  await updatePassword(auth.currentUser, cleanNew);
+  return auth.currentUser;
+}
+
+/**
  * Отвязать способ входа. Нельзя отвязать единственный оставшийся.
  * @param {string} providerId — 'password' | 'google.com'
  */
@@ -194,7 +229,7 @@ const AUTH_ERROR_MESSAGES = {
   'auth/account-exists-with-different-credential': 'Этот email уже привязан другим способом входа',
   'auth/provider-already-linked': 'Этот способ входа уже привязан',
   'auth/credential-already-in-use': 'Этот аккаунт уже привязан к другому пользователю',
-  'auth/requires-recent-login': 'Войдите заново, чтобы изменить способы входа',
+  'auth/requires-recent-login': 'Войдите заново, чтобы изменить пароль или способы входа',
 };
 
 /**

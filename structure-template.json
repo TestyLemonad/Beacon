@@ -64,6 +64,9 @@
       "description": "Светим, пока все спят",
       "createdAt": 1728723605,
       "owner": "user1_id",
+      "admins": {
+        "user1_id": true
+      },
       "users": {
         "user1_id": true,
         "user2_id": true,
@@ -90,6 +93,9 @@
       "description": "Открытая группа: вступай и заступай на вахту",
       "createdAt": 1728723605,
       "owner": "user1_id",
+      "admins": {
+        "user1_id": true
+      },
       "users": {
         "user1_id": true
       },

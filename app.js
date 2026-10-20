@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=19';
-import * as Chat from './services/chat.js?v=19';
+import * as Auth from './services/auth.js?v=21';
+import * as Chat from './services/chat.js?v=21';
 
 /* ============================================================
  *  DOM
@@ -179,6 +179,11 @@ const dom = {
   prefsBlockedBtn: $('prefs-blocked-btn'),
   prefsBlockedCount: $('prefs-blocked-count'),
   prefsProviders: $('prefs-providers'),
+  prefsPasswordField: $('prefs-password-field'),
+  prefsCurrentPassword: $('prefs-current-password'),
+  prefsNewPassword: $('prefs-new-password'),
+  prefsRepeatPassword: $('prefs-repeat-password'),
+  prefsChangePassword: $('prefs-change-password'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -262,6 +267,11 @@ const dom = {
   settingsAdminsList: $('settings-admins-list'),
   settingsAdminInput: $('settings-admin-input'),
   settingsAdminAdd: $('settings-admin-add'),
+  settingsMembersBlock: $('settings-members-block'),
+  settingsMembersList: $('settings-members-list'),
+  settingsMemberAddRow: $('settings-member-add-row'),
+  settingsMemberInput: $('settings-member-input'),
+  settingsMemberAdd: $('settings-member-add'),
   settingsAvatarBlock: $('settings-avatar-block'),
   settingsAvatarPreview: $('settings-avatar-preview'),
   settingsAvatarKindBtns: Array.from(document.querySelectorAll('[data-sa-kind]')),
@@ -2230,10 +2240,12 @@ function handleUserChatsUpdate(chatIds) {
 
         renderChatList();
         if (chatId === state.activeChatId) renderMainPanel();
-        // Настройки канала открыты — обновляем список администраторов.
+        // Открыты настройки чата — обновляем списки администраторов/участников.
         if (chatId === settingsChatId && !dom.settingsOverlay.classList.contains('hidden')) {
-          if (chat) renderSettingsAdmins(chat);
-          else closeSettingsModal();
+          if (chat) {
+            if (chat.type === 'channel') renderSettingsAdmins(chat);
+            if (chat.type === 'group') renderSettingsMembers(chat);
+          } else closeSettingsModal();
         }
       }),
     );
@@ -3477,26 +3489,50 @@ function openSettingsModal() {
   if (!chat || (chat.type !== 'group' && chat.type !== 'channel')) return;
 
   settingsChatId = state.activeChatId;
-  dom.settingsHeading.textContent = chat.type === 'group' ? 'Настройки группы' : 'Настройки канала';
+  const myUid = state.user?.uid;
+  const isOwner = Boolean(chat.owner && chat.owner === myUid);
+  const isGroup = chat.type === 'group';
+  const isChannel = chat.type === 'channel';
+  const isGroupAdmin = isGroup && Boolean(chat.admins?.[myUid]);
+  const rootAdmin = adminRightsOn();
+  // Тип, юзернейм и удаление — только владелец (или супер-админ).
+  const canManageGroupMeta = isOwner || rootAdmin;
+  // Добавлять участников могут владелец, админы группы и супер-админ.
+  const canManageMembers = isGroup && (isOwner || isGroupAdmin || rootAdmin);
+
+  dom.settingsHeading.textContent = isGroup ? 'Настройки группы' : 'Настройки канала';
   dom.settingsTitle.value = chat.title || '';
   dom.settingsDescription.value = chat.description || '';
-  dom.settingsGroupBlock.classList.toggle('hidden', chat.type !== 'group');
+  dom.settingsGroupBlock.classList.toggle('hidden', !isGroup || !canManageGroupMeta);
   setSettingsTypeChoice(chat.groupType === 'public' ? 'public' : 'private');
+  // Админ группы не меняет тип и юзернейм — скрываем поле от него.
+  dom.settingsUsernameField.classList.toggle(
+    'hidden',
+    !isGroup || !canManageGroupMeta || settingsTypeChoice !== 'public',
+  );
   dom.settingsUsername.value = chat.username || '';
 
+  // Участники группы: список + добавление по @username или ID.
+  dom.settingsMembersBlock.classList.toggle('hidden', !isGroup);
+  dom.settingsMemberAddRow.classList.toggle('hidden', !canManageMembers);
+  dom.settingsMemberInput.value = '';
+  if (isGroup) renderSettingsMembers(chat);
+
   // Администраторы канала: блок виден только для каналов.
-  const isChannel = chat.type === 'channel';
   dom.settingsAdminsBlock.classList.toggle('hidden', !isChannel);
   dom.settingsAdminInput.value = '';
   if (isChannel) renderSettingsAdmins(chat);
 
   // Аватар группы / логотип канала — у обоих типов.
-  const hasAvatarEditor = chat.type === 'group' || chat.type === 'channel';
+  const hasAvatarEditor = isGroup || isChannel;
   dom.settingsAvatarBlock.classList.toggle('hidden', !hasAvatarEditor);
   const avatarLabel = dom.settingsAvatarBlock.querySelector('label');
   if (avatarLabel) avatarLabel.textContent = isChannel ? 'Логотип канала' : 'Аватар группы';
   dom.settingsAvatarReset.textContent = isChannel ? 'Убрать логотип' : 'Убрать аватар';
   if (hasAvatarEditor) initChatAvatarEditor(chat);
+
+  // Удалять чат может только владелец (или супер-админ).
+  dom.settingsDelete.classList.toggle('hidden', !canManageGroupMeta);
 
   dom.settingsError.classList.add('hidden');
   dom.settingsOverlay.classList.remove('hidden');
@@ -3611,6 +3647,135 @@ async function addSettingsAdmin() {
     toast(error.message || 'Не удалось добавить администратора', 'error');
   } finally {
     dom.settingsAdminAdd.disabled = false;
+  }
+}
+
+/**
+ * Список участников группы в окне настроек. Владелец и супер-админ могут
+ * назначать и снимать администраторов прямо из списка.
+ */
+function renderSettingsMembers(chat) {
+  dom.settingsMembersList.innerHTML = '';
+  const uids = Object.keys(chat.users || {});
+  if (!uids.length) {
+    dom.settingsMembersList.append(createEl('div', 'admin-empty', 'В группе пока нет участников.'));
+    return;
+  }
+
+  const myUid = state.user?.uid;
+  const canManageAdmins = Boolean(chat.owner && chat.owner === myUid) || adminRightsOn();
+  const rank = (uid) => (uid === chat.owner ? 0 : chat.admins?.[uid] ? 1 : 2);
+  const cachedName = (uid) => getProfileName(Chat.getCachedUserProfile(uid)) || '';
+  uids.sort((a, b) => rank(a) - rank(b) || cachedName(a).localeCompare(cachedName(b), 'ru') || a.localeCompare(b));
+
+  const missing = [];
+  for (const uid of uids) {
+    const profile = Chat.getCachedUserProfile(uid);
+    if (profile === undefined) missing.push(uid);
+
+    const item = createEl('div', 'chat-item');
+
+    const avatar = createEl('div', 'avatar avatar-sm');
+    applyProfileAvatar(avatar, profile, uid);
+
+    const isAdmin = Boolean(chat.admins?.[uid]);
+    const body = createEl('div', 'chat-item-body');
+    const top = createEl('div', 'chat-item-top');
+    top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+    const bottom = createEl('div', 'chat-item-bottom');
+    bottom.append(createEl('span', 'chat-item-preview',
+      uid === chat.owner
+        ? 'владелец группы'
+        : isAdmin
+          ? 'администратор'
+          : (profile?.username ? '@' + profile.username : 'участник')));
+    body.append(top, bottom);
+    item.append(avatar, body);
+
+    if (canManageAdmins && uid !== chat.owner) {
+      const toggle = createEl(
+        'button',
+        isAdmin ? 'unsubscribe-btn' : 'make-admin-btn',
+        isAdmin ? 'Снять' : 'Админ',
+      );
+      toggle.type = 'button';
+      toggle.title = isAdmin ? 'Снять администратора' : 'Сделать администратором';
+      toggle.addEventListener('click', () => toggleSettingsGroupAdmin(uid, !isAdmin, toggle));
+      item.append(toggle);
+    }
+
+    dom.settingsMembersList.append(item);
+  }
+
+  // Профили могли ещё не загрузиться — догружаем и перерисовываем.
+  if (missing.length) {
+    hydrateUsers(missing).then(() => {
+      if (!settingsChatId || dom.settingsOverlay.classList.contains('hidden')) return;
+      const live = state.chats.get(settingsChatId);
+      if (live) renderSettingsMembers(live);
+    });
+  }
+}
+
+/** Назначить или снять администратора группы из списка участников. */
+async function toggleSettingsGroupAdmin(uid, makeAdmin, buttonEl) {
+  if (!settingsChatId || !state.user) return;
+  buttonEl.disabled = true;
+  try {
+    if (makeAdmin) await Chat.addGroupAdmin(settingsChatId, state.user.uid, uid);
+    else await Chat.removeGroupAdmin(settingsChatId, state.user.uid, uid);
+    toast(makeAdmin ? 'Администратор назначен' : 'Администратор снят');
+
+    // Подписка на чат обновит state.chats; перечитываем для мгновенного отклика.
+    const live = await Chat.getChat(settingsChatId);
+    if (live) {
+      state.chats.set(settingsChatId, live);
+      if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsMembers(live);
+    }
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось изменить администратора', 'error');
+  } finally {
+    buttonEl.disabled = false;
+  }
+}
+
+/** Добавить участника в группу по @username или ID (кнопка в настройках). */
+async function addSettingsMember() {
+  const chat = state.chats.get(settingsChatId);
+  if (!chat || chat.type !== 'group' || !state.user) return;
+  const query = dom.settingsMemberInput.value.trim();
+  if (!query) {
+    dom.settingsMemberInput.focus();
+    return;
+  }
+
+  dom.settingsMemberAdd.disabled = true;
+  try {
+    // Сначала ищем по @username, затем пробуем как ID пользователя.
+    let targetUid = null;
+    const byUsername = await Chat.getUserByUsername(query).catch(() => null);
+    if (byUsername) targetUid = byUsername.uid;
+    else targetUid = query;
+
+    const result = await Chat.addGroupMember(settingsChatId, state.user.uid, targetUid);
+    dom.settingsMemberInput.value = '';
+    if (result?.added === false) {
+      toast('Пользователь уже в группе');
+    } else {
+      toast('Участник добавлен', 'success');
+    }
+
+    const live = await Chat.getChat(settingsChatId);
+    if (live) {
+      state.chats.set(settingsChatId, live);
+      if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsMembers(live);
+    }
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось добавить участника', 'error');
+  } finally {
+    dom.settingsMemberAdd.disabled = false;
   }
 }
 
@@ -3788,6 +3953,7 @@ function renderChatMenu() {
 
   const myUid = state.user?.uid;
   const isOwner = Boolean(chat.owner && chat.owner === myUid);
+  const isGroupAdmin = chat.type === 'group' && Boolean(chat.admins?.[myUid]);
   const peerUid = chat.type === 'private' ? getPrivatePeerUid(chat) : null;
   const missing = [];
 
@@ -3831,7 +3997,7 @@ function renderChatMenu() {
         }, 'ban');
       }
     }
-  } else if (isOwner || rootAdmin) {
+  } else if (isOwner || rootAdmin || isGroupAdmin) {
     addChatMenuAction('Настройки', () => {
       closeChatMenu();
       openSettingsModal();
@@ -4137,6 +4303,9 @@ async function deleteFolderWithConfirm(folderId, name) {
  * ============================================================ */
 
 function openPrefsModal() {
+  dom.prefsCurrentPassword.value = '';
+  dom.prefsNewPassword.value = '';
+  dom.prefsRepeatPassword.value = '';
   renderPrefsModal();
   dom.prefsOverlay.classList.remove('hidden');
 }
@@ -4220,6 +4389,15 @@ function renderPrefsProviders() {
 
     dom.prefsProviders.append(row);
   });
+
+  // Смена пароля доступна только аккаунтам с привязанным паролем.
+  const hasPassword = providers.includes('password');
+  dom.prefsPasswordField.classList.toggle('hidden', !hasPassword);
+  if (!hasPassword) {
+    dom.prefsCurrentPassword.value = '';
+    dom.prefsNewPassword.value = '';
+    dom.prefsRepeatPassword.value = '';
+  }
 }
 
 /** Привязать Google к текущему аккаунту (кнопка в настройках). */
@@ -4258,6 +4436,43 @@ async function linkPasswordClick(input, btn) {
   } finally {
     btn.disabled = false;
     input.disabled = false;
+  }
+}
+
+/** Сменить пароль аккаунта (блок «Смена пароля» в настройках). */
+async function changePasswordClick() {
+  const current = String(dom.prefsCurrentPassword.value || '');
+  const next = String(dom.prefsNewPassword.value || '');
+  const repeat = String(dom.prefsRepeatPassword.value || '');
+
+  if (!current) {
+    toast('Введите текущий пароль', 'error');
+    dom.prefsCurrentPassword.focus();
+    return;
+  }
+  if (next.length < 6) {
+    toast('Новый пароль — минимум 6 символов', 'error');
+    dom.prefsNewPassword.focus();
+    return;
+  }
+  if (next !== repeat) {
+    toast('Пароли не совпадают', 'error');
+    dom.prefsRepeatPassword.focus();
+    return;
+  }
+
+  dom.prefsChangePassword.disabled = true;
+  try {
+    await Auth.changePassword(current, next);
+    dom.prefsCurrentPassword.value = '';
+    dom.prefsNewPassword.value = '';
+    dom.prefsRepeatPassword.value = '';
+    toast('Пароль изменён — входите с новым', 'success');
+  } catch (error) {
+    console.error(error);
+    toast(Auth.getAuthErrorMessage(error), 'error');
+  } finally {
+    dom.prefsChangePassword.disabled = false;
   }
 }
 
@@ -4780,6 +4995,15 @@ dom.prefsPrivacyToggle.addEventListener('click', async (event) => {
     toast('Не удалось сохранить настройку', 'error');
   }
 });
+dom.prefsChangePassword.addEventListener('click', changePasswordClick);
+[dom.prefsCurrentPassword, dom.prefsNewPassword, dom.prefsRepeatPassword].forEach((input) => {
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      changePasswordClick();
+    }
+  });
+});
 dom.prefsArchiveBtn.addEventListener('click', () => {
   closePrefsModal();
   openArchiveModal();
@@ -4948,6 +5172,13 @@ dom.settingsAdminInput.addEventListener('keydown', (event) => {
     addSettingsAdmin();
   }
 });
+dom.settingsMemberAdd.addEventListener('click', addSettingsMember);
+dom.settingsMemberInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault(); // не отправляем форму настроек
+    addSettingsMember();
+  }
+});
 dom.settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const chat = state.chats.get(settingsChatId);
@@ -4957,11 +5188,14 @@ dom.settingsForm.addEventListener('submit', async (event) => {
   dom.settingsSubmit.disabled = true;
   dom.settingsSubmit.textContent = 'Сохраняем…';
   try {
+    // Тип и юзернейм группы отправляем только владельцу/супер-админу:
+    // админ группы может менять лишь название, описание и аватар.
+    const canManageGroupMeta = chat.owner === state.user.uid || adminRightsOn();
     await Chat.updateChatSettings(settingsChatId, state.user.uid, {
       title: dom.settingsTitle.value,
       description: dom.settingsDescription.value,
-      groupType: chat.type === 'group' ? settingsTypeChoice : undefined,
-      username: dom.settingsUsername.value,
+      groupType: chat.type === 'group' && canManageGroupMeta ? settingsTypeChoice : undefined,
+      username: canManageGroupMeta ? dom.settingsUsername.value : undefined,
     });
     // Аватар группы/канала: сохраняем, только если его трогали.
     if ((chat.type === 'channel' || chat.type === 'group') && chatAvatarDraft.touched) {

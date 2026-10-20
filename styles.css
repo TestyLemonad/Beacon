@@ -983,6 +983,23 @@ textarea:-webkit-autofill {
   border-color: rgba(255, 107, 107, 0.4);
 }
 
+/* Кнопка «Админ» в списке участников группы */
+.make-admin-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.make-admin-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
 /* ---------- Тост-уведомления ---------- */
 .toast {
   position: fixed;
@@ -1145,6 +1162,9 @@ textarea:-webkit-autofill {
 .blocked-list .unsubscribe-btn {
   margin-left: 8px;
 }
+.blocked-list .make-admin-btn {
+  margin-left: 8px;
+}
 
 /* Администраторы канала (в настройках канала) */
 .admin-add-row {
@@ -1247,6 +1267,16 @@ textarea:-webkit-autofill {
 }
 .provider-pass-input:focus {
   border-color: rgba(255, 184, 77, 0.55);
+}
+
+/* Смена пароля в настройках */
+.password-change-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.password-change-form .btn {
+  margin-top: 2px;
 }
 
 /* Привязка Google на экране входа */
@@ -2108,7 +2138,8 @@ textarea:focus-visible {
     width: 18px;
     height: 18px;
   }
-  .unsubscribe-btn {
+  .unsubscribe-btn,
+  .make-admin-btn {
     font-size: 14px;
     padding: 7px 14px;
   }

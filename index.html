@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=19" />
+  <link rel="stylesheet" href="styles.css?v=21" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -548,6 +548,18 @@
           <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
         </div>
 
+        <!-- Участники группы: добавление людей и назначение администраторов -->
+        <div class="field hidden" id="settings-members-block">
+          <label>Участники группы</label>
+          <div id="settings-members-list" class="blocked-list"></div>
+          <div class="admin-add-row" id="settings-member-add-row">
+            <input id="settings-member-input" class="input" type="text" placeholder="@username или ID"
+                   autocomplete="off" spellcheck="false" />
+            <button id="settings-member-add" class="btn ghost" type="button">Добавить</button>
+          </div>
+          <p class="field-hint">Добавлять участников могут владелец и администраторы группы. Администраторов назначает владелец.</p>
+        </div>
+
         <!-- Администраторы канала: только для каналов -->
         <div class="field hidden" id="settings-admins-block">
           <label>Администраторы канала</label>
@@ -721,6 +733,20 @@
           <p class="field-hint">Один аккаунт — два способа: можно входить и по паролю, и через Google. Привяжите или отвяжите способ входа здесь.</p>
         </div>
 
+        <div class="field hidden" id="prefs-password-field">
+          <label>Смена пароля</label>
+          <div class="password-change-form">
+            <input id="prefs-current-password" class="input" type="password" placeholder="Текущий пароль"
+                   autocomplete="current-password" />
+            <input id="prefs-new-password" class="input" type="password" placeholder="Новый пароль (минимум 6 символов)"
+                   autocomplete="new-password" />
+            <input id="prefs-repeat-password" class="input" type="password" placeholder="Повторите новый пароль"
+                   autocomplete="new-password" />
+            <button id="prefs-change-password" class="btn ghost full" type="button">Сменить пароль</button>
+          </div>
+          <p class="field-hint">После смены пароля входите с новым. Вход через Google останется доступен, если он привязан.</p>
+        </div>
+
         <div class="field">
           <label>Чёрный список</label>
           <button id="prefs-blocked-btn" class="btn ghost full" type="button">
@@ -837,6 +863,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=19"></script>
+  <script type="module" src="app.js?v=21"></script>
 </body>
 </html>

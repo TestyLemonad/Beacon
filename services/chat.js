@@ -56,7 +56,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=19';
+import { db } from '../firebase-config.js?v=21';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -636,8 +636,13 @@ export async function updateChatSettings(chatId, requesterUid, data) {
   if (chat.type !== 'group' && chat.type !== 'channel') {
     throw new Error('Настройки доступны только для групп и каналов');
   }
-  if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
-    throw new Error('Изменять настройки может только владелец');
+  const isOwner = chat.owner === requesterUid;
+  const isRoot = await isRootAdmin(requesterUid);
+  const isGroupAdmin = chat.type === 'group' && Boolean(chat.admins?.[requesterUid]);
+  if (!isOwner && !isRoot && !isGroupAdmin) {
+    throw new Error(chat.type === 'group'
+      ? 'Изменять настройки может владелец или администратор группы'
+      : 'Изменять настройки может только владелец');
   }
 
   const cleanTitle = String(data.title || '').trim();
@@ -650,7 +655,8 @@ export async function updateChatSettings(chatId, requesterUid, data) {
   };
 
   let claimed = null;
-  if (chat.type === 'group') {
+  // Тип и юзернейм группы меняет только владелец (или супер-админ).
+  if (chat.type === 'group' && (isOwner || isRoot)) {
     const oldUsername = chat.username || null;
     const wantPublic = data.groupType === 'public';
 
@@ -681,6 +687,85 @@ export async function updateChatSettings(chatId, requesterUid, data) {
     throw error;
   }
   return getChat(chatId);
+}
+
+/* ============================================================
+ *  Участники и администраторы группы
+ * ============================================================ */
+
+/** Может ли пользователь добавлять участников группы. */
+async function canManageGroupMembers(chat, uid) {
+  if (!uid || chat.type !== 'group') return false;
+  if (chat.owner === uid || chat.admins?.[uid]) return true;
+  return isRootAdmin(uid);
+}
+
+/** Может ли пользователь назначать администраторов группы: владелец или супер-админ. */
+async function canManageGroupAdmins(chat, uid) {
+  if (!uid || chat.type !== 'group') return false;
+  if (chat.owner === uid) return true;
+  return isRootAdmin(uid);
+}
+
+/**
+ * Добавить участника в группу.
+ * Добавлять могут владелец, администраторы группы и супер-админ.
+ * @returns {Promise<{added: boolean}>} added=false — пользователь уже в группе
+ */
+export async function addGroupMember(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Группа не найдена');
+  if (chat.type !== 'group') throw new Error('Добавлять участников можно только в группы');
+  if (!(await canManageGroupMembers(chat, requesterUid))) {
+    throw new Error('Добавлять участников может владелец или администратор группы');
+  }
+
+  const target = await getUserProfile(targetUid);
+  if (!target) throw new Error('Пользователь не найден');
+  if (chat.users?.[targetUid] || chat.owner === targetUid) return { added: false };
+
+  await update(ref(db), {
+    [`chats/${chatId}/users/${targetUid}`]: true,
+    [`user_chats/${targetUid}/${chatId}`]: true,
+  });
+  return { added: true };
+}
+
+/**
+ * Назначить администратора группы. Назначает владелец или супер-админ;
+ * пользователь должен уже состоять в группе.
+ * @returns {Promise<void>}
+ */
+export async function addGroupAdmin(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Группа не найдена');
+  if (chat.type !== 'group') throw new Error('Администраторы есть только у групп');
+  if (!(await canManageGroupAdmins(chat, requesterUid))) {
+    throw new Error('Назначать администраторов может только владелец группы');
+  }
+  if (targetUid === chat.owner) throw new Error('Владелец уже администратор');
+  if (!chat.users?.[targetUid]) throw new Error('Сначала добавьте пользователя в группу');
+
+  await set(ref(db, `chats/${chatId}/admins/${targetUid}`), true);
+}
+
+/**
+ * Снять администратора группы. Владельца снять нельзя.
+ * @returns {Promise<void>}
+ */
+export async function removeGroupAdmin(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Группа не найдена');
+  if (chat.type !== 'group') throw new Error('Администраторы есть только у групп');
+  if (!(await canManageGroupAdmins(chat, requesterUid))) {
+    throw new Error('Снимать администраторов может только владелец группы');
+  }
+  if (targetUid === chat.owner) throw new Error('Нельзя снять владельца группы');
+
+  await set(ref(db, `chats/${chatId}/admins/${targetUid}`), null);
 }
 
 /* ============================================================
@@ -780,8 +865,11 @@ export async function updateChatAvatar(chatId, requesterUid, avatar) {
   if (chat.type !== 'channel' && chat.type !== 'group') {
     throw new Error('Аватар можно настроить только у группы или канала');
   }
-  if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
-    throw new Error('Менять аватар может только владелец чата');
+  const isGroupAdmin = chat.type === 'group' && Boolean(chat.admins?.[requesterUid]);
+  if (chat.owner !== requesterUid && !isGroupAdmin && !(await isRootAdmin(requesterUid))) {
+    throw new Error(chat.type === 'group'
+      ? 'Менять аватар может владелец или администратор группы'
+      : 'Менять логотип может только владелец канала');
   }
 
   let cleanAvatar = null;
