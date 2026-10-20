@@ -652,6 +652,27 @@ textarea:-webkit-autofill {
   color: var(--text-muted);
 }
 
+/* Линия «Новые сообщения» при входе в чат с непрочитанными */
+.message-unread-divider {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text);
+  user-select: none;
+}
+.message-unread-divider::before,
+.message-unread-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
 /* Плашка канала: доступ только администраторам */
 .channel-locked {
   display: flex;

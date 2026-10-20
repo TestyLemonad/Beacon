@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=17';
-import * as Chat from './services/chat.js?v=17';
+import * as Auth from './services/auth.js?v=19';
+import * as Chat from './services/chat.js?v=19';
 
 /* ============================================================
  *  DOM
@@ -294,6 +294,8 @@ const state = {
   activeChatId: null,       // id открытого чата
   messages: [],             // сообщения активного чата (отсортированы)
   stickToBottom: true,      // держать ли скролл внизу
+  unreadDivider: null,      // { chatId, ts } — граница «новых сообщений» при входе в чат
+  dividerScrollPending: false, // прокрутить к разделителю после первой отрисовки
   channelPreview: null,     // { chatId, chat } — предпросмотр канала из поиска
   search: { query: '', loading: false, users: [], groups: [], channels: [], localChats: [], messages: [] },
   searchFilters: { chatId: '', author: '', period: 'all' }, // фильтры поиска по сообщениям
@@ -1409,6 +1411,8 @@ function clearChatScoped() {
   state.chatViews = new Map();
   state.peerSettings = {};
   state.commentsPost = null;
+  state.unreadDivider = null;
+  state.dividerScrollPending = false;
   clearInterval(typingTick);
   typingTick = null;
 }
@@ -1499,6 +1503,25 @@ function markActiveChatRead() {
   Chat.markChatRead(state.user.uid, state.activeChatId, lastTs).catch(() => {});
 }
 
+/**
+ * Граница непрочитанных при входе в чат: время моего последнего прочтения.
+ * null — новых сообщений нет (последнее сообщение моё или уже прочитано).
+ * @returns {{chatId: string, ts: number}|null}
+ */
+function computeUnreadDivider(chatId) {
+  const chat = state.chats.get(chatId) || null;
+  const last = chat?.lastMessage;
+  if (!last?.timestamp || last.sender === state.user?.uid) return null;
+  const mine = Number(state.reads.get(chatId)) || 0;
+  if (last.timestamp <= mine) return null;
+  return { chatId, ts: mine };
+}
+
+/** Разделитель «Новые сообщения» в ленте. */
+function buildUnreadDivider() {
+  return createEl('div', 'message-unread-divider', 'Новые сообщения');
+}
+
 /** Обновить статус в шапке чата и строку присутствия в меню чата. */
 function updateChatStatus() {
   const chat = state.chats.get(state.activeChatId) || null;
@@ -1539,7 +1562,11 @@ function selectChat(chatId) {
   if (chatChanged) {
     clearChatScoped();
     state.messages = [];
-    state.stickToBottom = true;
+    // Вход в чат с непрочитанными: встаём на границу новых сообщений,
+    // а не прокручиваем сразу в самый низ.
+    state.unreadDivider = computeUnreadDivider(chatId);
+    state.dividerScrollPending = Boolean(state.unreadDivider);
+    state.stickToBottom = !state.unreadDivider;
 
     state.subscriptions.messages = Chat.subscribeToMessages(
       chatId,
@@ -1694,6 +1721,9 @@ function renderMessages() {
   const container = dom.messages;
   const wasStick = state.stickToBottom;
   const prevScrollTop = container.scrollTop;
+  const divider = state.unreadDivider && state.unreadDivider.chatId === state.activeChatId
+    ? state.unreadDivider
+    : null;
 
   container.innerHTML = '';
 
@@ -1712,6 +1742,7 @@ function renderMessages() {
 
   let lastDay = null;
   const senderUids = [];
+  let dividerEl = null;
 
   for (const message of visible) {
     const dayKey = new Date(message.timestamp * 1000).toDateString();
@@ -1719,12 +1750,28 @@ function renderMessages() {
       container.append(createEl('div', 'message-day', formatDayLabel(message.timestamp)));
       lastDay = dayKey;
     }
+    // Линия «Новые сообщения» — перед первым сообщением после моего прочтения.
+    if (!dividerEl && divider && message.timestamp > divider.ts) {
+      dividerEl = buildUnreadDivider();
+      container.append(dividerEl);
+    }
     container.append(buildMessageElement(message, showSender));
     senderUids.push(message.sender);
   }
 
-  // Автопрокрутка вниз при новых сообщениях, если пользователь у нижнего края.
-  if (wasStick) {
+  // При входе в чат с непрочитанными — прокручиваем к разделителю, а не вниз.
+  // Синхронно: rAF в фоновой вкладке может не сработать.
+  if (state.dividerScrollPending) {
+    state.dividerScrollPending = false;
+    if (dividerEl) {
+      const containerRect = container.getBoundingClientRect();
+      const dividerRect = dividerEl.getBoundingClientRect();
+      container.scrollTop += (dividerRect.top - containerRect.top) - 12;
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+  } else if (wasStick) {
+    // Автопрокрутка вниз при новых сообщениях, если пользователь у нижнего края.
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
     });
@@ -1880,7 +1927,7 @@ function buildPollBlock(message) {
 
   const myVotes = votes[state.user?.uid] || {};
   const chat = state.chats.get(state.activeChatId) || null;
-  const canVote = Chat.canPostToChat(chat, state.user?.uid);
+  const canVote = Chat.canVoteInChat(chat, state.user?.uid, state.myChatIds.has(state.activeChatId));
 
   const block = createEl('div', 'bubble-poll');
   block.append(createEl('div', 'bubble-poll-question', poll.question || 'Опрос'));
@@ -1894,7 +1941,7 @@ function buildPollBlock(message) {
     const btn = createEl('button', `bubble-poll-option${mine ? ' mine' : ''}`);
     btn.type = 'button';
     btn.disabled = !canVote;
-    btn.title = canVote ? (mine ? 'Убрать голос' : 'Голосовать') : 'Голосовать могут участники';
+    btn.title = canVote ? (mine ? 'Убрать голос' : 'Голосовать') : 'Голосовать могут только участники и подписчики';
 
     const fill = createEl('span', 'bubble-poll-fill');
     fill.style.width = `${percent}%`;
@@ -3443,9 +3490,13 @@ function openSettingsModal() {
   dom.settingsAdminInput.value = '';
   if (isChannel) renderSettingsAdmins(chat);
 
-  // Логотип канала: тоже только для каналов.
-  dom.settingsAvatarBlock.classList.toggle('hidden', !isChannel);
-  if (isChannel) initChatAvatarEditor(chat);
+  // Аватар группы / логотип канала — у обоих типов.
+  const hasAvatarEditor = chat.type === 'group' || chat.type === 'channel';
+  dom.settingsAvatarBlock.classList.toggle('hidden', !hasAvatarEditor);
+  const avatarLabel = dom.settingsAvatarBlock.querySelector('label');
+  if (avatarLabel) avatarLabel.textContent = isChannel ? 'Логотип канала' : 'Аватар группы';
+  dom.settingsAvatarReset.textContent = isChannel ? 'Убрать логотип' : 'Убрать аватар';
+  if (hasAvatarEditor) initChatAvatarEditor(chat);
 
   dom.settingsError.classList.add('hidden');
   dom.settingsOverlay.classList.remove('hidden');
@@ -3638,7 +3689,7 @@ function renderChatAvatarEditor(syncInput = true) {
       (chat.title || '?').trim().charAt(0).toUpperCase(),
     );
   } else {
-    applyChatAvatar(dom.settingsAvatarPreview, settingsChatId || 'chat', { type: 'channel', title: chat.title });
+    applyChatAvatar(dom.settingsAvatarPreview, settingsChatId || 'chat', { type: chat.type || 'channel', title: chat.title });
   }
 }
 
@@ -4912,8 +4963,8 @@ dom.settingsForm.addEventListener('submit', async (event) => {
       groupType: chat.type === 'group' ? settingsTypeChoice : undefined,
       username: dom.settingsUsername.value,
     });
-    // Логотип канала: сохраняем, только если его трогали.
-    if (chat.type === 'channel' && chatAvatarDraft.touched) {
+    // Аватар группы/канала: сохраняем, только если его трогали.
+    if ((chat.type === 'channel' || chat.type === 'group') && chatAvatarDraft.touched) {
       const avatar = chatAvatarDraft.removed ? null : draftAvatar(chatAvatarDraft);
       await Chat.updateChatAvatar(settingsChatId, state.user.uid, avatar);
     }

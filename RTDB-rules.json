@@ -214,6 +214,7 @@
 
     "comments": {
       "$chatId": {
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$postId": {
           ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",

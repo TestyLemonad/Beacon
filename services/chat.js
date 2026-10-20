@@ -56,7 +56,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=17';
+import { db } from '../firebase-config.js?v=19';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -767,9 +767,9 @@ export async function removeChannelAdmin(chatId, requesterUid, targetUid) {
  * ============================================================ */
 
 /**
- * Настроить логотип канала: буква или эмодзи на цвете/градиенте.
+ * Настроить аватар группы или логотип канала: буква/эмодзи на цвете/градиенте.
  * avatar = null — вернуть стандартную букву названия.
- * Менять может владелец канала или супер-админ.
+ * Менять может владелец чата или супер-админ.
  * @param {{kind?: string, value: string, bgType?: string, bg1: string, bg2?: string, size?: number}|null} avatar
  * @returns {Promise<void>}
  */
@@ -777,9 +777,11 @@ export async function updateChatAvatar(chatId, requesterUid, avatar) {
   if (!chatId || !requesterUid) throw new Error('Некорректные параметры');
   const chat = await getChat(chatId);
   if (!chat) throw new Error('Чат не найден');
-  if (chat.type !== 'channel') throw new Error('Логотип можно настроить только у канала');
+  if (chat.type !== 'channel' && chat.type !== 'group') {
+    throw new Error('Аватар можно настроить только у группы или канала');
+  }
   if (chat.owner !== requesterUid && !(await isRootAdmin(requesterUid))) {
-    throw new Error('Менять логотип может только владелец канала');
+    throw new Error('Менять аватар может только владелец чата');
   }
 
   let cleanAvatar = null;
@@ -1042,6 +1044,27 @@ export async function unbanUser(uid) {
 export function canPostToChat(chat, uid) {
   if (!chat || !uid) return false;
   if (chat.type === 'channel') return Boolean(chat.admins && chat.admins[uid]);
+  return Boolean(chat.users && chat.users[uid]);
+}
+
+/**
+ * Разрешено ли пользователю голосовать в опросе.
+ * В каналах голосуют все подписчики, а не только администраторы.
+ * @param {object} chat
+ * @param {string} uid
+ * @param {boolean} isMember — чат есть в /user_chats пользователя
+ */
+export function canVoteInChat(chat, uid, isMember = false) {
+  if (!chat || !uid) return false;
+  if (chat.type === 'channel') {
+    return Boolean(
+      isMember
+      || (chat.users && chat.users[uid])
+      || (chat.subscribers && chat.subscribers[uid])
+      || (chat.admins && chat.admins[uid])
+      || chat.owner === uid
+    );
+  }
   return Boolean(chat.users && chat.users[uid]);
 }
 
