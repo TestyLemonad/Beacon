@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=24" />
+  <link rel="stylesheet" href="styles.css?v=25" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -741,6 +741,12 @@
         </div>
 
         <div class="field">
+          <label>Безопасность</label>
+          <button id="prefs-sessions-btn" class="btn ghost full" type="button">Активные сессии</button>
+          <p class="field-hint">Устройства, где выполнен вход. Лишние сессии можно завершить.</p>
+        </div>
+
+        <div class="field">
           <label>Чёрный список</label>
           <button id="prefs-blocked-btn" class="btn ghost full" type="button">
             Открыть чёрный список (<span id="prefs-blocked-count">0</span>)
@@ -782,6 +788,27 @@
           <button id="password-submit" class="btn primary" type="submit">Сменить пароль</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Активные сессии: отдельное окно, открывается из настроек -->
+  <div id="sessions-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Активные сессии</h3>
+        <button id="sessions-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="field-hint">Здесь видны устройства, где выполнен вход в аккаунт. Завершённая сессия выйдет из аккаунта при следующем подключении.</p>
+
+      <div id="sessions-list" class="sessions-list"></div>
+      <p id="sessions-empty" class="sidebar-empty hidden">Активных сессий пока нет.</p>
+      <p id="sessions-error" class="form-error hidden"></p>
+
+      <div class="modal-actions sessions-actions">
+        <button id="sessions-refresh" class="btn ghost" type="button">Обновить</button>
+        <button id="sessions-revoke-others" class="btn danger" type="button">Выйти на других устройствах</button>
+      </div>
     </div>
   </div>
 
@@ -891,6 +918,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=24"></script>
+  <script type="module" src="app.js?v=25"></script>
 </body>
 </html>

@@ -38,6 +38,36 @@
       }
     },
 
+    "sessions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$sessionId": {
+          "createdAt": {
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
+          "lastActive": {
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
+          "label": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "userAgent": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "platform": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "mobile": {
+            ".validate": "!newData.exists() || newData.isBoolean()"
+          },
+          "revokedAt": {
+            ".validate": "!newData.exists() || newData.isNumber()"
+          }
+        }
+      }
+    },
+
     "channel_usernames": {
       ".read": "auth != null",
       "$name": {

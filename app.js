@@ -10,8 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=24';
-import * as Chat from './services/chat.js?v=24';
+import * as Auth from './services/auth.js?v=25';
+import * as Chat from './services/chat.js?v=25';
+import * as Sessions from './services/sessions.js?v=25';
 
 /* ============================================================
  *  DOM
@@ -194,6 +195,16 @@ const dom = {
   passwordError: $('password-error'),
   passwordCancel: $('password-cancel'),
   passwordSubmit: $('password-submit'),
+
+  // Активные сессии (отдельное окно)
+  prefsSessionsBtn: $('prefs-sessions-btn'),
+  sessionsOverlay: $('sessions-overlay'),
+  sessionsClose: $('sessions-close'),
+  sessionsList: $('sessions-list'),
+  sessionsEmpty: $('sessions-empty'),
+  sessionsError: $('sessions-error'),
+  sessionsRefresh: $('sessions-refresh'),
+  sessionsRevokeOthers: $('sessions-revoke-others'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -617,6 +628,10 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   back:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+  device:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
+  phone:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>',
 };
 
 /** Собрать span с SVG-иконкой из набора ICONS. */
@@ -2418,6 +2433,7 @@ function teardownSubscriptions() {
  * ============================================================ */
 
 function showAuthScreen() {
+  closePrefsModal();
   dom.messengerScreen.classList.add('hidden');
   dom.onboardingScreen.classList.add('hidden');
   dom.authScreen.classList.remove('hidden');
@@ -4326,6 +4342,7 @@ function openPrefsModal() {
 }
 
 function closePrefsModal() {
+  closeSessionsModal();
   closePasswordModal();
   dom.prefsOverlay.classList.add('hidden');
 }
@@ -4518,6 +4535,128 @@ async function submitPasswordChange(event) {
   } finally {
     dom.passwordSubmit.disabled = false;
     dom.passwordSubmit.textContent = 'Сменить пароль';
+  }
+}
+
+/* ============================================================
+ *  Активные сессии (отдельное окно из настроек)
+ * ============================================================ */
+
+function openSessionsModal() {
+  if (!state.user) return;
+  dom.sessionsError.classList.add('hidden');
+  dom.sessionsEmpty.classList.add('hidden');
+  dom.sessionsList.innerHTML = '';
+  dom.sessionsOverlay.classList.remove('hidden');
+  loadSessions();
+}
+
+function closeSessionsModal() {
+  dom.sessionsOverlay.classList.add('hidden');
+}
+
+function setSessionsLoading(loading) {
+  dom.sessionsRefresh.disabled = loading;
+  dom.sessionsRefresh.textContent = loading ? 'Загрузка…' : 'Обновить';
+  if (loading) dom.sessionsRevokeOthers.disabled = true;
+}
+
+/** Загрузить список сессий и отрисовать его. */
+async function loadSessions() {
+  if (!state.user) return;
+  dom.sessionsError.classList.add('hidden');
+  setSessionsLoading(true);
+  try {
+    const sessions = await Sessions.listSessions(state.user.uid);
+    renderSessions(sessions);
+  } catch (error) {
+    console.error(error);
+    dom.sessionsList.innerHTML = '';
+    dom.sessionsEmpty.classList.add('hidden');
+    dom.sessionsRevokeOthers.disabled = true;
+    dom.sessionsError.textContent = 'Не удалось загрузить список сессий. Попробуйте позже.';
+    dom.sessionsError.classList.remove('hidden');
+  } finally {
+    setSessionsLoading(false);
+  }
+}
+
+/** Отрисовать строки сессий: текущая — первой. */
+function renderSessions(sessions) {
+  const currentId = Sessions.getCurrentSessionId();
+  const sorted = [...sessions].sort((a, b) => {
+    if (a.id === currentId) return -1;
+    if (b.id === currentId) return 1;
+    return (Number(b.lastActive) || 0) - (Number(a.lastActive) || 0);
+  });
+
+  dom.sessionsList.innerHTML = '';
+  dom.sessionsEmpty.classList.toggle('hidden', sorted.length > 0);
+
+  const others = sorted.filter((session) => session.id !== currentId);
+  dom.sessionsRevokeOthers.disabled = others.length === 0;
+
+  sorted.forEach((session) => {
+    const isCurrent = session.id === currentId;
+    const row = createEl('div', 'session-row');
+
+    const icon = createEl('div', 'session-icon');
+    icon.append(createIcon(session.mobile ? 'phone' : 'device'));
+    row.append(icon);
+
+    const body = createEl('div', 'session-body');
+    const title = createEl('div', 'session-title');
+    title.append(createEl('span', '', session.label || 'Браузер'));
+    if (isCurrent) title.append(createEl('span', 'session-current', 'это устройство'));
+
+    const created = Number(session.createdAt) || 0;
+    const meta = [`Активность: ${formatLastSeen(session.lastActive)}`];
+    if (created) meta.push(`Вход: ${formatDayLabel(created)}, ${formatTime(created)}`);
+    body.append(title, createEl('div', 'session-meta', meta.join(' · ')));
+    row.append(body);
+
+    if (!isCurrent) {
+      const btn = createEl('button', 'btn ghost session-revoke', 'Завершить');
+      btn.type = 'button';
+      btn.addEventListener('click', () => revokeSessionClick(session));
+      row.append(btn);
+    }
+
+    dom.sessionsList.append(row);
+  });
+}
+
+/** Завершить одну сессию с подтверждением. */
+async function revokeSessionClick(session) {
+  if (!state.user) return;
+  const currentId = Sessions.getCurrentSessionId();
+  if (!session.id || session.id === currentId) return;
+  if (!window.confirm(`Завершить сессию «${session.label || 'это устройство'}»?`)) return;
+
+  try {
+    await Sessions.revokeSession(state.user.uid, session.id, currentId);
+    toast('Сессия завершена', 'success');
+    await loadSessions();
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось завершить сессию', 'error');
+  }
+}
+
+/** Завершить все сессии, кроме текущей. */
+async function revokeOtherSessionsClick() {
+  if (!state.user) return;
+  if (!window.confirm('Выйти на всех других устройствах? Там придётся войти заново.')) return;
+
+  dom.sessionsRevokeOthers.disabled = true;
+  try {
+    const count = await Sessions.revokeOtherSessions(state.user.uid, Sessions.getCurrentSessionId());
+    toast(count ? `Завершено сессий: ${count}` : 'Других активных сессий нет', count ? 'success' : undefined);
+    await loadSessions();
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось завершить другие сессии', 'error');
+    await loadSessions();
   }
 }
 
@@ -4989,21 +5128,31 @@ dom.onboardingForm.addEventListener('submit', (event) => {
   });
 });
 
-dom.onboardingLogout.addEventListener('click', () => {
+/** Выйти из аккаунта: сначала убрать запись сессии, потом signOut. */
+async function logoutCurrentUser() {
   if (state.user) Chat.setOfflinePresence(state.user.uid).catch(() => {});
-  Auth.logout().catch((error) => {
+  // Не блокируем выход, если сеть пропала: запись сессии — вспомогательная.
+  await Promise.race([
+    Sessions.stopSession().catch((error) => {
+      console.warn('Не удалось остановить сессию:', error);
+    }),
+    new Promise((resolve) => window.setTimeout(resolve, 1200)),
+  ]);
+  try {
+    await Auth.logout();
+  } catch (error) {
     console.error(error);
     toast('Не удалось выйти из аккаунта', 'error');
-  });
+  }
+}
+
+dom.onboardingLogout.addEventListener('click', () => {
+  logoutCurrentUser();
 });
 
 // --- Боковая панель ---
 dom.logoutBtn.addEventListener('click', () => {
-  if (state.user) Chat.setOfflinePresence(state.user.uid).catch(() => {});
-  Auth.logout().catch((error) => {
-    console.error(error);
-    toast('Не удалось выйти из аккаунта', 'error');
-  });
+  logoutCurrentUser();
 });
 
 // Полоса папок: колесо мыши прокручивает её по горизонтали.
@@ -5017,10 +5166,7 @@ dom.foldersBar.addEventListener('wheel', (event) => {
 
 // Экран блокировки (бан): выход из аккаунта.
 dom.bannedLogout.addEventListener('click', () => {
-  Auth.logout().catch((error) => {
-    console.error(error);
-    toast('Не удалось выйти из аккаунта', 'error');
-  });
+  logoutCurrentUser();
 });
 
 // --- Настройки (клик по логотипу): тема, приватность визита, архив ---
@@ -5029,6 +5175,13 @@ dom.prefsClose.addEventListener('click', closePrefsModal);
 dom.prefsOverlay.addEventListener('click', (event) => {
   if (event.target === dom.prefsOverlay) closePrefsModal();
 });
+dom.prefsSessionsBtn.addEventListener('click', openSessionsModal);
+dom.sessionsClose.addEventListener('click', closeSessionsModal);
+dom.sessionsOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.sessionsOverlay) closeSessionsModal();
+});
+dom.sessionsRefresh.addEventListener('click', loadSessions);
+dom.sessionsRevokeOthers.addEventListener('click', revokeOtherSessionsClick);
 dom.prefsThemeToggle.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-theme-choice]');
   if (btn) setTheme(btn.dataset.themeChoice);
@@ -5312,6 +5465,10 @@ document.addEventListener('keydown', (event) => {
     closeArchiveModal();
     return;
   }
+  if (!dom.sessionsOverlay.classList.contains('hidden')) {
+    closeSessionsModal();
+    return;
+  }
   if (!dom.prefsOverlay.classList.contains('hidden')) {
     closePrefsModal();
     return;
@@ -5516,6 +5673,7 @@ dom.privateUnblockBtn.addEventListener('click', () => {
 // --- Роутинг по состоянию авторизации ---
 Auth.watchAuthState(async (user) => {
   if (!user) {
+    Sessions.stopSession({ removeRecord: false }).catch(() => {});
     teardownSubscriptions();
     state.user = null;
     state.profile = null;
@@ -5524,6 +5682,14 @@ Auth.watchAuthState(async (user) => {
   }
 
   state.user = user;
+
+  // Реестр активных сессий: записываем это устройство и слушаем отзыв.
+  Sessions.startSession(user.uid, () => {
+    toast('Сессия завершена на другом устройстве', 'error');
+    logoutCurrentUser();
+  }).catch((error) => {
+    console.warn('Не удалось зарегистрировать сессию:', error);
+  });
 
   // Базовый узел /users/$uid + актуальный профиль.
   try {

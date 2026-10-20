@@ -1269,6 +1269,74 @@ textarea:-webkit-autofill {
   border-color: rgba(255, 184, 77, 0.55);
 }
 
+/* Активные сессии */
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.session-icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+.session-icon .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+.session-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.session-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.session-current {
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 184, 77, 0.45);
+  border-radius: 999px;
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 500;
+}
+.session-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.session-revoke {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.sessions-actions {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
 /* Привязка Google на экране входа */
 .auth-link-panel {
   margin-top: 14px;

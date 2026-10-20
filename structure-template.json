@@ -48,6 +48,28 @@
     }
   },
 
+  "sessions": {
+    "user1_id": {
+      "session_1": {
+        "createdAt": 1728723605,
+        "lastActive": 1728727205,
+        "label": "Chrome · Windows",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "platform": "Win32",
+        "mobile": false
+      },
+      "session_2": {
+        "createdAt": 1728710000,
+        "lastActive": 1728720000,
+        "label": "Safari · iOS",
+        "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        "platform": "iPhone",
+        "mobile": true,
+        "revokedAt": 1728720100
+      }
+    }
+  },
+
   "user_blocks": {
     "user1_id": {
       "user3_id": true
