@@ -37,6 +37,17 @@
     "faros_far": "user2_id"
   },
 
+  "login_index": {
+    "smotritel_mayaka": {
+      "uid": "user1_id",
+      "email": "smotritel@mayak.ru"
+    },
+    "faros_far": {
+      "uid": "user2_id",
+      "email": "faros@mayak.ru"
+    }
+  },
+
   "user_blocks": {
     "user1_id": {
       "user3_id": true

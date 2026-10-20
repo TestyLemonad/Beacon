@@ -12,7 +12,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="styles.css?v=24" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -37,9 +37,10 @@
 
       <form id="auth-form" class="auth-form">
         <div class="field">
-          <label for="auth-email">Email</label>
-          <input id="auth-email" class="input" type="email" placeholder="smotritel@mayak.ru"
-                 autocomplete="email" required />
+          <label for="auth-email" id="auth-identifier-label">Email или юзернейм</label>
+          <input id="auth-email" class="input" type="text" placeholder="smotritel@mayak.ru или @smotritel_mayaka"
+                 autocomplete="username" required />
+          <p id="auth-identifier-hint" class="field-hint">Можно войти по почте или по @username.</p>
         </div>
 
         <div class="field">
@@ -890,6 +891,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=22"></script>
+  <script type="module" src="app.js?v=24"></script>
 </body>
 </html>

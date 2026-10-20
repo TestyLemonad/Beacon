@@ -30,6 +30,14 @@
       }
     },
 
+    "login_index": {
+      "$name": {
+        ".read": true,
+        ".write": "auth != null && ((newData.exists() && newData.child('uid').val() === auth.uid && newData.child('email').val() === auth.token.email && root.child('usernames').child($name).val() === auth.uid) || (!newData.exists() && (!data.exists() || data.child('uid').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'email']) && newData.child('uid').isString() && newData.child('email').isString())"
+      }
+    },
+
     "channel_usernames": {
       ".read": "auth != null",
       "$name": {

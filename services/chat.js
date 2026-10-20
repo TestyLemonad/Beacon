@@ -5,6 +5,7 @@
  *
  *   /users/$uid              { username, firstName, lastName?, bio?, avatar?, email, createdAt }
  *   /usernames/$username     $uid                       — индекс поиска людей
+ *   /login_index/$username   { uid, email }             — вход по @username
  *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
  *                              admins?, subscribersCount?, subscribers?, auto_subscribed?,
  *                              avatar?, createdAt, lastMessage?, pinned? }
@@ -56,7 +57,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=22';
+import { auth, db } from '../firebase-config.js?v=24';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -259,8 +260,48 @@ export async function updateUserProfile(uid, data, previousUsername = null) {
     throw error;
   }
 
+  // Публичный индекс входа @username -> { uid, email }. Пишем отдельным
+  // шагом и best-effort: сбой индекса не должен ломать сохранение профиля.
+  const accountEmail = auth.currentUser?.uid === uid
+    ? String(auth.currentUser.email || '').trim().toLowerCase()
+    : '';
+  const indexUpdates = {};
+  if (accountEmail) indexUpdates[`login_index/${username}`] = { uid, email: accountEmail };
+  if (prev && prev !== username) indexUpdates[`login_index/${prev}`] = null;
+  if (Object.keys(indexUpdates).length) {
+    await update(ref(db), indexUpdates).catch((error) => {
+      console.warn('Не удалось обновить индекс входа:', error);
+    });
+  }
+
   usersCache.delete(uid);
   return getUserProfile(uid, { force: true });
+}
+
+/**
+ * Дозаполнить публичный индекс входа для существующих аккаунтов.
+ * Доступно супер-админам; операция идемпотентна.
+ * @returns {Promise<number>} сколько записей записано
+ */
+export async function backfillLoginIndex() {
+  const [usernamesSnap, usersSnap] = await Promise.all([
+    get(ref(db, 'usernames')),
+    get(ref(db, 'users')),
+  ]);
+  const usernames = usernamesSnap.val() || {};
+  const users = usersSnap.val() || {};
+  const updates = {};
+
+  // Канонический источник — /usernames: старые/отвязанные имена из
+  // /users/$uid/username не должны становиться дополнительным входом.
+  for (const [name, uid] of Object.entries(usernames)) {
+    const email = String(users[uid]?.email || '').trim().toLowerCase();
+    if (name && email) updates[`login_index/${name}`] = { uid, email };
+  }
+
+  const count = Object.keys(updates).length;
+  if (count) await update(ref(db), updates);
+  return count;
 }
 
 /**

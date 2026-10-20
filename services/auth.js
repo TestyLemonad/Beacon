@@ -25,7 +25,7 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=22';
+import { auth, db } from '../firebase-config.js?v=24';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -60,6 +60,60 @@ export async function registerWithEmail(email, password) {
 export async function loginWithEmail(email, password) {
   const credential = await signInWithEmailAndPassword(auth, String(email).trim(), password);
   return credential.user;
+}
+
+/** Похоже ли значение на email (для регистрации нужен именно он). */
+export function isEmailAddress(value) {
+  // Точную проверку делает Firebase Auth; здесь важно отличить email
+  // от @username, а не отклонить необычный, но допустимый адрес.
+  return /^[^\s@]+@[^\s@]+$/.test(String(value || '').trim());
+}
+
+/** Нормализовать юзернейм для входа: без «@», в нижнем регистре. */
+function normalizeLoginUsername(value) {
+  return String(value || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+/**
+ * Найти email для входа по email или @username.
+ * Юзернейм ищется в публичном индексе /login_index/$username.
+ * @param {string} identifier — email или @username
+ * @returns {Promise<string>} email для Firebase Auth
+ */
+export async function resolveLoginEmail(identifier) {
+  const raw = String(identifier || '').trim();
+  if (!raw) throw new Error('Введите email или юзернейм');
+  if (isEmailAddress(raw)) return raw.toLowerCase();
+
+  const username = normalizeLoginUsername(raw);
+  if (!/^[a-z0-9_]{3,32}$/.test(username)) {
+    throw new Error('Введите email или @username (3–32 символа: a–z, 0–9, «_»)');
+  }
+
+  let snapshot;
+  try {
+    snapshot = await get(ref(db, `login_index/${username}`));
+  } catch (error) {
+    if (error?.code === 'database/permission-denied' || /permission/i.test(String(error?.message || ''))) {
+      throw new Error('Вход по юзернейму временно недоступен — войдите по почте');
+    }
+    throw error;
+  }
+
+  const record = snapshot.val();
+  const email = String((typeof record === 'string' ? record : record?.email) || '').trim().toLowerCase();
+  if (!email) throw new Error('Пользователь с таким юзернеймом не найден');
+  return email;
+}
+
+/**
+ * Вход по email или @username + пароль.
+ * Для юзернейма сначала находим email в /login_index, затем отдаём его
+ * Firebase Auth — сам Firebase про юзернеймы не знает.
+ */
+export async function loginWithIdentifier(identifier, password) {
+  const email = await resolveLoginEmail(identifier);
+  return loginWithEmail(email, password);
 }
 
 /**
@@ -207,6 +261,15 @@ export async function ensureUserRecord(user) {
 
   const existing = snapshot.val() || {};
   if (email && existing.email !== email) await update(userRef, { email });
+
+  // Публичный индекс входа: @username -> { uid, email }. Поддерживаем его
+  // при каждом входе, чтобы старые аккаунты тоже могли входить по юзернейму.
+  const username = String(existing.username || '').trim().toLowerCase();
+  if (email && username) {
+    await set(ref(db, `login_index/${username}`), { uid: user.uid, email })
+      .catch((error) => console.warn('Не удалось обновить индекс входа:', error));
+  }
+
   return { ...existing, email };
 }
 

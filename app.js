@@ -10,8 +10,8 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=22';
-import * as Chat from './services/chat.js?v=22';
+import * as Auth from './services/auth.js?v=24';
+import * as Chat from './services/chat.js?v=24';
 
 /* ============================================================
  *  DOM
@@ -24,6 +24,8 @@ const dom = {
   authScreen: $('auth-screen'),
   authForm: $('auth-form'),
   authEmail: $('auth-email'),
+  authIdentifierLabel: $('auth-identifier-label'),
+  authIdentifierHint: $('auth-identifier-hint'),
   authPassword: $('auth-password'),
   authError: $('auth-error'),
   authSubmit: $('auth-submit'),
@@ -2483,6 +2485,14 @@ function setAuthMode(mode) {
     ? 'Уже есть аккаунт? Войти'
     : 'Нет аккаунта? Зарегистрироваться';
   dom.authPassword.autocomplete = isRegister ? 'new-password' : 'current-password';
+  dom.authEmail.autocomplete = isRegister ? 'email' : 'username';
+  dom.authIdentifierLabel.textContent = isRegister ? 'Email' : 'Email или юзернейм';
+  dom.authIdentifierHint.textContent = isRegister
+    ? 'Для регистрации нужна почта.'
+    : 'Можно войти по почте или по @username.';
+  dom.authEmail.placeholder = isRegister
+    ? 'smotritel@mayak.ru'
+    : 'smotritel@mayak.ru или @smotritel_mayaka';
 
   hideAuthError();
 }
@@ -4887,12 +4897,19 @@ dom.authForm.addEventListener('submit', async (event) => {
   hideAuthError();
   setAuthLoading(true);
 
-  const email = dom.authEmail.value;
+  const identifier = dom.authEmail.value.trim();
   const password = dom.authPassword.value;
 
   try {
-    if (authMode === 'register') await Auth.registerWithEmail(email, password);
-    else await Auth.loginWithEmail(email, password);
+    if (authMode === 'register') {
+      if (!Auth.isEmailAddress(identifier)) {
+        showAuthError('Для регистрации укажите email');
+        return;
+      }
+      await Auth.registerWithEmail(identifier, password);
+    } else {
+      await Auth.loginWithIdentifier(identifier, password);
+    }
   } catch (error) {
     showAuthError(Auth.getAuthErrorMessage(error));
   } finally {
@@ -5517,6 +5534,11 @@ Auth.watchAuthState(async (user) => {
   }
 
   if (state.user !== user) return; // пользователь успел выйти, пока грузили
+
+  // Супер-админ дозаполняет публичный индекс входа для существующих аккаунтов.
+  Chat.isRootAdmin(user.uid)
+    .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
+    .catch((error) => console.warn('Не удалось дозаполнить индекс входа:', error));
 
   // Бан администратором: состояние + живая подписка
   // (снятие бана возвращает пользователя в мессенджер).
