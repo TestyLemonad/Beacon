@@ -25,7 +25,7 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=25';
+import { auth, db } from '../firebase-config.js?v=26';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -266,7 +266,8 @@ export async function ensureUserRecord(user) {
   // при каждом входе, чтобы старые аккаунты тоже могли входить по юзернейму.
   const username = String(existing.username || '').trim().toLowerCase();
   if (email && username) {
-    await set(ref(db, `login_index/${username}`), { uid: user.uid, email })
+    // Индекс входа — вспомогательный: не задерживаем из-за него восстановление сессии.
+    set(ref(db, `login_index/${username}`), { uid: user.uid, email })
       .catch((error) => console.warn('Не удалось обновить индекс входа:', error));
   }
 

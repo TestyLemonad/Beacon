@@ -8,11 +8,16 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
+
+  <!-- Заранее открываем соединения с Firebase: восстановление сессии не ждёт TLS -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://testy-beacon.firebaseapp.com" />
+  <link rel="preconnect" href="https://testy-beacon-default-rtdb.firebaseio.com" />
   <meta name="theme-color" content="#121212" />
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=26" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -918,6 +923,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=25"></script>
+  <script type="module" src="app.js?v=26"></script>
 </body>
 </html>

@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=25';
-import * as Chat from './services/chat.js?v=25';
-import * as Sessions from './services/sessions.js?v=25';
+import * as Auth from './services/auth.js?v=26';
+import * as Chat from './services/chat.js?v=26';
+import * as Sessions from './services/sessions.js?v=26';
 
 /* ============================================================
  *  DOM
@@ -5691,25 +5691,32 @@ Auth.watchAuthState(async (user) => {
     console.warn('Не удалось зарегистрировать сессию:', error);
   });
 
-  // Базовый узел /users/$uid + актуальный профиль.
-  try {
-    await Auth.ensureUserRecord(user);
-    state.profile = await Chat.getUserProfile(user.uid, { force: true });
-  } catch (error) {
+  // Профиль и бан грузим параллельно. ensureUserRecord уже читает /users/$uid,
+  // поэтому не делаем второй такой же запрос через getUserProfile.
+  const profilePromise = Auth.ensureUserRecord(user).catch((error) => {
     console.error('Не удалось загрузить профиль пользователя:', error);
-  }
-
-  if (state.user !== user) return; // пользователь успел выйти, пока грузили
+    return null;
+  });
+  const banPromise = Chat.getBan(user.uid).catch((error) => {
+    console.warn('Не удалось проверить бан:', error);
+    return null;
+  });
 
   // Супер-админ дозаполняет публичный индекс входа для существующих аккаунтов.
   Chat.isRootAdmin(user.uid)
     .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
     .catch((error) => console.warn('Не удалось дозаполнить индекс входа:', error));
 
-  // Бан администратором: состояние + живая подписка
-  // (снятие бана возвращает пользователя в мессенджер).
+  const [profile, ban] = await Promise.all([profilePromise, banPromise]);
+  if (state.user !== user) return; // пользователь успел выйти, пока грузили
+
+  // Если чтение в ensureUserRecord не удалось, пробуем обычный кэш/повтор.
+  state.profile = profile || await Chat.getUserProfile(user.uid, { force: true }).catch(() => null);
+  if (state.user !== user) return;
+  state.myBan = ban;
+
+  // Бан администратором: живая подписка (снятие бана возвращает в мессенджер).
   state.subscriptions.myBan?.();
-  state.myBan = await Chat.getBan(user.uid).catch(() => null);
   if (state.user !== user) return;
   state.subscriptions.myBan = Chat.subscribeToMyBan(user.uid, (record) => {
     const wasBanned = Boolean(state.myBan);
