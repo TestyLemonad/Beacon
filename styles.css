@@ -1410,6 +1410,17 @@ html[data-theme='light'] .toast.success {
   line-height: 1;
 }
 
+/* Аватар «Избранного»: закладка вместо первой буквы названия. */
+.avatar-saved {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.avatar-saved svg {
+  width: 1.2em;
+  height: 1.2em;
+}
+
 .avatar-size-row,
 .avatar-color-row {
   display: flex;

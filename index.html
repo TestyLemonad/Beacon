@@ -17,7 +17,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=28" />
+  <link rel="stylesheet" href="styles.css?v=29" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -296,10 +296,9 @@
           </button>
           <textarea id="message-input" rows="1" placeholder="Сообщение..." autocomplete="off"></textarea>
           <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M22 2 2 9 10.5 12.8z" />
+              <path fill="currentColor" fill-opacity=".55" d="M22 2 10.5 12.8 13 22z" />
             </svg>
           </button>
         </form>
@@ -879,10 +878,9 @@
       <form id="comments-form" class="comments-form">
         <input id="comments-input" type="text" placeholder="Комментарий..." autocomplete="off" />
         <button id="comments-send" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M22 2 2 9 10.5 12.8z" />
+            <path fill="currentColor" fill-opacity=".55" d="M22 2 10.5 12.8 13 22z" />
           </svg>
         </button>
       </form>
@@ -923,6 +921,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=28"></script>
+  <script type="module" src="app.js?v=29"></script>
 </body>
 </html>

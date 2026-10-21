@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=28';
-import * as Chat from './services/chat.js?v=28';
-import * as Sessions from './services/sessions.js?v=28';
+import * as Auth from './services/auth.js?v=29';
+import * as Chat from './services/chat.js?v=29';
+import * as Sessions from './services/sessions.js?v=29';
 
 /* ============================================================
  *  DOM
@@ -580,6 +580,16 @@ function applyChatAvatar(node, chatId, chat) {
     const peerUid = getPrivatePeerUid(chat);
     const profile = peerUid ? Chat.getCachedUserProfile(peerUid) : null;
     applyProfileAvatar(node, profile, peerUid || chatId);
+    return;
+  }
+  // «Избранное» — закладка вместо буквы «?».
+  if (chat?.type === 'saved') {
+    node.classList.remove('avatar-emoji');
+    node.style.background = avatarColor(chatId);
+    node.textContent = '';
+    const glyph = createEl('span', 'avatar-glyph avatar-saved');
+    glyph.innerHTML = CHAT_TYPE_ICONS.saved;
+    node.append(glyph);
     return;
   }
   const fallback = (chat?.title || '?').trim().charAt(0).toUpperCase();
