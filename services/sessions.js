@@ -7,7 +7,7 @@
  * отзыв токенов возможен только через Admin SDK / Cloud Functions.
  */
 import { ref, get, set, update, remove, onValue } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=26';
+import { db } from '../firebase-config.js?v=28';
 
 const SESSION_KEY = 'beacon-session-id';
 const HEARTBEAT_MS = 60_000;

@@ -57,7 +57,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=26';
+import { auth, db } from '../firebase-config.js?v=28';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -807,6 +807,51 @@ export async function removeGroupAdmin(chatId, requesterUid, targetUid) {
   if (targetUid === chat.owner) throw new Error('Нельзя снять владельца группы');
 
   await set(ref(db, `chats/${chatId}/admins/${targetUid}`), null);
+}
+
+/**
+ * Покинуть группу. Владелец покинуть группу не может — он должен удалить её.
+ * Снимаем участие, права администратора и запись в списке чатов.
+ * @returns {Promise<void>}
+ */
+export async function leaveGroup(chatId, uid) {
+  if (!chatId || !uid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Группа не найдена');
+  if (chat.type !== 'group') throw new Error('Покинуть можно только группу');
+  if (chat.owner === uid) throw new Error('Владелец не может покинуть группу — удалите её');
+  if (!chat.users?.[uid]) return;
+
+  await update(ref(db), {
+    [`chats/${chatId}/users/${uid}`]: null,
+    [`chats/${chatId}/admins/${uid}`]: null,
+    [`user_chats/${uid}/${chatId}`]: null,
+    [`typing/${chatId}/${uid}`]: null,
+  });
+}
+
+/**
+ * Удалить участника из группы. Доступно владельцу группы и супер-админу:
+ * администраторы группы могут только добавлять участников.
+ * @returns {Promise<{removed: boolean}>} removed=false — пользователя не было в группе
+ */
+export async function removeGroupMember(chatId, requesterUid, targetUid) {
+  if (!chatId || !requesterUid || !targetUid) throw new Error('Некорректные параметры');
+  const chat = await getChat(chatId);
+  if (!chat) throw new Error('Группа не найдена');
+  if (chat.type !== 'group') throw new Error('Удалять участников можно только из групп');
+  if (!(await canManageGroupAdmins(chat, requesterUid))) {
+    throw new Error('Удалять участников может только владелец группы');
+  }
+  if (targetUid === chat.owner) throw new Error('Нельзя удалить владельца группы');
+  if (!chat.users?.[targetUid]) return { removed: false };
+
+  await update(ref(db), {
+    [`chats/${chatId}/users/${targetUid}`]: null,
+    [`chats/${chatId}/admins/${targetUid}`]: null,
+    [`user_chats/${targetUid}/${chatId}`]: null,
+  });
+  return { removed: true };
 }
 
 /* ============================================================

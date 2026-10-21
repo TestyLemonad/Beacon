@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=26';
-import * as Chat from './services/chat.js?v=26';
-import * as Sessions from './services/sessions.js?v=26';
+import * as Auth from './services/auth.js?v=28';
+import * as Chat from './services/chat.js?v=28';
+import * as Sessions from './services/sessions.js?v=28';
 
 /* ============================================================
  *  DOM
@@ -512,12 +512,21 @@ function getProfileName(profile) {
   return full || (profile.username ? '@' + profile.username : null);
 }
 
+/**
+ * Первая буква строки без разрыва суррогатных пар.
+ * Эмодзи и прочие символы пропускаем, ищем именно букву/цифру.
+ */
+function firstLetter(value, fallback = '?') {
+  const char = [...String(value || '')].find((symbol) => /[0-9A-Za-zА-Яа-яЁё]/.test(symbol));
+  return (char || fallback).toUpperCase();
+}
+
 /** Инициалы для аватарки (или первая буква юзернейма). */
 function getProfileInitials(profile) {
   const first = (profile?.firstName || '').trim();
   const last = (profile?.lastName || '').trim();
-  if (first || last) return ((first[0] || '') + (last[0] || '')).toUpperCase();
-  if (profile?.username) return profile.username.charAt(0).toUpperCase();
+  if (first || last) return (firstLetter(first, '') + firstLetter(last, ''));
+  if (profile?.username) return firstLetter(profile.username);
   return '?';
 }
 
@@ -1076,7 +1085,8 @@ async function collectMessageResults(query, seq) {
 /** Результаты поиска сообщений после фильтров «чат / автор / период». */
 function filteredMessageResults() {
   const { chatId, author, period } = state.searchFilters;
-  return state.search.messages.filter((item) => (
+  const messages = Array.isArray(state.search.messages) ? state.search.messages : [];
+  return messages.filter((item) => (
     (!chatId || item.chatId === chatId)
     && (!author || item.sender === author)
     && matchPeriod(item.timestamp, period)
@@ -1349,7 +1359,7 @@ function renderMessageSearchSection() {
   const query = String(state.search.query || '').trim();
   if (query.length < 2) return;
 
-  const total = state.search.messages.length;
+  const total = Array.isArray(state.search.messages) ? state.search.messages.length : 0;
   dom.searchResults.append(createEl(
     'div',
     'search-section',
@@ -1413,7 +1423,8 @@ function exitSearchMode() {
   dom.searchClear.classList.add('hidden');
   dom.searchResults.classList.add('hidden');
   dom.chatListWrap.classList.remove('hidden');
-  state.search = { query: '', loading: false, users: [], groups: [], channels: [], localChats: [] };
+  state.search = { query: '', loading: false, users: [], groups: [], channels: [], localChats: [], messages: [] };
+  state.searchFilters = { chatId: '', author: '', period: 'all' };
 }
 
 /** Создать личный чат по uid и открыть его. */
@@ -2621,10 +2632,12 @@ function draftAvatar(from = avatarDraft) {
 /** Залить черновик данными текущего профиля и перерисовать редактор. */
 function initAvatarEditor() {
   const avatar = state.profile?.avatar || null;
+  const fallbackName = (state.profile?.firstName || state.profile?.username || '').trim();
   avatarDraft.custom = false;
   avatarDraft.kind = avatar?.kind === 'emoji' ? 'emoji' : 'letter';
-  avatarDraft.value = avatar?.value
-    || (state.profile?.firstName || state.profile?.username || '').trim().charAt(0).toUpperCase();
+  avatarDraft.value = avatarDraft.kind === 'letter'
+    ? firstLetter(avatar?.value, firstLetter(fallbackName, ''))
+    : (avatar?.value || firstLetter(fallbackName, ''));
   avatarDraft.bgType = avatar?.bgType === 'gradient' ? 'gradient' : 'solid';
   avatarDraft.bg1 = avatar?.bg1 || AVATAR_COLORS[0];
   avatarDraft.bg2 = avatar?.bg2 || AVATAR_COLORS[2];
@@ -2712,8 +2725,11 @@ dom.avatarKindBtns.forEach((btn) => {
   btn.addEventListener('click', () => {
     avatarDraft.custom = true;
     avatarDraft.kind = btn.dataset.avatarKind === 'emoji' ? 'emoji' : 'letter';
-    if (avatarDraft.kind === 'letter' && avatarDraft.value) {
-      avatarDraft.value = avatarDraft.value.charAt(0).toUpperCase();
+    if (avatarDraft.kind === 'letter') {
+      // Эмодзи и суррогатные пары обрезать нельзя: берём первую настоящую букву,
+      // иначе падаем на первую букву имени.
+      const fallbackName = (state.profile?.firstName || state.profile?.username || '').trim();
+      avatarDraft.value = firstLetter(avatarDraft.value, firstLetter(fallbackName, ''));
     }
     renderAvatarEditor();
   });
@@ -3738,6 +3754,15 @@ function renderSettingsMembers(chat) {
       item.append(toggle);
     }
 
+    // Удалять участников может владелец группы (и супер-админ).
+    if ((chat.owner === myUid || adminRightsOn()) && uid !== chat.owner) {
+      const remove = createEl('button', 'unsubscribe-btn', 'Убрать');
+      remove.type = 'button';
+      remove.title = 'Удалить из группы';
+      remove.addEventListener('click', () => removeSettingsMember(uid, remove));
+      item.append(remove);
+    }
+
     dom.settingsMembersList.append(item);
   }
 
@@ -3769,6 +3794,32 @@ async function toggleSettingsGroupAdmin(uid, makeAdmin, buttonEl) {
   } catch (error) {
     console.error(error);
     toast(error.message || 'Не удалось изменить администратора', 'error');
+  } finally {
+    buttonEl.disabled = false;
+  }
+}
+
+/** Удалить участника из группы (кнопка «Убрать» в списке настроек). */
+async function removeSettingsMember(uid, buttonEl) {
+  if (!settingsChatId || !state.user) return;
+  const chat = state.chats.get(settingsChatId);
+  if (!chat) return;
+  const name = getProfileName(Chat.getCachedUserProfile(uid)) || 'участника';
+  if (!window.confirm(`Удалить участника «${name}» из группы?`)) return;
+
+  buttonEl.disabled = true;
+  try {
+    const result = await Chat.removeGroupMember(settingsChatId, state.user.uid, uid);
+    toast(result?.removed === false ? 'Пользователя нет в группе' : 'Участник удалён');
+
+    const live = await Chat.getChat(settingsChatId);
+    if (live) {
+      state.chats.set(settingsChatId, live);
+      if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsMembers(live);
+    }
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось удалить участника', 'error');
   } finally {
     buttonEl.disabled = false;
   }
@@ -4037,6 +4088,9 @@ function renderChatMenu() {
       openSettingsModal();
     });
   }
+  if (chat.type === 'group' && chat.owner !== myUid && chat.users?.[myUid]) {
+    addChatMenuAction('Покинуть группу', leaveActiveGroup);
+  }
   if (chat.type === 'channel' && chat.owner !== myUid && state.myChatIds.has(state.activeChatId)) {
     addChatMenuAction('Отписаться от канала', unsubscribeFromActiveChannel);
   }
@@ -4106,11 +4160,33 @@ async function unsubscribeFromActiveChannel() {
 
   try {
     await Chat.unsubscribeFromChannel(state.user.uid, state.activeChatId);
-    closeChatMenu();
+    closeActiveChat();
     toast(isAdmin ? 'Вы покинули канал' : 'Вы отписались от канала');
   } catch (error) {
     console.error(error);
     toast(error.message || 'Не удалось отписаться от канала', 'error');
+  }
+}
+
+/** Покинуть группу (действие в меню чата). Владелец группу не покидает. */
+async function leaveActiveGroup() {
+  const chat = state.chats.get(state.activeChatId);
+  if (!chat || chat.type !== 'group') return;
+  if (chat.owner === state.user.uid) return;
+
+  const isAdmin = Boolean(chat.admins?.[state.user.uid]);
+  const question = isAdmin
+    ? `Покинуть группу «${getChatTitle(chat)}»? Права администратора будут сняты.`
+    : `Покинуть группу «${getChatTitle(chat)}»?`;
+  if (!window.confirm(question)) return;
+
+  try {
+    await Chat.leaveGroup(state.activeChatId, state.user.uid);
+    closeActiveChat();
+    toast('Вы покинули группу');
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось покинуть группу', 'error');
   }
 }
 
