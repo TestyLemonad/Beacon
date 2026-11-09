@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=30';
-import * as Chat from './services/chat.js?v=30';
-import * as Sessions from './services/sessions.js?v=30';
+import * as Auth from './services/auth.js?v=31';
+import * as Chat from './services/chat.js?v=31';
+import * as Sessions from './services/sessions.js?v=31';
 
 /* ============================================================
  *  DOM
@@ -398,6 +398,14 @@ let pendingGoogleLink = null; // { email, pendingCredential } — ждём па�
 let modalTab = 'private';   // активная вкладка модального окна
 let searchSeq = 0;          // защита от гонок при поиске
 let searchTimer = null;
+
+/** Глубокие ссылки: ?s=запрос — глобальный поиск, ?u=@username — человек/канал/группа. */
+const deepLinkParams = new URLSearchParams(window.location.search);
+const deepLink = {
+  search: String(deepLinkParams.get('s') || '').trim(),
+  username: String(deepLinkParams.get('u') || '').trim(),
+};
+let deepLinkHandled = false;
 let groupTypeChoice = 'private';    // тип новой группы: 'private' | 'public'
 let settingsTypeChoice = 'private'; // тип группы в окне настроек
 let settingsChatId = null;          // чат, открытый в окне настроек
@@ -1111,6 +1119,7 @@ async function runSearch(rawQuery) {
   const prefix = normalized && Chat.isValidUsername(normalized) ? normalized : '';
 
   state.search.query = rawQuery;
+  syncSearchUrl(query);
   state.search.localChats = filterLocalChats(query);
   state.search.loading = Boolean(prefix) || query.length >= 2;
 
@@ -1435,6 +1444,127 @@ function exitSearchMode() {
   dom.chatListWrap.classList.remove('hidden');
   state.search = { query: '', loading: false, users: [], groups: [], channels: [], localChats: [], messages: [] };
   state.searchFilters = { chatId: '', author: '', period: 'all' };
+  syncSearchUrl('');
+}
+
+/* --- Глубокие ссылки: /?s=… и /?u=@… --- */
+
+/** Обновить ?s= в адресной строке, не создавая записей в истории. */
+function syncSearchUrl(query) {
+  try {
+    const url = new URL(window.location.href);
+    const value = String(query || '').trim();
+    if (value) url.searchParams.set('s', value);
+    else url.searchParams.delete('s');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, '', next);
+  } catch (error) {
+    console.warn('Не удалось обновить адрес поиска:', error);
+  }
+}
+
+/** Убрать GET-параметр из адресной строки. */
+function removeUrlParam(name) {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(name)) return;
+    url.searchParams.delete(name);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch (error) {
+    console.warn('Не удалось обновить адрес:', error);
+  }
+}
+
+/** Открыть глобальный поиск по запросу (также используется для @упоминаний). */
+function openGlobalSearch(rawQuery) {
+  const query = String(rawQuery || '').trim();
+  if (!query) return;
+
+  exitSearchMode();
+  dom.searchInput.value = query;
+  dom.searchClear.classList.remove('hidden');
+  enterSearchMode();
+  runSearch(query);
+  if (window.innerWidth <= 768) dom.searchInput.blur();
+}
+
+/** Открыть пользователя, канал или публичную группу по @юзернейму. */
+async function openDeepLinkUsername(rawUsername) {
+  const username = Chat.normalizeUsername(rawUsername);
+  removeUrlParam('u');
+
+  if (!Chat.isValidUsername(username)) {
+    if (rawUsername) openGlobalSearch(rawUsername);
+    return;
+  }
+
+  let target = null;
+  try {
+    const [user, channels, groups] = await Promise.all([
+      Chat.getUserByUsername(username).catch(() => null),
+      Chat.searchChannelsByPrefix(username, 5).catch(() => []),
+      Chat.searchGroupsByPrefix(username, 5).catch(() => []),
+    ]);
+    const channel = channels.find((item) => item.username === username);
+    const group = groups.find((item) => item.username === username);
+
+    // Порядок как в выдаче поиска: сначала человек, затем канал и группа.
+    if (user) target = { kind: 'user', user };
+    else if (channel) target = { kind: 'chat', chat: channel };
+    else if (group) target = { kind: 'chat', chat: group };
+  } catch (error) {
+    console.error('Не удалось открыть ссылку по юзернейму:', error);
+  }
+
+  if (!target) {
+    openGlobalSearch('@' + username);
+    toast(`@${username} не найден — показаны результаты поиска`);
+    return;
+  }
+
+  exitSearchMode();
+
+  if (target.kind === 'user') {
+    if (target.user.uid === state.user?.uid) {
+      openGlobalSearch('@' + username);
+      toast('Это ваш юзернейм');
+      return;
+    }
+    await openPrivateChatWith(target.user.uid);
+    return;
+  }
+
+  const { chat } = target;
+  const chatId = chat.chatId;
+  if (!chatId) {
+    openGlobalSearch('@' + username);
+    return;
+  }
+
+  const uid = state.user?.uid;
+  const isMember = chat.type === 'group'
+    ? Boolean(chat.users?.[uid])
+    : Boolean(chat.subscribers?.[uid] || chat.admins?.[uid] || chat.owner === uid);
+
+  if (isMember) selectChat(chatId);
+  else openChannelPreview(chatId);
+}
+
+/** Применить глубокую ссылку после входа в мессенджер. */
+async function applyDeepLink() {
+  if (deepLinkHandled || !state.user) return;
+  if (!deepLink.username && !deepLink.search) {
+    deepLinkHandled = true;
+    return;
+  }
+
+  deepLinkHandled = true;
+  if (deepLink.username) {
+    await openDeepLinkUsername(deepLink.username);
+    return;
+  }
+  openGlobalSearch(deepLink.search);
 }
 
 /** Создать личный чат по uid и открыть его. */
@@ -1952,12 +2082,7 @@ function buildMessageText(text) {
 
 /** Клик по @упоминанию / #хэштегу: открыть поиск по этому токену. */
 function openMentionOrHashtag(token) {
-  exitSearchMode();
-  dom.searchInput.value = token;
-  dom.searchClear.classList.remove('hidden');
-  enterSearchMode();
-  runSearch(token);
-  if (window.innerWidth <= 768) dom.searchInput.blur();
+  openGlobalSearch(token);
 }
 
 /** Блок опроса внутри сообщения: живые результаты и голосование. */
@@ -2501,6 +2626,9 @@ function enterMessenger() {
       if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
     })
     .catch((error) => console.error('Не удалось загрузить чёрный список:', error));
+
+  // Глубокая ссылка из адресной строки: /?s=… или /?u=@…
+  applyDeepLink();
 }
 
 function showAuthError(message) {
