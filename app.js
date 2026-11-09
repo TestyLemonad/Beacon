@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=29';
-import * as Chat from './services/chat.js?v=29';
-import * as Sessions from './services/sessions.js?v=29';
+import * as Auth from './services/auth.js?v=30';
+import * as Chat from './services/chat.js?v=30';
+import * as Sessions from './services/sessions.js?v=30';
 
 /* ============================================================
  *  DOM
@@ -3378,9 +3378,19 @@ async function forwardMessageTo(chatId) {
   closeForwardModal();
 
   try {
-    await Chat.sendMessage(chatId, state.user.uid, message.text, {
-      forwardedFrom: { uid: message.sender, name: getSenderName(message.sender) },
-    });
+    const forwardedFrom = { uid: message.sender, name: getSenderName(message.sender) };
+    if (message.poll) {
+      // Опрос пересылаем как новый опрос: вопрос, варианты и режим ответа
+      // сохраняются, а голоса не переносятся — они привязаны к id сообщения.
+      await Chat.sendPollMessage(chatId, state.user.uid, {
+        question: message.poll.question,
+        options: (message.poll.options || []).map((option) => option.text),
+        multiple: Boolean(message.poll.multiple),
+        forwardedFrom,
+      });
+    } else {
+      await Chat.sendMessage(chatId, state.user.uid, message.text, { forwardedFrom });
+    }
     toast('Переслано', 'success');
   } catch (error) {
     console.error(error);

@@ -57,7 +57,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=29';
+import { auth, db } from '../firebase-config.js?v=30';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -1613,10 +1613,16 @@ export const POLL_MAX_OPTIONS = 10;
 
 /**
  * Отправить опрос: сообщение с полем poll и превью «📊 вопрос».
- * @param {{ question: string, options: string[], multiple?: boolean }} data
+ * @param {{ question: string, options: string[], multiple?: boolean,
+ *           forwardedFrom?: { uid: string, name: string } }} data
  * @returns {Promise<string>} id сообщения-опроса
  */
-export async function sendPollMessage(chatId, senderUid, { question, options = [], multiple = false } = {}) {
+export async function sendPollMessage(chatId, senderUid, {
+  question,
+  options = [],
+  multiple = false,
+  forwardedFrom = null,
+} = {}) {
   if (!chatId || !senderUid) throw new Error('Не указан чат или отправитель');
 
   const cleanQuestion = String(question || '').trim();
@@ -1637,6 +1643,7 @@ export async function sendPollMessage(chatId, senderUid, { question, options = [
       options: cleanOptions.map((text, index) => ({ id: 'o' + (index + 1), text })),
     },
   };
+  if (forwardedFrom) message.forwardedFrom = forwardedFrom;
 
   await update(ref(db), {
     [`messages/${chatId}/${messageId}`]: message,
