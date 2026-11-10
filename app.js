@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=31';
-import * as Chat from './services/chat.js?v=31';
-import * as Sessions from './services/sessions.js?v=31';
+import * as Auth from './services/auth.js?v=32';
+import * as Chat from './services/chat.js?v=32';
+import * as Sessions from './services/sessions.js?v=32';
 
 /* ============================================================
  *  DOM
@@ -1444,7 +1444,9 @@ function exitSearchMode() {
   dom.chatListWrap.classList.remove('hidden');
   state.search = { query: '', loading: false, users: [], groups: [], channels: [], localChats: [], messages: [] };
   state.searchFilters = { chatId: '', author: '', period: 'all' };
-  syncSearchUrl('');
+  // До применения глубокой ссылки не вычищаем ?s= из адреса, иначе ссылка
+  // потеряется, если человек ещё не вошёл и обновит страницу.
+  if (deepLinkHandled) syncSearchUrl('');
 }
 
 /* --- Глубокие ссылки: /?s=… и /?u=@… --- */
