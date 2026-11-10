@@ -2498,6 +2498,36 @@ textarea:focus-visible {
   text-decoration-color: rgba(107, 61, 0, 0.4);
 }
 
+/* Обычные ссылки: приглушённый оранжевый, чтобы не рябило в глазах */
+.msg-url {
+  color: #dfa15a;
+  text-decoration-color: rgba(223, 161, 90, 0.55);
+  word-break: break-word;
+}
+.msg-url:hover {
+  color: #f0b86f;
+  text-decoration-color: currentColor;
+}
+.message.own .msg-url {
+  color: #6b3d00;
+  text-decoration-color: rgba(107, 61, 0, 0.45);
+}
+.message.own .msg-url:hover {
+  color: #4f2d00;
+}
+html[data-theme='light'] .msg-url {
+  color: #9a5c00;
+  text-decoration-color: rgba(154, 92, 0, 0.45);
+}
+html[data-theme='light'] .msg-url:hover {
+  color: #7d4a00;
+  text-decoration-color: currentColor;
+}
+html[data-theme='light'] .message.own .msg-url {
+  color: #6b3d00;
+  text-decoration-color: rgba(107, 61, 0, 0.45);
+}
+
 /* Опрос в сообщении */
 .bubble-poll {
   display: flex;

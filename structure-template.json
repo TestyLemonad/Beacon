@@ -146,6 +146,7 @@
       "createdAt": 1728723605,
       "owner": "user1_id",
       "subscribersCount": 142,
+      "requiresSubscription": true,
       "avatar": {
         "kind": "emoji",
         "value": "📡",

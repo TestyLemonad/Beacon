@@ -8,7 +8,7 @@
  *   /login_index/$username   { uid, email }             — вход по @username
  *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
  *                              admins?, subscribersCount?, subscribers?, auto_subscribed?,
- *                              avatar?, createdAt, lastMessage?, pinned? }
+ *                              requiresSubscription?, avatar?, createdAt, lastMessage?, pinned? }
  *                              subscribers / auto_subscribed — карта $uid: подписчики канала
  *                              и те, кого подписали автоматически при выдаче админки
  *                              (снимаешь админа — откатываем такую подписку)
@@ -57,7 +57,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=32';
+import { auth, db } from '../firebase-config.js?v=33';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -492,6 +492,8 @@ export async function createChannel(ownerUid, { username, title, description = '
       owner: ownerUid,
       createdAt: nowSeconds(),
       subscribersCount: 1,
+      // По умолчанию канал читают только подписчики: так было и раньше.
+      requiresSubscription: true,
       admins: { [ownerUid]: true },
       subscribers: { [ownerUid]: true },
     },
@@ -663,12 +665,12 @@ export async function searchGroupsByPrefix(prefix, limit = 10) {
  * Обновить настройки группы или канала (доступно только владельцу).
  * Группа: название, описание, тип (приватная/публичная), юзернейм публичной
  * группы — с захватом/освобождением индекса /group_usernames.
- * Канал: название и описание.
+ * Канал: название, описание и признак «требуется подписка для чтения».
  *
  * @param {string} chatId
  * @param {string} requesterUid
  * @param {{ title: string, description?: string, groupType?: 'private'|'public',
- *           username?: string }} data
+ *           username?: string, requiresSubscription?: boolean }} data
  * @returns {Promise<object>} обновлённый узел чата
  */
 export async function updateChatSettings(chatId, requesterUid, data) {
@@ -694,6 +696,16 @@ export async function updateChatSettings(chatId, requesterUid, data) {
     [`chats/${chatId}/title`]: cleanTitle,
     [`chats/${chatId}/description`]: cleanDescription || null,
   };
+
+  // Канал: читать можно без подписки, если владелец выключил требование.
+  // Пишем поле, только когда оно реально изменилось: старые каналы без него
+  // ведут себя как «подписка требуется».
+  if (chat.type === 'channel' && (isOwner || isRoot) && typeof data.requiresSubscription === 'boolean') {
+    const current = chat.requiresSubscription !== false;
+    if (current !== data.requiresSubscription) {
+      updates[`chats/${chatId}/requiresSubscription`] = data.requiresSubscription;
+    }
+  }
 
   let claimed = null;
   // Тип и юзернейм группы меняет только владелец (или супер-админ).

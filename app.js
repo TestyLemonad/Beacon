@@ -10,9 +10,9 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=32';
-import * as Chat from './services/chat.js?v=32';
-import * as Sessions from './services/sessions.js?v=32';
+import * as Auth from './services/auth.js?v=33';
+import * as Chat from './services/chat.js?v=33';
+import * as Sessions from './services/sessions.js?v=33';
 
 /* ============================================================
  *  DOM
@@ -284,6 +284,8 @@ const dom = {
   settingsTypeBtns: Array.from(document.querySelectorAll('[data-settings-type]')),
   settingsUsernameField: $('settings-username-field'),
   settingsUsername: $('settings-username'),
+  settingsChannelBlock: $('settings-channel-block'),
+  settingsRequiresSubscription: $('settings-requires-subscription'),
   settingsAdminsBlock: $('settings-admins-block'),
   settingsAdminsList: $('settings-admins-list'),
   settingsAdminInput: $('settings-admin-input'),
@@ -812,7 +814,11 @@ function isChatUnread(chatId, chat) {
 /** Чаты: закреплённые сверху (по времени закрепа), затем по свежести. */
 function sortedChats() {
   const time = (chat) => chat?.lastMessage?.timestamp || chat?.createdAt || 0;
-  return [...state.chats.entries()].sort((a, b) => {
+  // Канал, открытый только для чтения, живёт в state.chats, но в списке
+  // «моих чатов» ему места нет — пока пользователь не подпишется.
+  return [...state.chats.entries()]
+    .filter(([chatId]) => state.myChatIds.has(chatId))
+    .sort((a, b) => {
     const pinA = Number(getChatMeta(a[0]).pinnedAt) || 0;
     const pinB = Number(getChatMeta(b[0]).pinnedAt) || 0;
     if (pinA && pinB) return pinB - pinA;
@@ -1196,7 +1202,7 @@ function buildChannelRow(channel) {
   item.tabIndex = 0;
 
   const avatar = createEl('div', 'avatar');
-  applyAvatar(avatar, channel.chatId, (channel.title || '?').charAt(0).toUpperCase());
+  applyChatAvatar(avatar, channel.chatId, channel);
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
@@ -1216,6 +1222,7 @@ function buildChannelRow(channel) {
   item.addEventListener('click', () => {
     exitSearchMode();
     if (subscribed) selectChat(channel.chatId);
+    else if (channel.requiresSubscription === false) openChannelReadOnly(channel.chatId, channel);
     else openChannelPreview(channel.chatId);
   });
   return item;
@@ -1228,7 +1235,7 @@ function buildGroupRow(group) {
   item.tabIndex = 0;
 
   const avatar = createEl('div', 'avatar');
-  applyAvatar(avatar, group.chatId, (group.title || '?').trim().charAt(0).toUpperCase());
+  applyChatAvatar(avatar, group.chatId, group);
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
@@ -1743,7 +1750,15 @@ function selectChat(chatId) {
   state.pinIndex = 0;
 
   const chatChanged = state.activeChatId !== chatId;
-  if (chatChanged) clearOwnTyping();
+  const previousChatId = state.activeChatId;
+  if (chatChanged) {
+    clearOwnTyping();
+    // Канал, который читали без подписки, не должен оставаться в памяти
+    // как «мой чат» после перехода в другой.
+    if (previousChatId && previousChatId !== chatId && !state.myChatIds.has(previousChatId)) {
+      state.chats.delete(previousChatId);
+    }
+  }
   state.activeChatId = chatId;
   document.body.classList.add('chat-open');
 
@@ -1789,6 +1804,9 @@ function closeActiveChat() {
   clearOwnTyping();
   state.pinIndex = 0;
   clearChatScoped();
+  if (state.activeChatId && !state.myChatIds.has(state.activeChatId)) {
+    state.chats.delete(state.activeChatId); // канал только для чтения
+  }
   state.activeChatId = null;
   state.messages = [];
   state.stickToBottom = true;
@@ -1823,6 +1841,27 @@ function closeChannelPreview() {
   state.channelPreview = null;
   document.body.classList.remove('chat-open');
   renderMainPanel();
+}
+
+/**
+ * Открыть канал только для чтения (без подписки). Доступно, если владелец
+ * выключил в настройках «Требуется подписка для чтения».
+ */
+async function openChannelReadOnly(chatId, chat = null) {
+  try {
+    const loaded = chat || await Chat.getChat(chatId);
+    if (!loaded || loaded.type !== 'channel') {
+      toast('Не удалось загрузить канал', 'error');
+      return;
+    }
+    state.chats.set(chatId, loaded);
+    state.channelPreview = null;
+    exitSearchMode();
+    selectChat(chatId);
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось загрузить канал', 'error');
+  }
 }
 
 /** Отрисовать главную панель: предпросмотр канала / чат / пустое состояние. */
@@ -1871,6 +1910,7 @@ function renderChannelPreview() {
   const { chatId, chat } = state.channelPreview;
   const member = state.myChatIds.has(chatId);
   const isGroup = chat?.type === 'group';
+  const isOpenChannel = Boolean(chat && !isGroup && chat.requiresSubscription === false);
 
   dom.channelPreview.classList.remove('hidden');
   dom.chatView.classList.add('hidden');
@@ -1878,7 +1918,8 @@ function renderChannelPreview() {
 
   dom.previewHeading.textContent = isGroup ? 'Предпросмотр группы' : 'Предпросмотр канала';
 
-  applyAvatar(dom.previewAvatar, chatId, (chat?.title || 'К').trim().charAt(0).toUpperCase());
+  if (chat) applyChatAvatar(dom.previewAvatar, chatId, chat);
+  else applyAvatar(dom.previewAvatar, chatId, 'К');
   dom.previewTitle.textContent = chat?.title || 'Загрузка…';
 
   if (chat) {
@@ -1894,10 +1935,11 @@ function renderChannelPreview() {
     dom.previewMeta.textContent = '';
   }
 
-  dom.previewDescription.textContent = chat?.description || '';
+  dom.previewDescription.replaceChildren(...buildMessageText(chat?.description || '').childNodes);
   dom.previewDescription.classList.toggle('hidden', !chat?.description);
 
   if (member) dom.previewSubscribe.textContent = isGroup ? 'Открыть группу' : 'Открыть канал';
+  else if (isOpenChannel) dom.previewSubscribe.textContent = 'Читать канал';
   else dom.previewSubscribe.textContent = isGroup ? 'Присоединиться' : 'Подписаться';
   dom.previewSubscribe.disabled = !chat;
 }
@@ -2059,15 +2101,38 @@ function flashMessage(msgId) {
   return true;
 }
 
-/** Регулярка @упоминаний и #хэштегов в тексте сообщения. */
-const MESSAGE_LINK_REGEX = /([@#][A-Za-z0-9_А-Яа-яЁё]{2,32})/g;
+/** Регулярка ссылок, @упоминаний и #хэштегов в тексте сообщения. */
+const MESSAGE_LINK_REGEX = /((?:https?:\/\/|www\.)[^\s<>"']+|[@#][A-Za-z0-9_А-Яа-яЁё]{2,32})/gi;
 
-/** Текст сообщения с кнопками-ссылками на упоминания и хэштеги. */
+/** Убрать хвостовую пунктуацию, которая обычно не относится к ссылке. */
+function trimTrailingUrlPunctuation(url) {
+  let result = String(url || '').replace(/[.,;:!?…»"']+$/, '');
+  // Закрывающая скобка остаётся, только если в ссылке есть открывающая.
+  for (const [open, close] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+    while (result.endsWith(close) && result.split(close).length > result.split(open).length) {
+      result = result.slice(0, -1);
+    }
+  }
+  return result;
+}
+
+/** Текст сообщения с кликабельными ссылками, упоминаниями и хэштегами. */
 function buildMessageText(text) {
   const span = createEl('span', 'bubble-text');
   for (const part of String(text || '').split(MESSAGE_LINK_REGEX)) {
     if (!part) continue;
-    if (/^[@#][A-Za-z0-9_А-Яа-яЁё]{2,32}$/.test(part)) {
+    if (/^(?:https?:\/\/|www\.)/i.test(part)) {
+      const clean = trimTrailingUrlPunctuation(part);
+      const suffix = part.slice(clean.length);
+      if (clean) {
+        const link = createEl('a', 'msg-link msg-url', clean);
+        link.href = /^www\./i.test(clean) ? 'https://' + clean : clean;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        span.append(link);
+      }
+      if (suffix) span.append(document.createTextNode(suffix));
+    } else if (/^[@#][A-Za-z0-9_А-Яа-яЁё]{2,32}$/.test(part)) {
       const link = createEl('button', 'msg-link', part);
       link.type = 'button';
       link.addEventListener('click', (event) => {
@@ -3718,6 +3783,11 @@ function openSettingsModal() {
   dom.settingsMemberInput.value = '';
   if (isGroup) renderSettingsMembers(chat);
 
+  // Доступ к чтению: только для каналов. Старые каналы без поля считаем
+  // закрытыми — поведение по умолчанию не меняется.
+  dom.settingsChannelBlock.classList.toggle('hidden', !isChannel);
+  dom.settingsRequiresSubscription.checked = chat.requiresSubscription !== false;
+
   // Администраторы канала: блок виден только для каналов.
   dom.settingsAdminsBlock.classList.toggle('hidden', !isChannel);
   dom.settingsAdminInput.value = '';
@@ -4207,7 +4277,7 @@ function renderChatMenu() {
     description = peerProfile?.bio || '';
     handle = peerProfile?.username ? '@' + peerProfile.username : '';
   }
-  dom.chatMenuDescription.textContent = description;
+  dom.chatMenuDescription.replaceChildren(...buildMessageText(description).childNodes);
   dom.chatMenuDescription.classList.toggle('hidden', !description);
   dom.chatMenuUsername.textContent = handle;
   dom.chatMenuUsername.classList.toggle('hidden', !handle);
@@ -4243,6 +4313,9 @@ function renderChatMenu() {
   }
   if (chat.type === 'channel' && chat.owner !== myUid && state.myChatIds.has(state.activeChatId)) {
     addChatMenuAction('Отписаться от канала', unsubscribeFromActiveChannel);
+  }
+  if (chat.type === 'channel' && !state.myChatIds.has(state.activeChatId)) {
+    addChatMenuAction('Подписаться на канал', subscribeToActiveChannel);
   }
 
   // Статистика канала — администраторам канала и супер-админу (идея 14).
@@ -4293,6 +4366,22 @@ function renderChatMenu() {
     hydrateUsers(missing).then(() => {
       if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
     });
+  }
+}
+
+/** Подписаться на канал из режима чтения без подписки. */
+async function subscribeToActiveChannel() {
+  const chatId = state.activeChatId;
+  const chat = state.chats.get(chatId);
+  if (!chat || chat.type !== 'channel' || !state.user) return;
+
+  try {
+    await Chat.subscribeToChannel(state.user.uid, chatId);
+    closeChatMenu();
+    toast('Вы подписались на канал', 'success');
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Не удалось подписаться на канал', 'error');
   }
 }
 
@@ -5098,7 +5187,9 @@ function renderComments(map) {
     head.append(createEl('span', 'comment-author', comment.sender === state.user?.uid ? 'Вы' : getSenderName(comment.sender)));
     head.append(createEl('span', 'comment-time', formatListTime(comment.timestamp)));
     body.append(head);
-    body.append(createEl('div', 'comment-text', comment.text || ''));
+    const textEl = createEl('div', 'comment-text');
+    textEl.append(...buildMessageText(comment.text || '').childNodes);
+    body.append(textEl);
 
     item.append(avatar, body);
 
@@ -5625,6 +5716,9 @@ dom.settingsForm.addEventListener('submit', async (event) => {
       description: dom.settingsDescription.value,
       groupType: chat.type === 'group' && canManageGroupMeta ? settingsTypeChoice : undefined,
       username: canManageGroupMeta ? dom.settingsUsername.value : undefined,
+      requiresSubscription: chat.type === 'channel'
+        ? dom.settingsRequiresSubscription.checked
+        : undefined,
     });
     // Аватар группы/канала: сохраняем, только если его трогали.
     if ((chat.type === 'channel' || chat.type === 'group') && chatAvatarDraft.touched) {
@@ -5768,10 +5862,16 @@ dom.previewSubscribe.addEventListener('click', async () => {
   if (!preview) return;
   const { chatId, chat } = preview;
   const isGroup = chat?.type === 'group';
+  const isOpenChannel = Boolean(chat && !isGroup && chat.requiresSubscription === false);
 
   if (state.myChatIds.has(chatId)) {
     closeChannelPreview();
     selectChat(chatId);
+    return;
+  }
+  if (isOpenChannel) {
+    closeChannelPreview();
+    openChannelReadOnly(chatId, chat);
     return;
   }
 

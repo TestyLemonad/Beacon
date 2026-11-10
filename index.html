@@ -17,7 +17,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=32" />
+  <link rel="stylesheet" href="styles.css?v=33" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -553,6 +553,16 @@
           <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
         </div>
 
+        <!-- Канал: доступ к чтению без подписки -->
+        <div class="field hidden" id="settings-channel-block">
+          <label>Доступ к чтению</label>
+          <label class="check-row">
+            <input type="checkbox" id="settings-requires-subscription" checked />
+            <span>Требуется подписка для чтения</span>
+          </label>
+          <p class="field-hint">Если выключено, канал можно читать без подписки. Писать по-прежнему смогут только администраторы.</p>
+        </div>
+
         <!-- Участники группы: добавление людей и назначение администраторов -->
         <div class="field hidden" id="settings-members-block">
           <label>Участники группы</label>
@@ -921,6 +931,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=32"></script>
+  <script type="module" src="app.js?v=33"></script>
 </body>
 </html>

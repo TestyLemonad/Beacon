@@ -165,7 +165,7 @@
 
     "typing": {
       "$chatId": {
-        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$uid": {
           ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)"
@@ -198,6 +198,10 @@
         "subscribersCount": {
           ".write": "auth != null",
           ".validate": "!newData.exists() || (newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1))"
+        },
+        "requiresSubscription": {
+          ".write": "auth != null && (root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || newData.isBoolean()"
         },
         "lastMessage": {
           ".write": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('root_admins').child(auth.uid).val() === true)",
@@ -233,7 +237,7 @@
 
     "messages": {
       "$chatId": {
-        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
           ".write": "auth != null && ((data.exists() && data.child('sender').val() === auth.uid && (!newData.exists() || newData.child('sender').val() === auth.uid)) || (!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || root.child('root_admins').child(auth.uid).val() === true)",
@@ -252,10 +256,10 @@
 
     "comments": {
       "$chatId": {
-        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$postId": {
-          ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+          ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
           ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($postId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
           "$commentId": {
             ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('sender').val() === auth.uid && (root.child('user_chats').child(auth.uid).child($chatId).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true)) || (data.exists() && data.child('sender').val() === auth.uid && !newData.exists()) || root.child('root_admins').child(auth.uid).val() === true)"
@@ -266,7 +270,7 @@
 
     "poll_votes": {
       "$chatId": {
-        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
           ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
@@ -279,7 +283,7 @@
 
     "views": {
       "$chatId": {
-        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
         "$msgId": {
           ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('messages').child($chatId).child($msgId).child('sender').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
