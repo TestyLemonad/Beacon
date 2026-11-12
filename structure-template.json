@@ -29,6 +29,11 @@
       },
       "email": "faros@mayak.ru",
       "createdAt": 1728723605
+    },
+    "user4_id": {
+      "firstName": "Удалённый аккаунт",
+      "deleted": true,
+      "createdAt": 1728723605
     }
   },
 
@@ -409,5 +414,9 @@
 
   "banned_users": {
     "user3_id": { "by": "user1_id", "at": 1728724600 }
+  },
+
+  "deleted_users": {
+    "user4_id": true
   }
 }

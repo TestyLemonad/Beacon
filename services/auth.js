@@ -22,11 +22,12 @@ import {
   EmailAuthProvider,
   GoogleAuthProvider,
   signOut,
+  deleteUser,
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=35';
-import { hasInviteGrant } from './invites.js?v=35';
+import { auth, db } from '../firebase-config.js?v=36';
+import { hasInviteGrant } from './invites.js?v=36';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -240,6 +241,17 @@ export function logout() {
 }
 
 /**
+ * Удалить текущий вход Firebase Auth. Данные RTDB к этому моменту уже
+ * должны быть стёрты: после удаления пользователя писать в базу нельзя.
+ * Firebase может потребовать недавний вход (auth/requires-recent-login).
+ * @returns {Promise<void>}
+ */
+export async function deleteCurrentAccount() {
+  if (!auth.currentUser) throw new Error('Сначала войдите в аккаунт');
+  await deleteUser(auth.currentUser);
+}
+
+/**
  * Создать базовый узел /users/$uid = { email, createdAt }, если его ещё нет,
  * и поддерживать email в актуальном состоянии. Остальные поля профиля
  * намеренно не трогает — их заполняет пользователь.
@@ -271,6 +283,10 @@ export async function ensureUserRecord(user) {
   }
 
   const existing = snapshot.val() || {};
+  // Удалённый аккаунт остаётся в /users только как подпись к сообщениям.
+  // Не возвращаем ему email и не восстанавливаем индекс входа.
+  if (existing.deleted === true) return existing;
+
   if (email && existing.email !== email) await update(userRef, { email });
 
   // Публичный индекс входа: @username -> { uid, email }. Поддерживаем его

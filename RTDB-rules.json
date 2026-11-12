@@ -6,7 +6,7 @@
     "users": {
       ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && ((auth.uid === $uid && (data.exists() || root.child('user_invites').child($uid).exists())) || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((auth.uid === $uid && (data.exists() || root.child('user_invites').child($uid).exists())) || (root.child('root_admins').child(auth.uid).val() === true && !root.child('root_admins').child($uid).exists()))",
         "username": {
           ".validate": "!newData.exists() || newData.isString()"
         },
@@ -18,6 +18,9 @@
         },
         "bio": {
           ".validate": "!newData.exists() || newData.isString()"
+        },
+        "deleted": {
+          ".validate": "!newData.exists() || newData.isBoolean()"
         }
       }
     },
@@ -41,7 +44,7 @@
     "sessions": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || (root.child('root_admins').child(auth.uid).val() === true && !newData.exists()))",
         "$sessionId": {
           "createdAt": {
             ".validate": "!newData.exists() || newData.isNumber()"
@@ -95,6 +98,7 @@
       ".read": "auth != null",
       ".write": "auth != null && (auth.uid === '4QAvl8jsf8UdKwHgRVomzCYtXSz1' || auth.uid === 'AvaRJfB3nwRdD521bHELeHyhE893')",
       "$uid": {
+        ".write": "auth != null && auth.uid === $uid && !newData.exists()",
         ".validate": "!newData.exists() || newData.isBoolean()"
       }
     },
@@ -103,6 +107,14 @@
       ".read": "auth != null",
       "$uid": {
         ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true"
+      }
+    },
+
+    "deleted_users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && ((root.child('root_admins').child(auth.uid).val() === true && !root.child('root_admins').child($uid).exists()) || (auth.uid === $uid && newData.val() === true))",
+        ".validate": "!newData.exists() || newData.val() === true"
       }
     },
 
@@ -162,7 +174,7 @@
     "user_invites": {
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
-        ".write": "auth != null && (root.child('root_admins').child(auth.uid).val() === true || (auth.uid === $uid && !data.exists() && newData.exists() && newData.child('codeKey').isString() && root.child('invite_redemptions').child(newData.child('codeKey').val()).child('uid').val() === $uid))",
+        ".write": "auth != null && (root.child('root_admins').child(auth.uid).val() === true || (auth.uid === $uid && ((!data.exists() && newData.exists() && newData.child('codeKey').isString() && root.child('invite_redemptions').child(newData.child('codeKey').val()).child('uid').val() === $uid) || (data.exists() && !newData.exists()))))",
         ".validate": "!newData.exists() || (newData.hasChildren(['codeKey', 'at']) && newData.child('codeKey').isString() && newData.child('at').isNumber())",
         "codeKey": {
           ".validate": "!newData.exists() || newData.isString()"

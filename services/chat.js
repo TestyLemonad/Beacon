@@ -32,6 +32,7 @@
  *   /chats/saved_$uid        { type: 'saved', owner, users } — «Избранное»
  *   /root_admins/$uid        true                       — супер-администраторы (тестовые права)
  *   /banned_users/$uid       { by, at }                 — забаненные пользователи
+ *   /deleted_users/$uid      true                       — удалённые аккаунты (вход закрыт)
  *
  * Поля сообщения (дополнительно): poll? { question, multiple, options: [{ id, text }] },
  * savedFrom? { chatId, chatTitle, msgId, sender, text } — закладка из «Избранного».
@@ -57,7 +58,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=35';
+import { auth, db } from '../firebase-config.js?v=36';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -1217,6 +1218,177 @@ export async function banUser(uid, byUid) {
 export async function unbanUser(uid) {
   if (!uid) throw new Error('Некорректный пользователь');
   await set(ref(db, `banned_users/${uid}`), null);
+}
+
+/* ============================================================
+ *  Удаление аккаунта
+ * ============================================================ */
+
+/** Имя, которое остаётся у сообщений удалённого аккаунта. */
+export const DELETED_ACCOUNT_NAME = 'Удалённый аккаунт';
+
+/** Подписка на метку удалённого аккаунта: true | null. */
+export function subscribeToDeletedAccount(uid, onChange, onError = null) {
+  return onValue(
+    ref(db, `deleted_users/${uid}`),
+    (snapshot) => onChange(snapshot.exists()),
+    (error) => {
+      console.error('Ошибка подписки на deleted_users:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/** Удалён ли аккаунт: /deleted_users/$uid. */
+export async function getDeletedAccount(uid) {
+  if (!uid) return false;
+  const snapshot = await get(ref(db, `deleted_users/${uid}`));
+  return snapshot.exists();
+}
+
+/**
+ * Стереть данные аккаунта, сохранив сообщения.
+ *
+ * В /users/$uid остаётся только подпись «Удалённый аккаунт» и createdAt:
+ * по ней сообщения, комментарии и пересылки продолжают отображаться.
+ * Удаляются профиль, юзернеймы, индексы входа, сессии, настройки, папки,
+ * списки чатов, прочитанное, метаданные чатов, присутствие, подписки
+ * и членство в группах.
+ * Личные чаты не удаляются — второй участник должен видеть историю.
+ * «Избранное» удаляется вместе со своими сообщениями: это личное хранилище,
+ * а не переписка.
+ *
+ * @param {string} uid — чей аккаунт стираем
+ * @param {{ deletedBy?: string|null, ban?: boolean }} options
+ *        ban — заблокировать вход (для удаления чужим супер-админом:
+ *        Firebase Auth чужого пользователя с клиента удалить нельзя).
+ * @returns {Promise<void>}
+ */
+export async function deleteUserAccount(uid, { deletedBy = null, ban = false } = {}) {
+  if (!uid) throw new Error('Некорректный пользователь');
+
+  // Супер-администратора может удалить только он сам. Чужой супер-админ
+  // не должен иметь возможности снести равного себе.
+  const targetIsRoot = await isRootAdmin(uid);
+  if (targetIsRoot && deletedBy !== uid) {
+    throw new Error('Нельзя удалить другого супер-администратора');
+  }
+
+  const profileSnap = await get(ref(db, `users/${uid}`));
+  const profile = profileSnap.val() || {};
+  const username = normalizeUsername(profile.username);
+
+  // Списки чатов, прочитанное и метаданные удаляем по дочерним ключам:
+  // у этих узлов нет общего write-правила, только правила на конкретный чат.
+  const [userChatsSnap, userReadsSnap, userChatMetaSnap, usernamesSnap, loginIndexSnap] = await Promise.all([
+    get(ref(db, `user_chats/${uid}`)).catch(() => null),
+    get(ref(db, `user_reads/${uid}`)).catch(() => null),
+    get(ref(db, `user_chat_meta/${uid}`)).catch(() => null),
+    get(ref(db, 'usernames')).catch(() => null),
+    get(ref(db, 'login_index')).catch(() => null),
+  ]);
+  const chatIds = new Set([
+    ...Object.keys(userChatsSnap?.val() || {}),
+    ...Object.keys(userReadsSnap?.val() || {}),
+    ...Object.keys(userChatMetaSnap?.val() || {}),
+  ]);
+
+  const chatEntries = await Promise.all([...chatIds].map(async (chatId) => {
+    try {
+      const snapshot = await get(ref(db, `chats/${chatId}`));
+      return { chatId, chat: snapshot.val() };
+    } catch (error) {
+      console.warn(`Не удалось прочитать чат ${chatId} при удалении аккаунта:`, error);
+      return { chatId, chat: null };
+    }
+  }));
+
+  const updates = {};
+  const deleteNode = (path) => {
+    updates[path] = null;
+  };
+
+  // Личные узлы, которые можно удалить целиком.
+  [
+    'sessions',
+    'user_blocks',
+    'user_settings',
+    'user_folders',
+    'user_message_deletes',
+    'presence',
+    'user_invites',
+  ].forEach((node) => deleteNode(`${node}/${uid}`));
+
+  for (const chatId of chatIds) {
+    deleteNode(`user_chats/${uid}/${chatId}`);
+    deleteNode(`user_reads/${uid}/${chatId}`);
+    deleteNode(`user_chat_meta/${uid}/${chatId}`);
+  }
+
+  for (const { chatId, chat } of chatEntries) {
+    deleteNode(`typing/${chatId}/${uid}`);
+    if (!chat) continue;
+
+    if (chat.type === 'saved') {
+      // «Избранное» — личное хранилище, его сообщения не являются
+      // перепиской с другими людьми.
+      if (chat.owner === uid) {
+        deleteNode(`chats/${chatId}`);
+        deleteNode(`messages/${chatId}`);
+      }
+      continue;
+    }
+
+    // Личный чат оставляем второму участнику: он должен видеть историю
+    // и подпись «Удалённый аккаунт». Из групп и каналов выходим.
+    if (chat.type !== 'private') {
+      deleteNode(`chats/${chatId}/users/${uid}`);
+      deleteNode(`chats/${chatId}/admins/${uid}`);
+      deleteNode(`chats/${chatId}/auto_subscribed/${uid}`);
+      if (chat.subscribers && chat.subscribers[uid]) {
+        deleteNode(`chats/${chatId}/subscribers/${uid}`);
+        const count = Number(chat.subscribersCount);
+        if (Number.isFinite(count) && count > 0) {
+          updates[`chats/${chatId}/subscribersCount`] = count - 1;
+        }
+      }
+    }
+  }
+
+  if (username) {
+    deleteNode(`usernames/${username}`);
+    deleteNode(`login_index/${username}`);
+  }
+
+  // На всякий случай чистим и старые/висячие записи индексов, ведущие на uid.
+  for (const [name, value] of Object.entries(usernamesSnap?.val() || {})) {
+    if (value === uid) deleteNode(`usernames/${name}`);
+  }
+  for (const [name, record] of Object.entries(loginIndexSnap?.val() || {})) {
+    if (record && typeof record === 'object' && record.uid === uid) {
+      deleteNode(`login_index/${name}`);
+    }
+  }
+
+  // Подпись к сообщениям. Email и остальные поля профиля не сохраняем.
+  updates[`users/${uid}`] = {
+    firstName: DELETED_ACCOUNT_NAME,
+    deleted: true,
+    createdAt: Number(profile.createdAt) || nowSeconds(),
+  };
+  updates[`deleted_users/${uid}`] = true;
+
+  // Самоудаление супер-администратора снимает и его супер-права.
+  if (targetIsRoot) deleteNode(`root_admins/${uid}`);
+
+  // Чужой Firebase Auth с клиента не удалить, поэтому закрываем вход баном.
+  if (ban && deletedBy && deletedBy !== uid) {
+    updates[`banned_users/${uid}`] = { by: deletedBy, at: serverTimestamp() };
+  }
+
+  await update(ref(db), updates);
+  usersCache.delete(uid);
+  await getUserProfile(uid, { force: true }).catch(() => null);
 }
 
 /* ============================================================

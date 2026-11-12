@@ -10,10 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=35';
-import * as Chat from './services/chat.js?v=35';
-import * as Sessions from './services/sessions.js?v=35';
-import * as Invites from './services/invites.js?v=35';
+import * as Auth from './services/auth.js?v=36';
+import * as Chat from './services/chat.js?v=36';
+import * as Sessions from './services/sessions.js?v=36';
+import * as Invites from './services/invites.js?v=36';
 
 /* ============================================================
  *  DOM
@@ -58,7 +58,6 @@ const dom = {
   sidebarAvatar: $('sidebar-avatar'),
   currentUserName: $('current-user-name'),
   profileBtn: $('profile-btn'),
-  logoutBtn: $('logout-btn'),
   newChatBtn: $('new-chat-btn'),
   settingsBtn: $('settings-btn'),
   searchInput: $('search-input'),
@@ -190,6 +189,13 @@ const dom = {
   prefsProviders: $('prefs-providers'),
   prefsPasswordField: $('prefs-password-field'),
   prefsPasswordBtn: $('prefs-password-btn'),
+  prefsLogoutBtn: $('prefs-logout-btn'),
+  prefsDeleteAccountBtn: $('prefs-delete-account-btn'),
+  prefsDeleteAccountHint: $('prefs-delete-account-hint'),
+  prefsDeleteUserField: $('prefs-delete-user-field'),
+  prefsDeleteUserInput: $('prefs-delete-user-input'),
+  prefsDeleteUserBtn: $('prefs-delete-user-btn'),
+  prefsDeleteUserError: $('prefs-delete-user-error'),
 
   // Смена пароля (отдельное окно)
   passwordOverlay: $('password-overlay'),
@@ -341,6 +347,8 @@ const dom = {
 
   // Экран блокировки (бан)
   bannedScreen: $('banned-screen'),
+  bannedTitle: $('banned-title'),
+  bannedText: $('banned-text'),
   bannedLogout: $('banned-logout'),
 };
 
@@ -390,6 +398,7 @@ const state = {
   rootAdmins: new Set(),    // uid из /root_admins
   bannedUsers: new Set(),   // uid из /banned_users (метки в меню чата)
   myBan: null,              // моя запись бана { by, at } или null
+  myDeleted: false,         // мой аккаунт удалён (/deleted_users/$uid)
 
   // Счётчики непрочитанных сообщений: chatId -> { key, count }
   unreadCounts: new Map(),
@@ -417,6 +426,7 @@ const state = {
     devPromo: null,         // /chats/$devChannelId — данные промо-канала @dev
     presence: null,         // .info/connected
     myBan: null,            // /banned_users/$uid
+    myDeleted: null,        // /deleted_users/$uid
     bans: null,             // /banned_users
     rootAdmins: null,       // /root_admins
     chatScoped: [],         // подписки активного чата (typing, голоса, комментарии…)
@@ -449,6 +459,7 @@ let typingLastSent = 0;             // когда последний раз пи
 let typingTick = null;              // интервал пересчёта строки «печатает…»
 let messagesObserver = null;        // IntersectionObserver просмотров постов
 let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
+let accountDeletionInProgress = false; // удаляем аккаунт: не реагируем на отзыв сессии
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
 
 /** Канал-промо @dev: показывается вверху списка, пока пользователь не подписан и не скрыл его. */
@@ -553,6 +564,7 @@ function createEl(tag, className = '', text = null) {
 /** Полное имя пользователя или @юзернейм. */
 function getProfileName(profile) {
   if (!profile) return null;
+  if (profile.deleted) return Chat.DELETED_ACCOUNT_NAME || 'Удалённый аккаунт';
   const full = [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim();
   return full || (profile.username ? '@' + profile.username : null);
 }
@@ -2630,13 +2642,14 @@ function teardownSubscriptions() {
   state.subscriptions.devPromo?.();
   state.subscriptions.presence?.();
   state.subscriptions.myBan?.();
+  state.subscriptions.myDeleted?.();
   state.subscriptions.bans?.();
   state.subscriptions.rootAdmins?.();
   for (const unsubscribe of state.subscriptions.chatMeta.values()) unsubscribe();
   clearChatScoped();
   clearInterval(typingTick);
   typingTick = null;
-  if (uid) Chat.setOfflinePresence(uid).catch(() => {});
+  if (uid && !state.myDeleted) Chat.setOfflinePresence(uid).catch(() => {});
 
   state.subscriptions.userChats = null;
   state.subscriptions.messages = null;
@@ -2648,6 +2661,7 @@ function teardownSubscriptions() {
   state.subscriptions.devPromo = null;
   state.subscriptions.presence = null;
   state.subscriptions.myBan = null;
+  state.subscriptions.myDeleted = null;
   state.subscriptions.bans = null;
   state.subscriptions.rootAdmins = null;
   state.subscriptions.chatMeta.clear();
@@ -2668,6 +2682,7 @@ function teardownSubscriptions() {
   state.rootAdmins = new Set();
   state.bannedUsers = new Set();
   state.myBan = null;
+  state.myDeleted = false;
   state.unreadCounts = new Map();
   state.unreadFetches = new Set();
   state.msgCache = new Map();
@@ -3820,9 +3835,26 @@ async function setUserBanned(targetUid, banned) {
   }
 }
 
+/** Показать экран ограничения доступа: бан или удалённый аккаунт. */
+function showAccessRestrictedScreen(kind = 'banned') {
+  if (kind === 'deleted') {
+    dom.bannedTitle.textContent = 'Аккаунт удалён';
+    dom.bannedText.innerHTML = 'Этот аккаунт был удалён.<br />Восстановить его нельзя.';
+  } else {
+    dom.bannedTitle.textContent = 'Доступ ограничен';
+    dom.bannedText.innerHTML = 'Ваш аккаунт заблокирован администратором.<br />Если это ошибка — свяжитесь с поддержкой.';
+  }
+  dom.bannedScreen.classList.remove('hidden');
+}
+
 /** Показать экран блокировки (бан). */
 function showBannedScreen() {
-  dom.bannedScreen.classList.remove('hidden');
+  showAccessRestrictedScreen('banned');
+}
+
+/** Показать экран удалённого аккаунта. */
+function showDeletedScreen() {
+  showAccessRestrictedScreen('deleted');
 }
 
 /** Скрыть экран блокировки. */
@@ -4832,9 +4864,17 @@ function renderPrefsModal() {
 
   // Админ-права: поле видно только супер-администраторам.
   const isRoot = Boolean(state.user && state.rootAdmins.has(state.user.uid));
+  const adminOn = isRoot && state.settings?.adminMode !== false;
   dom.prefsAdminField.classList.toggle('hidden', !isRoot);
   dom.prefsInvitesField.classList.toggle('hidden', !isRoot);
-  dom.prefsAdminToggle.checked = isRoot && state.settings?.adminMode !== false;
+  dom.prefsAdminToggle.checked = adminOn;
+  dom.prefsDeleteUserField.classList.toggle('hidden', !adminOn);
+  dom.prefsDeleteUserError.classList.add('hidden');
+
+  dom.prefsDeleteAccountBtn.disabled = false;
+  dom.prefsDeleteAccountHint.textContent = isRoot
+    ? 'Профиль, настройки, чаты и подписки будут удалены, права супер-администратора сняты. Сообщения останутся, а имя изменится на «Удалённый аккаунт». Восстановить аккаунт нельзя.'
+    : 'Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся, а имя изменится на «Удалённый аккаунт». Восстановить аккаунт нельзя.';
 }
 
 /** Способы входа (пароль / Google): строки со статусом и кнопками. */
@@ -5829,7 +5869,7 @@ dom.onboardingForm.addEventListener('submit', (event) => {
 
 /** Выйти из аккаунта: сначала убрать запись сессии, потом signOut. */
 async function logoutCurrentUser() {
-  if (state.user) Chat.setOfflinePresence(state.user.uid).catch(() => {});
+  if (state.user && !state.myDeleted) Chat.setOfflinePresence(state.user.uid).catch(() => {});
   // Не блокируем выход, если сеть пропала: запись сессии — вспомогательная.
   await Promise.race([
     Sessions.stopSession().catch((error) => {
@@ -5845,14 +5885,117 @@ async function logoutCurrentUser() {
   }
 }
 
+/** Показать ошибку в блоке удаления чужого аккаунта. */
+function showDeleteUserError(message) {
+  dom.prefsDeleteUserError.textContent = message;
+  dom.prefsDeleteUserError.classList.remove('hidden');
+}
+
+/** Удалить собственный аккаунт: стереть данные, затем удалить вход Firebase. */
+async function deleteMyAccountClick() {
+  if (!state.user || accountDeletionInProgress) return;
+
+  const isRoot = state.rootAdmins.has(state.user.uid);
+  const name = getProfileName(state.profile) || state.user.email || 'аккаунт';
+  const confirmed = window.confirm(
+    `Удалить аккаунт «${name}»?\n\n` +
+    'Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся, ' +
+    'а имя изменится на «Удалённый аккаунт». Восстановить аккаунт нельзя.' +
+    (isRoot ? '\n\nВы супер-администратор: права супер-администратора будут сняты.' : ''),
+  );
+  if (!confirmed) return;
+
+  dom.prefsDeleteAccountBtn.disabled = true;
+  accountDeletionInProgress = true;
+  try {
+    await Chat.deleteUserAccount(state.user.uid, { deletedBy: state.user.uid });
+    closePrefsModal();
+    toast('Аккаунт удалён', 'success');
+
+    // Данные уже стёрты: запись сессии не трогаем, чтобы не воссоздавать её.
+    await Sessions.stopSession({ removeRecord: false }).catch(() => {});
+    try {
+      await Auth.deleteCurrentAccount();
+    } catch (error) {
+      // Firebase может потребовать недавний вход. Метка deleted_users
+      // всё равно не пустит аккаунт в мессенджер.
+      console.warn('Не удалось удалить вход Firebase:', error);
+      await Auth.logout().catch(() => {});
+    }
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось удалить аккаунт', 'error');
+  } finally {
+    accountDeletionInProgress = false;
+    dom.prefsDeleteAccountBtn.disabled = false;
+  }
+}
+
+/** Удалить чужой аккаунт по @username (только супер-админ с правами). */
+async function deleteAccountByUsernameClick() {
+  if (accountDeletionInProgress) return;
+  if (!state.user || !adminRightsOn()) {
+    showDeleteUserError('Сначала включите админ-права');
+    return;
+  }
+
+  const raw = dom.prefsDeleteUserInput.value.trim();
+  if (!raw) {
+    showDeleteUserError('Введите @username');
+    return;
+  }
+
+  dom.prefsDeleteUserError.classList.add('hidden');
+  dom.prefsDeleteUserBtn.disabled = true;
+  try {
+    const target = await Chat.getUserByUsername(raw);
+    if (!target?.uid) {
+      showDeleteUserError('Пользователь с таким юзернеймом не найден');
+      return;
+    }
+    if (target.uid === state.user.uid) {
+      showDeleteUserError('Это ваш аккаунт — используйте «Удалить аккаунт» выше');
+      return;
+    }
+    if (state.rootAdmins.has(target.uid)) {
+      showDeleteUserError('Нельзя удалить другого супер-администратора');
+      return;
+    }
+    if (target.deleted) {
+      showDeleteUserError('Аккаунт уже удалён');
+      return;
+    }
+
+    const name = getProfileName(target) || `@${target.username}`;
+    const confirmed = window.confirm(
+      `Удалить аккаунт «${name}» (@${target.username})?\n\n` +
+      'Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся, ' +
+      'а имя изменится на «Удалённый аккаунт». Пользователь потеряет доступ к мессенджеру.',
+    );
+    if (!confirmed) return;
+
+    await Chat.deleteUserAccount(target.uid, { deletedBy: state.user.uid, ban: true });
+    dom.prefsDeleteUserInput.value = '';
+    toast(`Аккаунт ${name} удалён`, 'success');
+
+    // Обновить открытые списки: у собеседников теперь «Удалённый аккаунт».
+    renderChatList();
+    renderMainPanel();
+    if (state.search.query) renderSearchResults();
+  } catch (error) {
+    console.error(error);
+    showDeleteUserError('Не удалось удалить аккаунт');
+  } finally {
+    dom.prefsDeleteUserBtn.disabled = false;
+  }
+}
+
 dom.onboardingLogout.addEventListener('click', () => {
   logoutCurrentUser();
 });
 
 // --- Боковая панель ---
-dom.logoutBtn.addEventListener('click', () => {
-  logoutCurrentUser();
-});
+// Кнопка выхода перенесена в настройки (см. ниже).
 
 // Полоса папок: колесо мыши прокручивает её по горизонтали.
 dom.foldersBar.addEventListener('wheel', (event) => {
@@ -5873,6 +6016,18 @@ dom.settingsBtn.addEventListener('click', openPrefsModal);
 dom.prefsClose.addEventListener('click', closePrefsModal);
 dom.prefsOverlay.addEventListener('click', (event) => {
   if (event.target === dom.prefsOverlay) closePrefsModal();
+});
+dom.prefsLogoutBtn.addEventListener('click', () => {
+  closePrefsModal();
+  logoutCurrentUser();
+});
+dom.prefsDeleteAccountBtn.addEventListener('click', deleteMyAccountClick);
+dom.prefsDeleteUserBtn.addEventListener('click', deleteAccountByUsernameClick);
+dom.prefsDeleteUserInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    deleteAccountByUsernameClick();
+  }
 });
 dom.prefsSessionsBtn.addEventListener('click', openSessionsModal);
 dom.sessionsClose.addEventListener('click', closeSessionsModal);
@@ -5950,6 +6105,7 @@ dom.prefsAdminToggle.addEventListener('change', async () => {
   try {
     await Chat.setAdminMode(state.user.uid, enabled);
     state.settings.adminMode = enabled;
+    renderPrefsModal();
     toast(enabled ? 'Админ-права включены' : 'Админ-права выключены');
   } catch (error) {
     console.error(error);
@@ -6484,10 +6640,26 @@ async function handleAuthChange(user) {
 async function routeSignedInUser(user) {
   state.user = user;
 
+  // Удалённый аккаунт: не создаём сессию, не восстанавливаем email и не
+  // запускаем онбординг. Вход закрыт, показываем экран удаления.
+  const deleted = await Chat.getDeletedAccount(user.uid).catch((error) => {
+    console.warn('Не удалось проверить удаление аккаунта:', error);
+    return false;
+  });
+  if (state.user !== user) return;
+  if (deleted) {
+    state.myDeleted = true;
+    state.myBan = await Chat.getBan(user.uid).catch(() => null);
+    showDeletedScreen();
+    return;
+  }
+  state.myDeleted = false;
+
   // Реестр активных сессий: записываем это устройство и слушаем отзыв.
   if (sessionStartedForUid !== user.uid) {
     sessionStartedForUid = user.uid;
     Sessions.startSession(user.uid, () => {
+      if (accountDeletionInProgress) return;
       toast('Сессия завершена на другом устройстве', 'error');
       logoutCurrentUser();
     }).catch((error) => {
@@ -6523,6 +6695,16 @@ async function routeSignedInUser(user) {
     }
   }
 
+  // Если метку deleted_users прочитать не удалось (например, правила ещё не
+  // опубликованы), не пускаем аккаунт по флагу deleted в самом профиле.
+  if (profile?.deleted === true) {
+    state.profile = profile;
+    state.myBan = await banPromise;
+    state.myDeleted = true;
+    showDeletedScreen();
+    return;
+  }
+
   // Супер-админ дозаполняет публичный индекс входа для существующих аккаунтов.
   Chat.isRootAdmin(user.uid)
     .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
@@ -6534,6 +6716,7 @@ async function routeSignedInUser(user) {
   if (inviteRequired) {
     state.profile = null;
     state.myBan = null;
+    state.myDeleted = false;
     showInviteGateScreen(user);
     return;
   }
@@ -6546,19 +6729,39 @@ async function routeSignedInUser(user) {
   state.profile = profile || await Chat.getUserProfile(user.uid, { force: true }).catch(() => null);
   if (state.user !== user) return;
   state.myBan = ban;
+  state.myDeleted = false;
 
   // Бан администратором: живая подписка (снятие бана возвращает в мессенджер).
   state.subscriptions.myBan?.();
+  state.subscriptions.myDeleted?.();
   if (state.user !== user) return;
   state.subscriptions.myBan = Chat.subscribeToMyBan(user.uid, (record) => {
     const wasBanned = Boolean(state.myBan);
     state.myBan = record;
+    if (state.myDeleted) {
+      showDeletedScreen();
+      return;
+    }
     if (record) {
       showBannedScreen();
     } else {
       hideBannedScreen();
       if (wasBanned && state.user && Chat.isProfileComplete(state.profile)) enterMessenger();
     }
+  });
+  state.subscriptions.myDeleted = Chat.subscribeToDeletedAccount(user.uid, (isDeleted) => {
+    const wasDeleted = Boolean(state.myDeleted);
+    state.myDeleted = isDeleted;
+    if (isDeleted) {
+      showDeletedScreen();
+      return;
+    }
+    hideBannedScreen();
+    if (state.myBan) {
+      showBannedScreen();
+      return;
+    }
+    if (wasDeleted && state.user && Chat.isProfileComplete(state.profile)) enterMessenger();
   });
 
   // Профиль ещё не заполнен — онбординг; забанен — экран блокировки.
