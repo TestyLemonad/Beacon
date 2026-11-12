@@ -373,6 +373,40 @@
     "user1_id": true
   },
 
+  "invite_codes": {
+    "6f1c2b8e9d4a7c3f5b0e8d2a9c4f7b1e3d6a8c0b2e5f7a9d1c3b6e8f0a2d4c7b": {
+      "salt": "9f2c7a1b4e6d8c0a3b5f7e9d1c2a4b60",
+      "hash": "3c1d5f8a0b2e4d6c8f1a3b5e7d9c0f2a4b6d8e1f3a5c7b9d0e2f4a6c8b1d3e5f",
+      "createdAt": 1728723605,
+      "createdBy": "user1_id",
+      "note": "Для Вани",
+      "expiresAt": 1729328405
+    },
+    "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0": {
+      "salt": "5a8e2c6f0b3d7a1e5c9f2b6d0a4e8c17",
+      "hash": "7d2a4c6e8f0b1d3a5c7e9f2b4d6a8c0e1f3b5d7a9c2e4f6b8d0a1c3e5f7b9d2a",
+      "createdAt": 1728723605,
+      "createdBy": "user1_id",
+      "revoked": true,
+      "revokedAt": 1728724000,
+      "revokedBy": "user1_id"
+    }
+  },
+
+  "invite_redemptions": {
+    "6f1c2b8e9d4a7c3f5b0e8d2a9c4f7b1e3d6a8c0b2e5f7a9d1c3b6e8f0a2d4c7b": {
+      "uid": "user2_id",
+      "at": 1728723900
+    }
+  },
+
+  "user_invites": {
+    "user2_id": {
+      "codeKey": "6f1c2b8e9d4a7c3f5b0e8d2a9c4f7b1e3d6a8c0b2e5f7a9d1c3b6e8f0a2d4c7b",
+      "at": 1728723900
+    }
+  },
+
   "banned_users": {
     "user3_id": { "by": "user1_id", "at": 1728724600 }
   }

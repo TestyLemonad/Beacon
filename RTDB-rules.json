@@ -6,7 +6,7 @@
     "users": {
       ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((auth.uid === $uid && (data.exists() || root.child('user_invites').child($uid).exists())) || root.child('root_admins').child(auth.uid).val() === true)",
         "username": {
           ".validate": "!newData.exists() || newData.isString()"
         },
@@ -103,6 +103,73 @@
       ".read": "auth != null",
       "$uid": {
         ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true"
+      }
+    },
+
+    "invite_codes": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
+      "$codeKey": {
+        ".read": true,
+        ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
+        ".validate": "!newData.exists() || (newData.hasChildren(['salt', 'hash', 'createdAt']) && newData.child('salt').isString() && newData.child('hash').isString() && newData.child('createdAt').isNumber())",
+        "salt": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "hash": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "createdAt": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "createdBy": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "note": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "expiresAt": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "revoked": {
+          ".validate": "!newData.exists() || newData.isBoolean()"
+        },
+        "revokedAt": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "revokedBy": {
+          ".validate": "!newData.exists() || newData.isString()"
+        }
+      }
+    },
+
+    "invite_redemptions": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
+      "$codeKey": {
+        ".read": true,
+        ".write": "auth != null && (root.child('root_admins').child(auth.uid).val() === true || (!data.exists() && newData.exists() && newData.child('uid').val() === auth.uid && root.child('invite_codes').child($codeKey).exists() && root.child('invite_codes').child($codeKey).child('revoked').val() !== true))",
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'at']) && newData.child('uid').isString() && newData.child('at').isNumber())",
+        "uid": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "at": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        }
+      }
+    },
+
+    "user_invites": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('root_admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && (root.child('root_admins').child(auth.uid).val() === true || (auth.uid === $uid && !data.exists() && newData.exists() && newData.child('codeKey').isString() && root.child('invite_redemptions').child(newData.child('codeKey').val()).child('uid').val() === $uid))",
+        ".validate": "!newData.exists() || (newData.hasChildren(['codeKey', 'at']) && newData.child('codeKey').isString() && newData.child('at').isNumber())",
+        "codeKey": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "at": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        }
       }
     },
 

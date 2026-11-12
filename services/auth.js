@@ -25,7 +25,8 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=33';
+import { auth, db } from '../firebase-config.js?v=34';
+import { hasInviteGrant } from './invites.js?v=34';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -243,6 +244,10 @@ export function logout() {
  * и поддерживать email в актуальном состоянии. Остальные поля профиля
  * намеренно не трогает — их заполняет пользователь.
  *
+ * Новый аккаунт создаётся только при наличии подтверждения инвайта
+ * (/user_invites/$uid). Иначе выбрасываем ошибку beacon/invite-required:
+ * приложение покажет экран ввода инвайт-кода.
+ *
  * @param {object} user — Firebase Auth user
  * @returns {Promise<object|null>} текущий узел пользователя
  */
@@ -254,6 +259,12 @@ export async function ensureUserRecord(user) {
   const email = (user.email || '').toLowerCase();
 
   if (!snapshot.exists()) {
+    const invited = await hasInviteGrant(user.uid);
+    if (!invited) {
+      const error = new Error('Для регистрации нужен инвайт-код');
+      error.code = 'beacon/invite-required';
+      throw error;
+    }
     const record = { email, createdAt: nowSeconds() };
     await set(userRef, record);
     return record;

@@ -10,9 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=33';
-import * as Chat from './services/chat.js?v=33';
-import * as Sessions from './services/sessions.js?v=33';
+import * as Auth from './services/auth.js?v=34';
+import * as Chat from './services/chat.js?v=34';
+import * as Sessions from './services/sessions.js?v=34';
+import * as Invites from './services/invites.js?v=34';
 
 /* ============================================================
  *  DOM
@@ -36,6 +37,9 @@ const dom = {
   authLinkSubmit: $('auth-link-submit'),
   authLinkCancel: $('auth-link-cancel'),
   googleBtn: $('google-btn'),
+  googleBtnLabel: $('google-btn-label'),
+  authInviteField: $('auth-invite-field'),
+  authInvite: $('auth-invite'),
 
   // Онбординг: заполнение профиля после входа
   onboardingScreen: $('onboarding-screen'),
@@ -179,6 +183,8 @@ const dom = {
   prefsArchiveCount: $('prefs-archive-count'),
   prefsAdminField: $('prefs-admin-field'),
   prefsAdminToggle: $('prefs-admin-toggle'),
+  prefsInvitesField: $('prefs-invites-field'),
+  prefsInvitesBtn: $('prefs-invites-btn'),
   prefsBlockedBtn: $('prefs-blocked-btn'),
   prefsBlockedCount: $('prefs-blocked-count'),
   prefsProviders: $('prefs-providers'),
@@ -205,6 +211,20 @@ const dom = {
   sessionsError: $('sessions-error'),
   sessionsRefresh: $('sessions-refresh'),
   sessionsRevokeOthers: $('sessions-revoke-others'),
+
+  // Инвайт-коды (окно root-админа)
+  invitesOverlay: $('invites-overlay'),
+  invitesClose: $('invites-close'),
+  invitesForm: $('invites-form'),
+  invitesNote: $('invites-note'),
+  invitesCount: $('invites-count'),
+  invitesError: $('invites-error'),
+  invitesCancel: $('invites-cancel'),
+  invitesSubmit: $('invites-submit'),
+  invitesCreated: $('invites-created'),
+  invitesList: $('invites-list'),
+  invitesEmpty: $('invites-empty'),
+  invitesLoadError: $('invites-load-error'),
 
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
@@ -310,6 +330,15 @@ const dom = {
   // Уведомления
   toast: $('toast'),
 
+  // Экран требования инвайт-кода (новый аккаунт без приглашения)
+  inviteGateScreen: $('invite-gate-screen'),
+  inviteGateForm: $('invite-gate-form'),
+  inviteGateEmail: $('invite-gate-email'),
+  inviteGateCode: $('invite-gate-code'),
+  inviteGateError: $('invite-gate-error'),
+  inviteGateSubmit: $('invite-gate-submit'),
+  inviteGateLogout: $('invite-gate-logout'),
+
   // Экран блокировки (бан)
   bannedScreen: $('banned-screen'),
   bannedLogout: $('banned-logout'),
@@ -397,15 +426,19 @@ const state = {
 
 let authMode = 'login';     // 'login' | 'register'
 let pendingGoogleLink = null; // { email, pendingCredential } — ждём пароль для привязки Google
+let pendingInviteCode = '';   // код из формы, который нужно применить после входа
+let lastInviteError = '';     // последняя ошибка кода — показываем на экране требования инвайта
 let modalTab = 'private';   // активная вкладка модального окна
 let searchSeq = 0;          // защита от гонок при поиске
 let searchTimer = null;
 
-/** Глубокие ссылки: ?s=запрос — глобальный поиск, ?u=@username — человек/канал/группа. */
+/** Глубокие ссылки: ?s=запрос — глобальный поиск, ?u=@username — человек/канал/группа,
+ *  ?invite_code=… — инвайт-код с автоподстановкой на экране регистрации. */
 const deepLinkParams = new URLSearchParams(window.location.search);
 const deepLink = {
   search: String(deepLinkParams.get('s') || '').trim(),
   username: String(deepLinkParams.get('u') || '').trim(),
+  invite: Invites.normalizeInviteCode(deepLinkParams.get('invite_code') || ''),
 };
 let deepLinkHandled = false;
 let groupTypeChoice = 'private';    // тип новой группы: 'private' | 'public'
@@ -415,6 +448,8 @@ let typingTimer = null;             // таймер «печатает…» (с�
 let typingLastSent = 0;             // когда последний раз писали «печатает…» (unix-секунды)
 let typingTick = null;              // интервал пересчёта строки «печатает…»
 let messagesObserver = null;        // IntersectionObserver просмотров постов
+let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
+let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
 
 /** Канал-промо @dev: показывается вверху списка, пока пользователь не подписан и не скрыл его. */
 const DEV_CHANNEL_ID = '-P4EgAjn7KM6VFk2-rc_';
@@ -2572,6 +2607,7 @@ function startSubscriptions() {
 /** Снять все подписки и очистить состояние (при выходе). */
 function teardownSubscriptions() {
   const uid = state.user?.uid || null;
+  sessionStartedForUid = null;
 
   state.subscriptions.userChats?.();
   state.subscriptions.messages?.();
@@ -2629,6 +2665,7 @@ function teardownSubscriptions() {
   cancelComposerMode();
   closeChatCtxMenu();
   closePrefsModal();
+  closeInvitesModal();
   closeArchiveModal();
   closePollModal();
   closeCommentsModal();
@@ -2649,6 +2686,7 @@ function showAuthScreen() {
   closePrefsModal();
   dom.messengerScreen.classList.add('hidden');
   dom.onboardingScreen.classList.add('hidden');
+  hideInviteGateScreen();
   dom.authScreen.classList.remove('hidden');
   hideBannedScreen();
   document.body.classList.remove('chat-open');
@@ -2656,10 +2694,55 @@ function showAuthScreen() {
   hideAuthError();
 }
 
+/** Экран требования инвайт-кода: аккаунт создан, но профиль ещё не разрешён. */
+function showInviteGateScreen(user) {
+  closePrefsModal();
+  dom.authScreen.classList.add('hidden');
+  dom.onboardingScreen.classList.add('hidden');
+  dom.messengerScreen.classList.add('hidden');
+  hideBannedScreen();
+  document.body.classList.remove('chat-open');
+
+  dom.inviteGateEmail.textContent = user?.email || '';
+  if (!dom.inviteGateCode.value) {
+    dom.inviteGateCode.value = Invites.formatInviteCode(dom.authInvite.value || deepLink.invite || '');
+  }
+
+  if (lastInviteError) {
+    dom.inviteGateError.textContent = lastInviteError;
+    dom.inviteGateError.classList.remove('hidden');
+  } else {
+    dom.inviteGateError.classList.add('hidden');
+  }
+
+  dom.inviteGateScreen.classList.remove('hidden');
+  setTimeout(() => dom.inviteGateCode.focus(), 0);
+}
+
+function hideInviteGateScreen() {
+  dom.inviteGateScreen.classList.add('hidden');
+  dom.inviteGateError.classList.add('hidden');
+  dom.inviteGateError.textContent = '';
+}
+
+/** Убрать ?invite_code= из адресной строки после успешного применения кода. */
+function clearInviteParamFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('invite_code')) return;
+    url.searchParams.delete('invite_code');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(null, '', next);
+  } catch {
+    // История недоступна — не критично.
+  }
+}
+
 /** Экран первого заполнения профиля после входа. */
 function showOnboardingScreen() {
   dom.authScreen.classList.add('hidden');
   dom.messengerScreen.classList.add('hidden');
+  hideInviteGateScreen();
   dom.onboardingScreen.classList.remove('hidden');
   document.body.classList.remove('chat-open');
 
@@ -2676,6 +2759,7 @@ function showOnboardingScreen() {
 function enterMessenger() {
   dom.authScreen.classList.add('hidden');
   dom.onboardingScreen.classList.add('hidden');
+  hideInviteGateScreen();
   dom.messengerScreen.classList.remove('hidden');
   updateSidebarUser();
   renderChatList();
@@ -2707,6 +2791,14 @@ function hideAuthError() {
   dom.authError.classList.add('hidden');
 }
 
+/** Понятный текст: ошибки инвайтов уже на русском, остальные — из Auth. */
+function authFormError(error) {
+  if (String(error?.code || '').startsWith('beacon/')) {
+    return error.message || 'Не удалось применить инвайт-код';
+  }
+  return Auth.getAuthErrorMessage(error);
+}
+
 /** Переключение «Вход <-> Регистрация». */
 function setAuthMode(mode) {
   authMode = mode;
@@ -2725,6 +2817,11 @@ function setAuthMode(mode) {
   dom.authEmail.placeholder = isRegister
     ? 'smotritel@mayak.ru'
     : 'smotritel@mayak.ru или @smotritel_mayaka';
+
+  // Инвайт-код нужен только при регистрации.
+  dom.authInviteField.classList.toggle('hidden', !isRegister);
+  dom.authInvite.required = isRegister;
+  dom.googleBtnLabel.textContent = isRegister ? 'Зарегистрироваться через Google' : 'Войти через Google';
 
   hideAuthError();
 }
@@ -3450,9 +3547,8 @@ function renderMsgMenuActions(message) {
   }, 'msg-menu-action danger');
 }
 
-/** Скопировать текст сообщения в буфер обмена (с запасным способом). */
-async function copyMessageText(message) {
-  const text = message.text || '';
+/** Скопировать произвольный текст в буфер обмена (с запасным способом). */
+async function copyToClipboard(text) {
   let copied = false;
 
   try {
@@ -3479,6 +3575,12 @@ async function copyMessageText(message) {
     }
   }
 
+  return copied;
+}
+
+/** Скопировать текст сообщения в буфер обмена. */
+async function copyMessageText(message) {
+  const copied = await copyToClipboard(message.text || '');
   toast(copied ? 'Скопировано' : 'Не удалось скопировать', copied ? 'success' : 'error');
 }
 
@@ -4659,6 +4761,7 @@ function openPrefsModal() {
 function closePrefsModal() {
   closeSessionsModal();
   closePasswordModal();
+  closeInvitesModal();
   dom.prefsOverlay.classList.add('hidden');
 }
 
@@ -4681,6 +4784,7 @@ function renderPrefsModal() {
   // Админ-права: поле видно только супер-администраторам.
   const isRoot = Boolean(state.user && state.rootAdmins.has(state.user.uid));
   dom.prefsAdminField.classList.toggle('hidden', !isRoot);
+  dom.prefsInvitesField.classList.toggle('hidden', !isRoot);
   dom.prefsAdminToggle.checked = isRoot && state.settings?.adminMode !== false;
 }
 
@@ -4851,6 +4955,146 @@ async function submitPasswordChange(event) {
     dom.passwordSubmit.disabled = false;
     dom.passwordSubmit.textContent = 'Сменить пароль';
   }
+}
+
+/* ============================================================
+ *  Инвайт-коды (только root-админы)
+ * ============================================================ */
+
+const INVITE_STATUS_LABELS = {
+  active: 'Активен',
+  used: 'Использован',
+  revoked: 'Отозван',
+  expired: 'Истёк',
+};
+
+function openInvitesModal() {
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+  dom.invitesError.classList.add('hidden');
+  dom.invitesLoadError.classList.add('hidden');
+  dom.invitesCreated.classList.add('hidden');
+  dom.invitesCreated.innerHTML = '';
+  dom.invitesNote.value = '';
+  dom.invitesCount.value = '1';
+  dom.invitesList.innerHTML = '';
+  dom.invitesEmpty.classList.add('hidden');
+  dom.invitesOverlay.classList.remove('hidden');
+  loadInviteCodes();
+}
+
+function closeInvitesModal() {
+  dom.invitesOverlay.classList.add('hidden');
+}
+
+async function loadInviteCodes() {
+  dom.invitesLoadError.classList.add('hidden');
+  try {
+    const codes = await Invites.listInviteCodes();
+    renderInviteCodes(codes);
+  } catch (error) {
+    console.error(error);
+    dom.invitesList.innerHTML = '';
+    dom.invitesEmpty.classList.add('hidden');
+    dom.invitesLoadError.textContent = error?.message || 'Не удалось загрузить инвайт-коды';
+    dom.invitesLoadError.classList.remove('hidden');
+  }
+}
+
+function renderInviteCodes(codes) {
+  dom.invitesList.innerHTML = '';
+  dom.invitesEmpty.classList.toggle('hidden', codes.length > 0);
+
+  codes.forEach((record) => {
+    const row = createEl('div', 'invite-row');
+    const body = createEl('div', 'invite-row-body');
+
+    const title = createEl('div', 'invite-row-title');
+    title.append(createEl('span', 'invite-code-key', `#${record.codeKey.slice(0, 8)}`));
+    title.append(createEl('span', `invite-status ${record.status}`,
+      INVITE_STATUS_LABELS[record.status] || 'Неизвестно'));
+    body.append(title);
+
+    const meta = [];
+    if (record.note) meta.push(record.note);
+    const createdAt = Number(record.createdAt) || 0;
+    if (createdAt) meta.push(`Создан: ${formatDayLabel(createdAt)}, ${formatTime(createdAt)}`);
+    const usedAt = Number(record.redemption?.at) || 0;
+    if (usedAt) meta.push(`Использован: ${formatDayLabel(usedAt)}, ${formatTime(usedAt)}`);
+    const usedBy = String(record.redemption?.uid || '');
+    if (usedBy) meta.push(`кем: ${usedBy.slice(0, 8)}…`);
+    if (meta.length) body.append(createEl('div', 'invite-row-meta', meta.join(' · ')));
+
+    row.append(body);
+
+    if (record.status === 'active') {
+      const revoke = createEl('button', 'btn ghost invite-revoke', 'Отозвать');
+      revoke.type = 'button';
+      revoke.addEventListener('click', () => revokeInviteClick(record, revoke));
+      row.append(revoke);
+    }
+
+    dom.invitesList.append(row);
+  });
+}
+
+async function revokeInviteClick(record, button) {
+  if (!state.user) return;
+  if (!window.confirm(`Отозвать код #${record.codeKey.slice(0, 8)}? Ссылка перестанет работать.`)) return;
+
+  button.disabled = true;
+  try {
+    await Invites.revokeInviteCode(record.codeKey, state.user.uid);
+    toast('Инвайт-код отозван', 'success');
+    loadInviteCodes();
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Не удалось отозвать код', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/** Показать только что созданные коды и ссылки — потом их не восстановить. */
+function renderCreatedInviteCodes(created) {
+  dom.invitesCreated.innerHTML = '';
+  if (!created.length) {
+    dom.invitesCreated.classList.add('hidden');
+    return;
+  }
+
+  dom.invitesCreated.classList.remove('hidden');
+  dom.invitesCreated.append(createEl('p', 'invites-created-hint',
+    'Скопируйте код или ссылку сейчас: в базе хранятся только соль и хэш, восстановить код не получится.'));
+
+  created.forEach((item) => {
+    const row = createEl('div', 'invite-created-row');
+    row.append(createEl('code', 'invite-created-code', item.code));
+
+    const actions = createEl('div', 'invite-created-actions');
+
+    const copyCode = createEl('button', 'btn ghost invite-mini-btn', 'Код');
+    copyCode.type = 'button';
+    copyCode.addEventListener('click', async () => {
+      const copied = await copyToClipboard(item.code);
+      toast(copied ? 'Код скопирован' : 'Не удалось скопировать', copied ? 'success' : 'error');
+    });
+
+    const copyLink = createEl('button', 'btn ghost invite-mini-btn', 'Ссылка');
+    copyLink.type = 'button';
+    copyLink.addEventListener('click', async () => {
+      const copied = await copyToClipboard(item.link);
+      toast(copied ? 'Ссылка скопирована' : 'Не удалось скопировать', copied ? 'success' : 'error');
+    });
+
+    actions.append(copyCode, copyLink);
+    row.append(actions);
+    dom.invitesCreated.append(row);
+  });
+}
+
+function showInvitesError(message) {
+  dom.invitesError.textContent = message;
+  dom.invitesError.classList.remove('hidden');
 }
 
 /* ============================================================
@@ -5362,12 +5606,31 @@ dom.authForm.addEventListener('submit', async (event) => {
         showAuthError('Для регистрации укажите email');
         return;
       }
-      await Auth.registerWithEmail(identifier, password);
+      const code = Invites.normalizeInviteCode(dom.authInvite.value);
+      if (!code) {
+        showAuthError('Введите инвайт-код — без него регистрация закрыта');
+        return;
+      }
+      try {
+        await Invites.validateInviteCode(code);
+      } catch (error) {
+        showAuthError(authFormError(error));
+        return;
+      }
+      // Код применим после входа: подтверждение пишется уже от имени аккаунта.
+      pendingInviteCode = code;
+      try {
+        await Auth.registerWithEmail(identifier, password);
+      } catch (error) {
+        pendingInviteCode = '';
+        throw error;
+      }
     } else {
+      pendingInviteCode = '';
       await Auth.loginWithIdentifier(identifier, password);
     }
   } catch (error) {
-    showAuthError(Auth.getAuthErrorMessage(error));
+    showAuthError(authFormError(error));
   } finally {
     setAuthLoading(false);
   }
@@ -5377,20 +5640,54 @@ dom.authToggleMode.addEventListener('click', () => {
   setAuthMode(authMode === 'login' ? 'register' : 'login');
 });
 
+// Инвайт-ссылка: /?invite_code=… — сразу открываем регистрацию и
+// подставляем код в поле.
+if (deepLink.invite) {
+  dom.authInvite.value = Invites.formatInviteCode(deepLink.invite);
+  setAuthMode('register');
+}
+
+// Приводим код к красивому виду после ввода.
+dom.authInvite.addEventListener('blur', () => {
+  const code = Invites.normalizeInviteCode(dom.authInvite.value);
+  dom.authInvite.value = code ? Invites.formatInviteCode(code) : '';
+});
+
 dom.googleBtn.addEventListener('click', async () => {
   hideAuthError();
   setAuthLoading(true);
   try {
+    if (authMode === 'register') {
+      const code = Invites.normalizeInviteCode(dom.authInvite.value);
+      if (!code) {
+        showAuthError('Введите инвайт-код — без него регистрация закрыта');
+        return;
+      }
+      try {
+        await Invites.validateInviteCode(code);
+      } catch (error) {
+        showAuthError(authFormError(error));
+        return;
+      }
+      pendingInviteCode = code;
+    } else {
+      // Вход: код не нужен. Если Google-аккаунт окажется новым,
+      // приложение попросит инвайт отдельным экраном.
+      pendingInviteCode = '';
+    }
+
     const result = await Auth.loginWithGoogle();
     // Email уже занят аккаунтом с паролем: просим пароль и привязываем Google.
     if (result?.needsLink) {
+      pendingInviteCode = '';
       pendingGoogleLink = { email: result.email, pendingCredential: result.pendingCredential };
       dom.authLinkPanel.classList.remove('hidden');
       dom.authLinkPassword.value = '';
       dom.authLinkPassword.focus();
     }
   } catch (error) {
-    showAuthError(Auth.getAuthErrorMessage(error));
+    pendingInviteCode = '';
+    showAuthError(authFormError(error));
   } finally {
     setAuthLoading(false);
   }
@@ -5416,6 +5713,42 @@ dom.authLinkCancel.addEventListener('click', () => {
   pendingGoogleLink = null;
   dom.authLinkPanel.classList.add('hidden');
   hideAuthError();
+});
+
+// --- Экран требования инвайта (новый Google-аккаунт без кода) ---
+dom.inviteGateForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const user = state.user;
+  if (!user) return;
+
+  const code = Invites.normalizeInviteCode(dom.inviteGateCode.value);
+  if (!code) {
+    dom.inviteGateError.textContent = 'Введите инвайт-код';
+    dom.inviteGateError.classList.remove('hidden');
+    dom.inviteGateCode.focus();
+    return;
+  }
+
+  dom.inviteGateSubmit.disabled = true;
+  dom.inviteGateSubmit.textContent = 'Проверяем…';
+  try {
+    await Invites.redeemInviteCode({ uid: user.uid, code });
+    clearInviteParamFromUrl();
+    hideInviteGateScreen();
+    // Дальше — обычный маршрут: профиль, бан, онбординг или мессенджер.
+    await enqueueRoute(user);
+  } catch (error) {
+    console.error(error);
+    dom.inviteGateError.textContent = error?.message || 'Не удалось применить инвайт-код';
+    dom.inviteGateError.classList.remove('hidden');
+  } finally {
+    dom.inviteGateSubmit.disabled = false;
+    dom.inviteGateSubmit.textContent = 'Продолжить';
+  }
+});
+
+dom.inviteGateLogout.addEventListener('click', () => {
+  logoutCurrentUser();
 });
 
 // --- Юзернеймы: «@Test» и «test» — одно и то же ---
@@ -5499,6 +5832,40 @@ dom.sessionsOverlay.addEventListener('click', (event) => {
 });
 dom.sessionsRefresh.addEventListener('click', loadSessions);
 dom.sessionsRevokeOthers.addEventListener('click', revokeOtherSessionsClick);
+
+// --- Инвайт-коды: окно root-админа ---
+dom.prefsInvitesBtn.addEventListener('click', openInvitesModal);
+dom.invitesClose.addEventListener('click', closeInvitesModal);
+dom.invitesCancel.addEventListener('click', closeInvitesModal);
+dom.invitesOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.invitesOverlay) closeInvitesModal();
+});
+dom.invitesForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  dom.invitesError.classList.add('hidden');
+  dom.invitesSubmit.disabled = true;
+  dom.invitesSubmit.textContent = 'Создаём…';
+  try {
+    const count = Math.max(1, Math.min(20, Math.floor(Number(dom.invitesCount.value) || 1)));
+    const created = await Invites.createInviteCodes({
+      uid: state.user.uid,
+      count,
+      note: dom.invitesNote.value,
+    });
+    dom.invitesNote.value = '';
+    renderCreatedInviteCodes(created);
+    toast(created.length === 1 ? 'Инвайт-код создан' : `Создано кодов: ${created.length}`, 'success');
+    loadInviteCodes();
+  } catch (error) {
+    console.error(error);
+    showInvitesError(error?.message || 'Не удалось создать инвайт-код');
+  } finally {
+    dom.invitesSubmit.disabled = false;
+    dom.invitesSubmit.textContent = 'Создать';
+  }
+});
 dom.prefsThemeToggle.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-theme-choice]');
   if (btn) setTheme(btn.dataset.themeChoice);
@@ -5789,6 +6156,10 @@ document.addEventListener('keydown', (event) => {
     closeSessionsModal();
     return;
   }
+  if (!dom.invitesOverlay.classList.contains('hidden')) {
+    closeInvitesModal();
+    return;
+  }
   if (!dom.prefsOverlay.classList.contains('hidden')) {
     closePrefsModal();
     return;
@@ -5997,44 +6368,120 @@ dom.privateUnblockBtn.addEventListener('click', () => {
 });
 
 // --- Роутинг по состоянию авторизации ---
-Auth.watchAuthState(async (user) => {
+
+/**
+ * Применить код из формы после входа. Возвращает true, если аккаунт получил
+ * подтверждение инвайта и профиль можно создавать.
+ */
+async function claimPendingInvite(user) {
+  if (!pendingInviteCode) return false;
+  const code = pendingInviteCode;
+  pendingInviteCode = '';
+  try {
+    await Invites.redeemInviteCode({ uid: user.uid, code });
+    clearInviteParamFromUrl();
+    lastInviteError = '';
+    return true;
+  } catch (error) {
+    console.error('Не удалось применить инвайт-код:', error);
+    lastInviteError = error?.message || 'Не удалось применить инвайт-код';
+    return false;
+  }
+}
+
+Auth.watchAuthState((user) => enqueueRoute(user));
+
+/** Поставить разбор состояния Auth в очередь и дождаться его. */
+function enqueueRoute(user) {
+  // onAuthStateChanged может сработать несколько раз подряд (вход, привязка
+  // провайдера, обновление токена). Маршрут выстраиваем в очередь: иначе два
+  // параллельных разбора профиля могут дважды применить инвайт-код.
+  routeQueue = routeQueue
+    .then(() => handleAuthChange(user))
+    .catch((error) => console.error('Ошибка маршрута экранов:', error));
+  return routeQueue;
+}
+
+async function handleAuthChange(user) {
   if (!user) {
     Sessions.stopSession({ removeRecord: false }).catch(() => {});
     teardownSubscriptions();
     state.user = null;
     state.profile = null;
+    pendingInviteCode = '';
+    lastInviteError = '';
     showAuthScreen();
     return;
   }
 
+  await routeSignedInUser(user);
+}
+
+/**
+ * Разложить вошедшего пользователя по экранам: мессенджер, онбординг,
+ * требование инвайта или бан. Вызывается при смене состояния Auth и после
+ * успешного применения инвайт-кода на отдельном экране.
+ */
+async function routeSignedInUser(user) {
   state.user = user;
 
   // Реестр активных сессий: записываем это устройство и слушаем отзыв.
-  Sessions.startSession(user.uid, () => {
-    toast('Сессия завершена на другом устройстве', 'error');
-    logoutCurrentUser();
-  }).catch((error) => {
-    console.warn('Не удалось зарегистрировать сессию:', error);
-  });
+  if (sessionStartedForUid !== user.uid) {
+    sessionStartedForUid = user.uid;
+    Sessions.startSession(user.uid, () => {
+      toast('Сессия завершена на другом устройстве', 'error');
+      logoutCurrentUser();
+    }).catch((error) => {
+      console.warn('Не удалось зарегистрировать сессию:', error);
+    });
+  }
 
-  // Профиль и бан грузим параллельно. ensureUserRecord уже читает /users/$uid,
-  // поэтому не делаем второй такой же запрос через getUserProfile.
-  const profilePromise = Auth.ensureUserRecord(user).catch((error) => {
-    console.error('Не удалось загрузить профиль пользователя:', error);
-    return null;
-  });
+  // Бан проверяем параллельно с профилем.
   const banPromise = Chat.getBan(user.uid).catch((error) => {
     console.warn('Не удалось проверить бан:', error);
     return null;
   });
+
+  // ensureUserRecord читает /users/$uid и создаёт базовый узел только тем,
+  // у кого есть подтверждение инвайта (/user_invites/$uid).
+  let profile = null;
+  let inviteRequired = false;
+  try {
+    profile = await Auth.ensureUserRecord(user);
+  } catch (error) {
+    if (error?.code === 'beacon/invite-required') {
+      const claimed = await claimPendingInvite(user);
+      if (claimed) {
+        try {
+          profile = await Auth.ensureUserRecord(user);
+        } catch (retryError) {
+          console.error('Не удалось создать профиль после инвайта:', retryError);
+        }
+      }
+      if (!profile) inviteRequired = true;
+    } else {
+      console.error('Не удалось загрузить профиль пользователя:', error);
+    }
+  }
 
   // Супер-админ дозаполняет публичный индекс входа для существующих аккаунтов.
   Chat.isRootAdmin(user.uid)
     .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
     .catch((error) => console.warn('Не удалось дозаполнить индекс входа:', error));
 
-  const [profile, ban] = await Promise.all([profilePromise, banPromise]);
+  const ban = await banPromise;
   if (state.user !== user) return; // пользователь успел выйти, пока грузили
+
+  if (inviteRequired) {
+    state.profile = null;
+    state.myBan = null;
+    showInviteGateScreen(user);
+    return;
+  }
+
+  // Код больше не нужен: аккаунт уже существует или успешно активирован.
+  pendingInviteCode = '';
+  lastInviteError = '';
 
   // Если чтение в ensureUserRecord не удалось, пробуем обычный кэш/повтор.
   state.profile = profile || await Chat.getUserProfile(user.uid, { force: true }).catch(() => null);
@@ -6059,4 +6506,4 @@ Auth.watchAuthState(async (user) => {
   if (!Chat.isProfileComplete(state.profile)) showOnboardingScreen();
   else if (state.myBan) showBannedScreen();
   else enterMessenger();
-});
+}

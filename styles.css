@@ -1277,6 +1277,116 @@ textarea:-webkit-autofill {
   max-height: 340px;
   overflow-y: auto;
 }
+
+/* Инвайт-коды (окно root-админа) */
+.invites-created {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 184, 77, 0.35);
+  background: rgba(255, 184, 77, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.invites-created-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.invite-created-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+.invite-created-code {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  letter-spacing: 0.5px;
+  color: var(--accent-text);
+  overflow-wrap: anywhere;
+}
+.invite-created-actions {
+  display: flex;
+  gap: 6px;
+}
+.invite-mini-btn {
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+.invites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.invite-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.invite-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.invite-code-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.invite-status {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.invite-status.active {
+  border-color: rgba(123, 196, 127, 0.5);
+  color: var(--success);
+}
+.invite-status.used {
+  border-color: rgba(255, 184, 77, 0.45);
+  color: var(--accent-text);
+}
+.invite-status.revoked,
+.invite-status.expired {
+  border-color: rgba(255, 107, 107, 0.45);
+  color: var(--danger);
+}
+.invite-row-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.invite-revoke {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
 .session-row {
   display: flex;
   align-items: center;

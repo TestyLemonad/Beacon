@@ -17,7 +17,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=33" />
+  <link rel="stylesheet" href="styles.css?v=34" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -54,6 +54,14 @@
                  autocomplete="current-password" minlength="6" required />
         </div>
 
+        <!-- Инвайт-код: регистрация закрыта, код нужен и для почты, и для Google -->
+        <div class="field hidden" id="auth-invite-field">
+          <label for="auth-invite">Инвайт-код</label>
+          <input id="auth-invite" class="input" type="text" placeholder="ABCD-EFGH-JKLM-NPQR"
+                 autocomplete="off" spellcheck="false" />
+          <p class="field-hint">Без инвайт-кода зарегистрироваться нельзя. Код выдаёт администратор Beacon.</p>
+        </div>
+
         <p id="auth-error" class="form-error hidden"></p>
 
         <button id="auth-submit" type="submit" class="btn primary full">Войти</button>
@@ -87,7 +95,7 @@
           <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
           <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
         </svg>
-        Войти через Google
+        <span id="google-btn-label">Войти через Google</span>
       </button>
     </div>
   </div>
@@ -130,6 +138,34 @@
       </form>
 
       <button id="onboarding-logout" type="button" class="link-btn">Выйти из аккаунта</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Требование инвайт-кода: аккаунт вошёл, но регистрация закрыта
+       без приглашения (например, новый Google-аккаунт из режима «Войти»)
+       ============================================================ -->
+  <div id="invite-gate-screen" class="screen auth-screen hidden">
+    <div class="auth-card">
+      <img src="icon.png" alt="Beacon" class="auth-logo" />
+      <h1 class="auth-title">Нужен инвайт</h1>
+      <p class="auth-subtitle">Регистрация в Beacon — по приглашению</p>
+      <p id="invite-gate-email" class="onboarding-email"></p>
+
+      <form id="invite-gate-form" class="auth-form">
+        <div class="field">
+          <label for="invite-gate-code">Инвайт-код</label>
+          <input id="invite-gate-code" class="input" type="text" placeholder="ABCD-EFGH-JKLM-NPQR"
+                 autocomplete="off" spellcheck="false" required />
+          <p class="field-hint">Вставьте код или откройте ссылку-приглашение — код подставится сам.</p>
+        </div>
+
+        <p id="invite-gate-error" class="form-error hidden"></p>
+
+        <button id="invite-gate-submit" type="submit" class="btn primary full">Продолжить</button>
+      </form>
+
+      <button id="invite-gate-logout" type="button" class="link-btn">Выйти из аккаунта</button>
     </div>
   </div>
 
@@ -735,6 +771,13 @@
           <p class="field-hint">Позволяют банить пользователей и удалять чужие чаты, сообщения и комментарии. Выключите переключатель, чтобы проверить мессенджер как обычный пользователь.</p>
         </div>
 
+        <!-- Инвайт-коды: видны только супер-администраторам -->
+        <div class="field hidden" id="prefs-invites-field">
+          <label>Приглашения</label>
+          <button id="prefs-invites-btn" class="btn ghost full" type="button">Инвайт-коды</button>
+          <p class="field-hint">Регистрация в Beacon закрыта: новые аккаунты создаются только по приглашению.</p>
+        </div>
+
         <div class="field">
           <label>Архив</label>
           <button id="prefs-archive-btn" class="btn ghost full" type="button">
@@ -823,6 +866,43 @@
         <button id="sessions-refresh" class="btn ghost" type="button">Обновить</button>
         <button id="sessions-revoke-others" class="btn danger" type="button">Выйти на других устройствах</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Инвайт-коды: отдельное окно, открывается из настроек (только root-админам) -->
+  <div id="invites-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Инвайт-коды</h3>
+        <button id="invites-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="field-hint">Код одноразовый и хранится в базе только как соль и хэш. Показывайте его сразу после создания — восстановить код позже нельзя.</p>
+
+      <form id="invites-form" class="create-form">
+        <div class="field">
+          <label for="invites-count">Сколько кодов создать</label>
+          <input id="invites-count" class="input" type="number" min="1" max="20" step="1" value="1" />
+        </div>
+        <div class="field">
+          <label for="invites-note">Заметка (необязательно)</label>
+          <input id="invites-note" class="input" type="text" maxlength="80" placeholder="Например: для Вани" />
+        </div>
+
+        <p id="invites-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="invites-cancel" class="btn ghost" type="button">Закрыть</button>
+          <button id="invites-submit" class="btn primary" type="submit">Создать</button>
+        </div>
+      </form>
+
+      <div id="invites-created" class="invites-created hidden"></div>
+
+      <h4 class="stats-subtitle">Созданные коды</h4>
+      <div id="invites-list" class="invites-list"></div>
+      <p id="invites-empty" class="sidebar-empty hidden">Кодов пока нет.</p>
+      <p id="invites-load-error" class="form-error hidden"></p>
     </div>
   </div>
 
@@ -931,6 +1011,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=33"></script>
+  <script type="module" src="app.js?v=34"></script>
 </body>
 </html>
