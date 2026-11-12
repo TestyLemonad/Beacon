@@ -586,6 +586,11 @@ textarea:-webkit-autofill {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Выделение выключено по умолчанию, чтобы ПКМ и долгое нажатие
+     открывали меню сообщения. Включается пунктом «Выбрать текст». */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .messages-empty {
@@ -1976,6 +1981,9 @@ html[data-theme='light'] .reaction-pill.mine {
   border-top: 1px solid var(--border);
 }
 .msg-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 9px 10px;
   border-radius: 9px;
   text-align: left;
@@ -1987,11 +1995,37 @@ html[data-theme='light'] .reaction-pill.mine {
 .msg-menu-action:hover {
   background: var(--bg-hover);
 }
+.msg-menu-icon {
+  color: var(--text-muted);
+  transition: color 0.13s ease;
+}
+.msg-menu-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.msg-menu-action-label {
+  flex: 1;
+  min-width: 0;
+}
 .msg-menu-action.danger {
+  color: var(--danger);
+}
+.msg-menu-action.danger .msg-menu-icon {
   color: var(--danger);
 }
 .msg-menu-action.danger:hover {
   background: rgba(255, 107, 107, 0.12);
+}
+
+/* Режим «Выбрать текст»: выделение и копирование доступны внутри сообщения */
+.message.text-selectable,
+.message.text-selectable .bubble {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+.message.text-selectable .bubble {
+  box-shadow: 0 0 0 2px rgba(255, 184, 77, 0.35);
 }
 
 /* Малые модалки: выбор удаления и подобное */

@@ -10,10 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=34';
-import * as Chat from './services/chat.js?v=34';
-import * as Sessions from './services/sessions.js?v=34';
-import * as Invites from './services/invites.js?v=34';
+import * as Auth from './services/auth.js?v=35';
+import * as Chat from './services/chat.js?v=35';
+import * as Sessions from './services/sessions.js?v=35';
+import * as Invites from './services/invites.js?v=35';
 
 /* ============================================================
  *  DOM
@@ -676,6 +676,14 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>',
   forward:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>',
+  reply:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>',
+  edit:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  copy:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  select:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h2"/><path d="M17 4h2a1 1 0 0 1 1 1v2"/><path d="M20 17v2a1 1 0 0 1-1 1h-2"/><path d="M7 20H5a1 1 0 0 1-1-1v-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
   chart:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>',
   ban:
@@ -2392,7 +2400,9 @@ function buildMessageElement(message, showSender) {
   wrap.append(bubble);
 
   // Меню сообщения: ПКМ на десктопе, долгое нажатие на тач-экранах.
+  // В режиме выделения текста работает штатное меню браузера (копирование).
   wrap.addEventListener('contextmenu', (event) => {
+    if (wrap.classList.contains('text-selectable')) return;
     event.preventDefault();
     openMsgMenu(message, event.clientX, event.clientY);
   });
@@ -2405,6 +2415,7 @@ function buildMessageElement(message, showSender) {
     }
   };
   wrap.addEventListener('touchstart', (event) => {
+    if (wrap.classList.contains('text-selectable')) return;
     const touch = event.touches[0];
     if (!touch) return;
     longPressTimer = setTimeout(() => {
@@ -3436,6 +3447,7 @@ function positionMsgMenu() {
 /** Открыть меню сообщения рядом с точкой (x, y). */
 function openMsgMenu(message, x, y) {
   if (!message || !state.activeChatId) return;
+  stopTextSelection();
   state.msgMenuMessage = message;
   state.msgMenuPos = { x, y };
   state.msgMenuExpanded = false;
@@ -3476,7 +3488,7 @@ function renderMsgMenuReactions(message) {
   REACTIONS_ALL.forEach((emoji) => dom.msgMenuAll.append(buildReactionButton(message, emoji)));
 }
 
-/** Действия в меню сообщения: ответ, правка, копия, пересылка, закреп, удаление. */
+/** Действия в меню сообщения: ответ, правка, копия, выделение, пересылка, закреп, удаление. */
 function renderMsgMenuActions(message) {
   const chat = state.chats.get(state.activeChatId) || null;
   const own = message.sender === state.user?.uid;
@@ -3484,38 +3496,45 @@ function renderMsgMenuActions(message) {
   const pinned = Boolean(chat?.pinned?.[message.id]);
 
   dom.msgMenuActions.innerHTML = '';
-  const add = (label, handler, className = 'msg-menu-action') => {
-    const btn = createEl('button', className, label);
+  const add = (icon, label, handler, danger = false) => {
+    const btn = createEl('button', danger ? 'msg-menu-action danger' : 'msg-menu-action');
     btn.type = 'button';
+    if (icon) btn.append(createIcon(icon, 'msg-menu-icon'));
+    btn.append(createEl('span', 'msg-menu-action-label', label));
     btn.addEventListener('click', handler);
     dom.msgMenuActions.append(btn);
     return btn;
   };
 
   if (canPost) {
-    add('Ответить', () => {
+    add('reply', 'Ответить', () => {
       closeMsgMenu();
       setComposerMode({ type: 'reply', message });
     });
   }
   if (own && !message.poll) {
-    add('Изменить', () => {
+    add('edit', 'Изменить', () => {
       closeMsgMenu();
       setComposerMode({ type: 'edit', message });
     });
   }
-  add('Копировать', () => {
+  add('copy', 'Копировать', () => {
     closeMsgMenu();
     copyMessageText(message);
   });
-  add('Переслать', () => {
+  if (message.text) {
+    add('select', 'Выбрать текст', () => {
+      startTextSelection(message);
+    });
+  }
+  add('forward', 'Переслать', () => {
     closeMsgMenu();
     openForwardModal(message);
   });
 
   // «Избранное»: закладка на сообщение (идея 20).
   if (chat?.type !== 'saved' && (message.text || message.poll)) {
-    add('В избранное', () => {
+    add('saved', 'В избранное', () => {
       closeMsgMenu();
       saveMessageToFavorites(message);
     });
@@ -3523,14 +3542,14 @@ function renderMsgMenuActions(message) {
 
   // Комментарии к посту канала (идея 13).
   if (chat?.type === 'channel') {
-    add('Комментарии', () => {
+    add('comment', 'Комментарии', () => {
       closeMsgMenu();
       openCommentsModal(message);
     });
   }
 
   if (canPost) {
-    add(pinned ? 'Открепить' : 'Закрепить', async () => {
+    add('pin', pinned ? 'Открепить' : 'Закрепить', async () => {
       closeMsgMenu();
       try {
         await Chat.setPinned(state.activeChatId, message.id, !pinned, message);
@@ -3541,10 +3560,10 @@ function renderMsgMenuActions(message) {
       }
     });
   }
-  add('Удалить', () => {
+  add('trash', 'Удалить', () => {
     closeMsgMenu();
     requestDeleteMessage(message);
-  }, 'msg-menu-action danger');
+  }, true);
 }
 
 /** Скопировать произвольный текст в буфер обмена (с запасным способом). */
@@ -3582,6 +3601,36 @@ async function copyToClipboard(text) {
 async function copyMessageText(message) {
   const copied = await copyToClipboard(message.text || '');
   toast(copied ? 'Скопировано' : 'Не удалось скопировать', copied ? 'success' : 'error');
+}
+
+/* --- Режим выделения текста сообщения --- */
+
+/** Выключить режим выделения текста. */
+function stopTextSelection() {
+  document.querySelectorAll('.message.text-selectable').forEach((node) => {
+    node.classList.remove('text-selectable');
+  });
+}
+
+/**
+ * Разрешить выделение и копирование текста одного сообщения.
+ * По умолчанию выделение в ленте выключено, чтобы ПКМ и долгое нажатие
+ * открывали меню сообщения, а не выделяли текст.
+ */
+function startTextSelection(message) {
+  closeMsgMenu();
+  stopTextSelection();
+
+  const node = [...document.querySelectorAll('.messages .message')]
+    .find((item) => item.dataset.msgId === message.id);
+
+  if (!node) {
+    toast('Не удалось найти сообщение в ленте', 'error');
+    return;
+  }
+
+  node.classList.add('text-selectable');
+  toast('Выделите нужную часть текста и скопируйте');
 }
 
 /** Удаление: своё — выбор «у всех / только у меня»; чужое — сразу «у меня» (супер-админ может удалить у всех). */
@@ -6193,6 +6242,7 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (!dom.modalOverlay.classList.contains('hidden')) closeModal();
+  if (document.querySelector('.message.text-selectable')) stopTextSelection();
 });
 
 // --- Панель чата ---
@@ -6281,6 +6331,15 @@ dom.msgMenuMore.addEventListener('click', () => {
   dom.msgMenuAll.classList.toggle('hidden', !state.msgMenuExpanded);
   dom.msgMenuMore.classList.toggle('expanded', state.msgMenuExpanded);
   positionMsgMenu();
+});
+
+// Режим выделения текста: клик вне выбранного сообщения выключает его.
+document.addEventListener('pointerdown', (event) => {
+  const active = document.querySelector('.message.text-selectable');
+  if (!active) return;
+  if (active.contains(event.target)) return;
+  if (event.target.closest?.('#msg-menu-overlay')) return;
+  stopTextSelection();
 });
 
 // Плашка ответа/редактирования над полем ввода.
