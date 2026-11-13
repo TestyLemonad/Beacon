@@ -6,6 +6,10 @@
  *   /users/$uid              { username, firstName, lastName?, bio?, avatar?, email, createdAt }
  *   /usernames/$username     $uid                       — индекс поиска людей
  *   /login_index/$username   { uid, email }             — вход по @username
+ *   /reserved_usernames/$username  { at, by }           — имена, зарезервированные root-админами
+ *   /username_aliases/$username   { type, target, at, by } — дополнительные имена
+ *                              (type: user|channel|group), выданные root-админами;
+ *                              ведут на основной профиль цели
  *   /chats/$chat_id          { type, groupType?, username?, title?, description?, owner?, users?,
  *                              admins?, subscribersCount?, subscribers?, auto_subscribed?,
  *                              requiresSubscription?, avatar?, createdAt, lastMessage?, pinned? }
@@ -58,7 +62,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=39';
+import { auth, db } from '../firebase-config.js?v=45';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -91,15 +95,111 @@ export function isValidUsername(username) {
 
 const USERNAME_ERROR = 'Юзернейм: 3–32 символа (a–z, 0–9, «_»)';
 
+/** Правила базы отклонили запись (например, имя зарезервировано). */
+function isPermissionDenied(error) {
+  return error?.code === 'database/permission-denied'
+    || /permission/i.test(String(error?.message || ''));
+}
+
+/**
+ * Разобрать ввод со списком юзернеймов: запятые, точки с запятой, пробелы
+ * и переводы строк. Возвращает корректные имена без повторов и ошибочные.
+ * @param {string|string[]} values
+ * @returns {{ valid: string[], invalid: string[] }}
+ */
+export function parseUsernameList(values) {
+  const rawList = Array.isArray(values) ? values : [values];
+  const valid = [];
+  const invalid = [];
+
+  rawList.forEach((value) => {
+    String(value || '').split(/[\s,;]+/).forEach((part) => {
+      const name = normalizeUsername(part);
+      if (!name) return;
+      if (!isValidUsername(name)) {
+        if (!invalid.includes(name)) invalid.push(name);
+        return;
+      }
+      if (!valid.includes(name)) valid.push(name);
+    });
+  });
+
+  return { valid, invalid };
+}
+
+/**
+ * Проверить, не зарезервирован ли юзернейм. Читать список могут все
+ * вошедшие, поэтому проверка нужна для понятного сообщения: окончательно
+ * запрет обеспечивают правила базы.
+ * @returns {Promise<boolean>}
+ */
+export async function isUsernameReserved(username) {
+  const name = normalizeUsername(username);
+  if (!isValidUsername(name)) return false;
+  try {
+    const snapshot = await get(ref(db, `reserved_usernames/${name}`));
+    return snapshot.exists();
+  } catch (error) {
+    console.warn('Не удалось проверить резерв юзернейма:', error);
+    return false;
+  }
+}
+
+/** Не дать занять зарезервированное имя (супер-админам можно). */
+async function assertUsernameNotReserved(username) {
+  if (!(await isUsernameReserved(username))) return;
+
+  const uid = auth.currentUser?.uid;
+  if (uid) {
+    try {
+      const snapshot = await get(ref(db, `root_admins/${uid}`));
+      if (snapshot.val() === true) return;
+    } catch (error) {
+      console.warn('Не удалось проверить права супер-администратора:', error);
+    }
+  }
+
+  const error = new Error(`Юзернейм @${username} зарезервирован`);
+  error.code = 'beacon/username-reserved';
+  throw error;
+}
+
+/**
+ * Не дать занять имя, которое уже выдано как дополнительный юзернейм:
+ * такие имена остаются привязанными к своему основному профилю.
+ */
+async function assertUsernameNotAlias(username) {
+  try {
+    const snapshot = await get(ref(db, `username_aliases/${username}`));
+    if (!snapshot.exists()) return;
+  } catch (error) {
+    console.warn('Не удалось проверить дополнительные юзернеймы:', error);
+    return;
+  }
+
+  const error = new Error(`Юзернейм @${username} уже выдан как дополнительный`);
+  error.code = 'beacon/username-alias';
+  throw error;
+}
+
 /**
  * Занять юзернейм для пользователя (атомарно, через транзакцию).
  * Если юзернейм свободен или уже принадлежит этому пользователю — успех.
  */
 async function claimUsername(uid, username) {
-  const result = await runTransaction(ref(db, `usernames/${username}`), (current) => {
-    if (current === null || current === uid) return uid;
-    return undefined; // занято другим — прерываем транзакцию
-  });
+  await assertUsernameNotReserved(username);
+  await assertUsernameNotAlias(username);
+
+  let result;
+  try {
+    result = await runTransaction(ref(db, `usernames/${username}`), (current) => {
+      if (current === null || current === uid) return uid;
+      return undefined; // занято другим — прерываем транзакцию
+    });
+  } catch (error) {
+    if (isPermissionDenied(error)) throw new Error(`Юзернейм @${username} недоступен`);
+    throw error;
+  }
   if (!result.committed) throw new Error(`Юзернейм @${username} уже занят`);
 }
 
@@ -108,10 +208,19 @@ async function claimUsername(uid, username) {
  * @returns {Promise<string>} chatId канала-владельца
  */
 async function claimChannelUsername(chatId, username) {
-  const result = await runTransaction(ref(db, `channel_usernames/${username}`), (current) => {
-    if (current === null || current === chatId) return chatId;
-    return undefined; // занято другим каналом — прерываем транзакцию
-  });
+  await assertUsernameNotReserved(username);
+  await assertUsernameNotAlias(username);
+
+  let result;
+  try {
+    result = await runTransaction(ref(db, `channel_usernames/${username}`), (current) => {
+      if (current === null || current === chatId) return chatId;
+      return undefined; // занято другим каналом — прерываем транзакцию
+    });
+  } catch (error) {
+    if (isPermissionDenied(error)) throw new Error(`Юзернейм канала @${username} недоступен`);
+    throw error;
+  }
   if (!result.committed) throw new Error(`Юзернейм канала @${username} уже занят`);
 }
 
@@ -120,11 +229,643 @@ async function claimChannelUsername(chatId, username) {
  * @returns {Promise<string>} chatId группы-владельца
  */
 async function claimGroupUsername(chatId, username) {
-  const result = await runTransaction(ref(db, `group_usernames/${username}`), (current) => {
-    if (current === null || current === chatId) return chatId;
-    return undefined; // занято другой группой — прерываем транзакцию
-  });
+  await assertUsernameNotReserved(username);
+  await assertUsernameNotAlias(username);
+
+  let result;
+  try {
+    result = await runTransaction(ref(db, `group_usernames/${username}`), (current) => {
+      if (current === null || current === chatId) return chatId;
+      return undefined; // занято другой группой — прерываем транзакцию
+    });
+  } catch (error) {
+    if (isPermissionDenied(error)) throw new Error(`Юзернейм группы @${username} недоступен`);
+    throw error;
+  }
   if (!result.committed) throw new Error(`Юзернейм группы @${username} уже занят`);
+}
+
+/* ============================================================
+ *  Резерв юзернеймов (только root-админы)
+ * ============================================================ */
+
+/**
+ * Все зарезервированные юзернеймы с текущим статусом занятости.
+ * @returns {Promise<Array<{name: string, at: number, by: string,
+ *           status: 'free'|'user'|'channel'|'group', occupant: string}>>}
+ */
+export async function listReservedUsernames() {
+  let snapshots;
+  try {
+    snapshots = await Promise.all([
+      get(ref(db, 'reserved_usernames')),
+      get(ref(db, 'usernames')),
+      get(ref(db, 'channel_usernames')),
+      get(ref(db, 'group_usernames')),
+      get(ref(db, 'username_aliases')),
+    ]);
+  } catch (error) {
+    console.error('Не удалось загрузить зарезервированные юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось загрузить зарезервированные юзернеймы');
+  }
+
+  const reserved = snapshots[0].val() || {};
+  const users = snapshots[1].val() || {};
+  const channels = snapshots[2].val() || {};
+  const groups = snapshots[3].val() || {};
+  const aliases = snapshots[4].val() || {};
+
+  return Object.entries(reserved)
+    .map(([name, value]) => {
+      const record = value && typeof value === 'object' ? value : {};
+      let status = 'free';
+      let occupant = '';
+
+      if (users[name]) {
+        status = 'user';
+        occupant = String(users[name]);
+      } else if (channels[name]) {
+        status = 'channel';
+        occupant = String(channels[name]);
+      } else if (groups[name]) {
+        status = 'group';
+        occupant = String(groups[name]);
+      } else if (aliases[name]?.target) {
+        status = 'alias';
+        occupant = String(aliases[name].target);
+      }
+
+      return {
+        name,
+        at: Number(record.at) || 0,
+        by: String(record.by || ''),
+        status,
+        occupant,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * Зарезервировать список имён. Уже занятые (пользователем, каналом или
+ * группой) и уже зарезервированные имена пропускаются.
+ *
+ * @param {{ names: string|string[], uid: string }} options
+ * @returns {Promise<{ added: string[], skipped: Array<{name: string, reason: string}> }>}
+ */
+export async function reserveUsernames({ names = [], uid } = {}) {
+  if (!uid) throw new Error('Сначала войдите в аккаунт');
+
+  const { valid, invalid } = parseUsernameList(names);
+  if (!valid.length && !invalid.length) throw new Error('Введите один или несколько юзернеймов');
+
+  let snapshots;
+  try {
+    snapshots = await Promise.all([
+      get(ref(db, 'reserved_usernames')),
+      get(ref(db, 'usernames')),
+      get(ref(db, 'channel_usernames')),
+      get(ref(db, 'group_usernames')),
+      get(ref(db, 'username_aliases')),
+    ]);
+  } catch (error) {
+    console.error('Не удалось проверить юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось проверить юзернеймы');
+  }
+
+  const reserved = snapshots[0].val() || {};
+  const users = snapshots[1].val() || {};
+  const channels = snapshots[2].val() || {};
+  const groups = snapshots[3].val() || {};
+  const aliases = snapshots[4].val() || {};
+
+  const added = [];
+  const skipped = invalid.map((name) => ({ name, reason: 'invalid' }));
+  const updates = {};
+  const createdAt = nowSeconds();
+
+  valid.forEach((name) => {
+    if (reserved[name]) {
+      skipped.push({ name, reason: 'reserved' });
+      return;
+    }
+    if (users[name]) {
+      skipped.push({ name, reason: 'user' });
+      return;
+    }
+    if (channels[name]) {
+      skipped.push({ name, reason: 'channel' });
+      return;
+    }
+    if (groups[name]) {
+      skipped.push({ name, reason: 'group' });
+      return;
+    }
+    if (aliases[name]) {
+      skipped.push({ name, reason: 'alias' });
+      return;
+    }
+
+    updates[`reserved_usernames/${name}`] = { at: createdAt, by: uid };
+    added.push(name);
+  });
+
+  if (added.length) {
+    try {
+      await update(ref(db), updates);
+    } catch (error) {
+      console.error('Не удалось зарезервировать юзернеймы:', error);
+      if (isPermissionDenied(error)) {
+        throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+      }
+      throw new Error('Не удалось зарезервировать юзернеймы');
+    }
+  }
+
+  return { added, skipped };
+}
+
+/**
+ * Снять резерв со списка имён. Незарезервированные имена пропускаются.
+ * @param {string|string[]} names
+ * @returns {Promise<{ removed: string[], skipped: Array<{name: string, reason: string}> }>}
+ */
+export async function releaseReservedUsernames(names = []) {
+  const { valid, invalid } = parseUsernameList(names);
+  if (!valid.length && !invalid.length) throw new Error('Введите один или несколько юзернеймов');
+
+  let snapshot;
+  try {
+    snapshot = await get(ref(db, 'reserved_usernames'));
+  } catch (error) {
+    console.error('Не удалось прочитать зарезервированные юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось прочитать список резерва');
+  }
+
+  const reserved = snapshot.val() || {};
+  const removed = [];
+  const skipped = invalid.map((name) => ({ name, reason: 'invalid' }));
+  const updates = {};
+
+  valid.forEach((name) => {
+    if (!reserved[name]) {
+      skipped.push({ name, reason: 'missing' });
+      return;
+    }
+    updates[`reserved_usernames/${name}`] = null;
+    removed.push(name);
+  });
+
+  if (removed.length) {
+    try {
+      await update(ref(db), updates);
+    } catch (error) {
+      console.error('Не удалось снять резерв юзернеймов:', error);
+      if (isPermissionDenied(error)) {
+        throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+      }
+      throw new Error('Не удалось снять резерв');
+    }
+  }
+
+  return { removed, skipped };
+}
+
+/* ============================================================
+ *  Дополнительные юзернеймы (выдаёт root-админ)
+ *
+ *  /username_aliases/$name  { type: 'user'|'channel'|'group',
+ *                             target: uid | chat_id, at, by }
+ *  Дополнительное имя не создаёт отдельную сущность: поиск, ссылки,
+ *  упоминания и вход по @username ведут на основной профиль цели.
+ * ============================================================ */
+
+export const ALIAS_TYPE_LABELS = {
+  user: 'Пользователь',
+  channel: 'Канал',
+  group: 'Группа',
+};
+
+/** Тип цели дополнительного юзернейма. */
+function cleanAliasType(type) {
+  return ['user', 'channel', 'group'].includes(type) ? type : 'user';
+}
+
+/** Подписка на /username_aliases: { $name: { type, target, at, by } }. */
+export function subscribeToUsernameAliases(onChange, onError = null) {
+  return onValue(
+    ref(db, 'username_aliases'),
+    (snapshot) => onChange(snapshot.val() || {}),
+    (error) => {
+      console.error('Ошибка подписки на дополнительные юзернеймы:', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+/**
+ * Прочитать дополнительный юзернейм.
+ * @returns {Promise<{name: string, type: 'user'|'channel'|'group',
+ *           target: string, at: number, by: string}|null>}
+ */
+export async function getUsernameAlias(rawName) {
+  const name = normalizeUsername(rawName);
+  if (!isValidUsername(name)) return null;
+
+  try {
+    const snapshot = await get(ref(db, `username_aliases/${name}`));
+    const value = snapshot.val();
+    if (!value || typeof value !== 'object') return null;
+
+    const type = ['user', 'channel', 'group'].includes(value.type) ? value.type : null;
+    const target = String(value.target || '');
+    if (!type || !target) return null;
+
+    return {
+      name,
+      type,
+      target,
+      at: Number(value.at) || 0,
+      by: String(value.by || ''),
+    };
+  } catch (error) {
+    console.warn('Не удалось прочитать дополнительный юзернейм:', error);
+    return null;
+  }
+}
+
+/** Человекочитаемые данные цели для списка и подписи. */
+async function describeAliasTarget(type, target) {
+  if (type === 'user') {
+    const profile = await getUserProfile(target);
+    if (!profile) {
+      return { target, targetUsername: '', targetTitle: '', targetMissing: true };
+    }
+    return {
+      target,
+      targetUsername: String(profile.username || ''),
+      targetTitle: [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim(),
+      targetMissing: false,
+    };
+  }
+
+  const chat = await getChat(target);
+  if (!chat) {
+    return { target, targetUsername: '', targetTitle: '', targetMissing: true };
+  }
+  return {
+    target,
+    targetUsername: String(chat.username || ''),
+    targetTitle: String(chat.title || ''),
+    targetMissing: false,
+  };
+}
+
+/**
+ * Все дополнительные юзернеймы с данными их целей.
+ * @returns {Promise<Array<{name: string, type: string, target: string,
+ *           at: number, by: string, targetUsername: string,
+ *           targetTitle: string, targetMissing: boolean}>>}
+ */
+export async function listUsernameAliases() {
+  let snapshot;
+  try {
+    snapshot = await get(ref(db, 'username_aliases'));
+  } catch (error) {
+    console.error('Не удалось загрузить дополнительные юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось загрузить дополнительные юзернеймы');
+  }
+
+  const value = snapshot.val() || {};
+  const entries = Object.entries(value)
+    .filter(([, record]) => record && typeof record === 'object' && record.target)
+    .map(([name, record]) => ({
+      name,
+      type: cleanAliasType(record.type),
+      target: String(record.target),
+      at: Number(record.at) || 0,
+      by: String(record.by || ''),
+    }));
+
+  const described = await Promise.all(
+    entries.map((entry) => describeAliasTarget(entry.type, entry.target)),
+  );
+
+  return entries
+    .map((entry, index) => ({ ...entry, ...described[index] }))
+    .sort((left, right) => (right.at - left.at) || left.name.localeCompare(right.name));
+}
+
+/**
+ * Найти цель для выдачи дополнительных юзернеймов.
+ * Принимает основной @username, уже выданный дополнительный @username или ID.
+ * @returns {Promise<{type: string, target: string, username: string,
+ *           title: string, email: string}>}
+ */
+export async function resolveAliasTarget(rawType, rawTarget) {
+  const type = cleanAliasType(rawType);
+  const raw = String(rawTarget || '').trim();
+  if (!raw) throw new Error('Укажите @username или ID');
+
+  const normalized = normalizeUsername(raw);
+  const alias = normalized ? await getUsernameAlias(normalized) : null;
+  let target = '';
+  let chat = null;
+  let profile = null;
+
+  if (alias && alias.type === type) {
+    target = alias.target;
+  } else if (type === 'user') {
+    if (normalized && isValidUsername(normalized)) {
+      profile = await getUserByUsername(normalized);
+      if (profile) target = profile.uid;
+    }
+    if (!target) {
+      profile = await getUserProfile(raw);
+      if (profile) target = raw;
+    }
+  } else {
+    chat = await getChat(raw);
+    if (chat) {
+      target = raw;
+    } else if (normalized && isValidUsername(normalized)) {
+      const found = type === 'channel'
+        ? await searchChannelsByPrefix(normalized, 10)
+        : await searchGroupsByPrefix(normalized, 10);
+      const exact = found.find((item) => (
+        item.chatId === normalized || normalizeUsername(item.username) === normalized
+      ));
+      if (exact) {
+        target = exact.chatId;
+        chat = exact;
+      }
+    }
+  }
+
+  if (!target) throw new Error('Цель не найдена — проверьте @username или ID');
+
+  if (type === 'user') {
+    if (!profile) profile = await getUserProfile(target);
+    if (!profile) throw new Error('Пользователь не найден');
+    if (profile.deleted) throw new Error('Нельзя выдать юзернейм удалённому аккаунту');
+    return {
+      type,
+      target,
+      username: String(profile.username || ''),
+      title: [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim(),
+      email: String(profile.email || '').trim().toLowerCase(),
+    };
+  }
+
+  if (!chat) chat = await getChat(target);
+  if (!chat) throw new Error('Чат не найден');
+  if (chat.type !== type) {
+    throw new Error(type === 'channel' ? 'Это не канал' : 'Это не группа');
+  }
+  if (type === 'group' && chat.groupType !== 'public') {
+    throw new Error('Приватной группе нельзя выдать юзернейм — сначала сделайте её публичной');
+  }
+
+  return {
+    type,
+    target,
+    username: String(chat.username || ''),
+    title: String(chat.title || ''),
+    email: '',
+  };
+}
+
+/** uid из записи /login_index (поддерживает старый строковый формат). */
+function loginIndexUid(record) {
+  if (!record || typeof record !== 'object') return '';
+  return String(record.uid || '');
+}
+
+/**
+ * Выдать дополнительные юзернеймы пользователю, каналу или группе.
+ * Занятые имена, уже выданные и совпадающие с основным пропускаются.
+ *
+ * @param {{ names: string|string[], type: 'user'|'channel'|'group',
+ *           target: string, uid: string }} options
+ * @returns {Promise<{added: string[], skipped: Array<{name: string, reason: string}>,
+ *           target: object}>}
+ */
+export async function assignUsernameAliases({ names = [], type = 'user', target = '', uid } = {}) {
+  if (!uid) throw new Error('Сначала войдите в аккаунт');
+
+  const resolved = await resolveAliasTarget(type, target);
+  const { valid, invalid } = parseUsernameList(names);
+  if (!valid.length && !invalid.length) throw new Error('Введите один или несколько юзернеймов');
+
+  // /login_index читается только по конкретному имени: общего правила на
+  // узел нет, запрос всего узла база отклоняет. Берём записи по каждому
+  // введённому имени и на ошибку отдельного чтения не натыкаемся.
+  const loginEntries = await Promise.all(valid.map((name) => (
+    get(ref(db, `login_index/${name}`)).then((snapshot) => snapshot.val(), () => null)
+  )));
+
+  let snapshots;
+  try {
+    snapshots = await Promise.all([
+      get(ref(db, 'username_aliases')),
+      get(ref(db, 'usernames')),
+      get(ref(db, 'channel_usernames')),
+      get(ref(db, 'group_usernames')),
+      get(ref(db, 'reserved_usernames')),
+    ]);
+  } catch (error) {
+    console.error('Не удалось проверить дополнительные юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось проверить дополнительные юзернеймы');
+  }
+
+  const aliases = snapshots[0].val() || {};
+  const users = snapshots[1].val() || {};
+  const channels = snapshots[2].val() || {};
+  const groups = snapshots[3].val() || {};
+  const reserved = snapshots[4].val() || {};
+  const loginIndex = {};
+  valid.forEach((name, index) => {
+    if (loginEntries[index]) loginIndex[name] = loginEntries[index];
+  });
+
+  const added = [];
+  const skipped = invalid.map((name) => ({ name, reason: 'invalid' }));
+  const updates = {};
+  const createdAt = nowSeconds();
+  const ownUsername = normalizeUsername(resolved.username);
+
+  valid.forEach((name) => {
+    if (name === ownUsername) {
+      skipped.push({ name, reason: 'own' });
+      return;
+    }
+    if (users[name] || channels[name] || groups[name]) {
+      skipped.push({ name, reason: 'taken' });
+      return;
+    }
+    // Зарезервированные имена остаются за владельцем: их нельзя занять
+    // обычным путём, значит и в обход, через выдачу, тоже.
+    if (reserved[name]) {
+      skipped.push({ name, reason: 'reserved' });
+      return;
+    }
+    if (aliases[name]) {
+      skipped.push({ name, reason: 'alias' });
+      return;
+    }
+    if (loginIndex[name] && loginIndexUid(loginIndex[name]) !== resolved.target) {
+      skipped.push({ name, reason: 'taken' });
+      return;
+    }
+
+    updates[`username_aliases/${name}`] = {
+      type: resolved.type,
+      target: resolved.target,
+      at: createdAt,
+      by: uid,
+    };
+    // Вход по основному @username работает через /login_index. Для
+    // дополнительного имени храним тот же публичный индекс, чтобы
+    // «все вести на основной» работало и на экране входа.
+    if (resolved.type === 'user' && resolved.email) {
+      updates[`login_index/${name}`] = { uid: resolved.target, email: resolved.email };
+    }
+    added.push(name);
+  });
+
+  if (added.length) {
+    try {
+      await update(ref(db), updates);
+    } catch (error) {
+      console.error('Не удалось выдать дополнительные юзернеймы:', error);
+      if (isPermissionDenied(error)) {
+        throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+      }
+      throw new Error('Не удалось выдать дополнительные юзернеймы');
+    }
+  }
+
+  return { added, skipped, target: resolved };
+}
+
+/**
+ * Забрать дополнительные юзернеймы. Вместе с ними убирается запись
+ * /login_index, если она вела на цель, а не на основной юзернейм.
+ *
+ * @param {string|string[]} names
+ * @returns {Promise<{removed: string[], skipped: Array<{name: string, reason: string}>}>}
+ */
+export async function removeUsernameAliases(names = []) {
+  const { valid, invalid } = parseUsernameList(names);
+  if (!valid.length && !invalid.length) throw new Error('Введите один или несколько юзернеймов');
+
+  // /login_index читается по одному имени: общего правила на узел нет.
+  const loginEntries = await Promise.all(valid.map((name) => (
+    get(ref(db, `login_index/${name}`)).then((snapshot) => snapshot.val(), () => null)
+  )));
+
+  let snapshots;
+  try {
+    snapshots = await Promise.all([
+      get(ref(db, 'username_aliases')),
+      get(ref(db, 'usernames')),
+    ]);
+  } catch (error) {
+    console.error('Не удалось прочитать дополнительные юзернеймы:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось прочитать дополнительные юзернеймы');
+  }
+
+  const aliases = snapshots[0].val() || {};
+  const users = snapshots[1].val() || {};
+  const loginIndex = {};
+  valid.forEach((name, index) => {
+    if (loginEntries[index]) loginIndex[name] = loginEntries[index];
+  });
+
+  const removed = [];
+  const skipped = invalid.map((name) => ({ name, reason: 'invalid' }));
+  const updates = {};
+
+  valid.forEach((name) => {
+    const record = aliases[name];
+    if (!record || typeof record !== 'object') {
+      skipped.push({ name, reason: 'missing' });
+      return;
+    }
+
+    updates[`username_aliases/${name}`] = null;
+    removed.push(name);
+
+    if (record.type === 'user' && !users[name]) {
+      const loginUid = loginIndexUid(loginIndex[name]);
+      if (loginUid && loginUid === String(record.target || '')) {
+        updates[`login_index/${name}`] = null;
+      }
+    }
+  });
+
+  if (removed.length) {
+    try {
+      await update(ref(db), updates);
+    } catch (error) {
+      console.error('Не удалось забрать дополнительные юзернеймы:', error);
+      if (isPermissionDenied(error)) {
+        throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+      }
+      throw new Error('Не удалось забрать дополнительные юзернеймы');
+    }
+  }
+
+  return { removed, skipped };
+}
+
+/**
+ * Дополнительные имена по префиксу для поиска. Ошибка чтения не должна
+ * ломать обычный поиск по основным индексам.
+ */
+async function searchAliasEntries(prefix, type, limit) {
+  const normalized = normalizeUsername(prefix);
+  if (!normalized) return [];
+
+  try {
+    const aliasQuery = query(
+      ref(db, 'username_aliases'),
+      orderByKey(),
+      startAt(normalized),
+      endAt(normalized + PREFIX_END),
+      limitToFirst(limit),
+    );
+    const snapshot = await get(aliasQuery);
+    const entries = [];
+    snapshot.forEach((child) => {
+      const value = child.val() || {};
+      if (value.type === type && value.target) {
+        entries.push({ name: child.key, target: String(value.target) });
+      }
+    });
+    return entries;
+  } catch (error) {
+    console.warn('Не удалось найти дополнительные юзернеймы:', error);
+    return [];
+  }
 }
 
 /* ============================================================
@@ -212,11 +953,23 @@ export async function getUserByUsername(rawUsername) {
   if (!isValidUsername(username)) return null;
 
   const snapshot = await get(ref(db, `usernames/${username}`));
-  const uid = snapshot.val();
+  let uid = snapshot.val();
+
+  // Дополнительный юзернейм ведёт на основной профиль владельца.
+  if (!uid) {
+    const alias = await getUsernameAlias(username);
+    if (!alias || alias.type !== 'user') return null;
+    uid = alias.target;
+  }
   if (!uid) return null;
 
   const profile = await getUserProfile(uid);
-  return { uid, username, ...(profile || {}) };
+  if (!profile) return null;
+  return {
+    uid,
+    ...profile,
+    username: String(profile.username || username),
+  };
 }
 
 /**
@@ -322,7 +1075,10 @@ export async function searchUsersByPrefix(prefix, limit = 10) {
     endAt(normalized + PREFIX_END),
     limitToFirst(limit),
   );
-  const snapshot = await get(usersQuery);
+  const [snapshot, aliasEntries] = await Promise.all([
+    get(usersQuery),
+    searchAliasEntries(normalized, 'user', limit),
+  ]);
 
   // Внимание: колбэк forEach обязан возвращать undefined (тело в блоках).
   // SDK прекращает перебор, если колбэк вернёт истинное значение, а
@@ -333,11 +1089,23 @@ export async function searchUsersByPrefix(prefix, limit = 10) {
   });
 
   const users = [];
+  const seen = new Set();
   for (const entry of found) {
     const profile = await getUserProfile(entry.uid);
-    if (profile) users.push({ uid: entry.uid, ...profile, username: profile.username || entry.username });
+    if (!profile || seen.has(entry.uid)) continue;
+    seen.add(entry.uid);
+    users.push({ uid: entry.uid, ...profile, username: profile.username || entry.username });
   }
-  return users;
+
+  // Дополнительные имена показываются как основной профиль цели.
+  for (const entry of aliasEntries) {
+    if (seen.has(entry.target)) continue;
+    const profile = await getUserProfile(entry.target);
+    if (!profile) continue;
+    seen.add(entry.target);
+    users.push({ uid: entry.target, ...profile, username: profile.username || entry.name });
+  }
+  return users.slice(0, limit);
 }
 
 /* ============================================================
@@ -585,7 +1353,10 @@ export async function searchChannelsByPrefix(prefix, limit = 10) {
     endAt(normalized + PREFIX_END),
     limitToFirst(limit),
   );
-  const snapshot = await get(channelsQuery);
+  const [snapshot, aliasEntries] = await Promise.all([
+    get(channelsQuery),
+    searchAliasEntries(normalized, 'channel', limit),
+  ]);
 
   const results = [];
   const entries = [];
@@ -593,12 +1364,20 @@ export async function searchChannelsByPrefix(prefix, limit = 10) {
   snapshot.forEach((child) => {
     entries.push({ username: child.key, chatId: child.val() });
   });
+  aliasEntries.forEach((entry) => {
+    entries.push({ username: entry.name, chatId: entry.target });
+  });
 
+  const seen = new Set();
   for (const entry of entries) {
+    if (!entry.chatId || seen.has(entry.chatId)) continue;
+    seen.add(entry.chatId);
     const chat = await getChat(entry.chatId);
-    if (chat) results.push({ chatId: entry.chatId, ...chat, username: chat.username || entry.username });
+    if (chat && chat.type === 'channel') {
+      results.push({ chatId: entry.chatId, ...chat, username: chat.username || entry.username });
+    }
   }
-  return results;
+  return results.slice(0, limit);
 }
 
 /**
@@ -639,16 +1418,25 @@ export async function searchGroupsByPrefix(prefix, limit = 10) {
     endAt(normalized + PREFIX_END),
     limitToFirst(limit),
   );
-  const snapshot = await get(groupsQuery);
+  const [snapshot, aliasEntries] = await Promise.all([
+    get(groupsQuery),
+    searchAliasEntries(normalized, 'group', limit),
+  ]);
 
   const entries = [];
   // Тело в блоках: возврат истинного значения из колбэка останавливает перебор (см. комментарий в searchUsersByPrefix).
   snapshot.forEach((child) => {
     entries.push({ username: child.key, chatId: child.val() });
   });
+  aliasEntries.forEach((entry) => {
+    entries.push({ username: entry.name, chatId: entry.target });
+  });
 
   const results = [];
+  const seen = new Set();
   for (const entry of entries) {
+    if (!entry.chatId || seen.has(entry.chatId)) continue;
+    seen.add(entry.chatId);
     const chat = await getChat(entry.chatId);
     if (chat && chat.type === 'group') {
       results.push({
@@ -659,7 +1447,7 @@ export async function searchGroupsByPrefix(prefix, limit = 10) {
       });
     }
   }
-  return results;
+  return results.slice(0, limit);
 }
 
 /**
@@ -730,6 +1518,19 @@ export async function updateChatSettings(chatId, requesterUid, data) {
       updates[`chats/${chatId}/groupType`] = 'private';
       updates[`chats/${chatId}/username`] = null;
       if (oldUsername) updates[`group_usernames/${oldUsername}`] = null;
+
+      // Приватной группе дополнительные юзернеймы не положены: иначе
+      // поиск и ссылки вели бы в закрытую группу. Снимаем их вместе
+      // с переводом в приватную.
+      const aliases = await get(ref(db, 'username_aliases')).then(
+        (snapshot) => snapshot.val() || {},
+        () => ({}),
+      );
+      for (const [name, record] of Object.entries(aliases)) {
+        if (record && record.type === 'group' && record.target === chatId) {
+          updates[`username_aliases/${name}`] = null;
+        }
+      }
     }
   }
 
@@ -1043,10 +1844,19 @@ export async function deleteChat(chatId, requesterUid) {
   updates[`poll_votes/${chatId}`] = null;
   updates[`typing/${chatId}`] = null;
 
-  // 3. Индекс юзернейма.
+  // 3. Индекс юзернейма и выданные дополнительные имена.
   if (chat.username) {
     const indexNode = chat.type === 'channel' ? 'channel_usernames' : 'group_usernames';
     updates[`${indexNode}/${chat.username}`] = null;
+  }
+  const aliases = await get(ref(db, 'username_aliases')).then(
+    (snapshot) => snapshot.val() || {},
+    () => ({}),
+  );
+  for (const [name, record] of Object.entries(aliases)) {
+    if (record && record.target === chatId && (record.type === 'channel' || record.type === 'group')) {
+      updates[`username_aliases/${name}`] = null;
+    }
   }
 
   // 4. Сам узел чата — последним, чтобы предыдущие проверки видели владельца.
@@ -1280,12 +2090,12 @@ export async function deleteUserAccount(uid, { deletedBy = null, ban = false } =
 
   // Списки чатов, прочитанное и метаданные удаляем по дочерним ключам:
   // у этих узлов нет общего write-правила, только правила на конкретный чат.
-  const [userChatsSnap, userReadsSnap, userChatMetaSnap, usernamesSnap, loginIndexSnap] = await Promise.all([
+  const [userChatsSnap, userReadsSnap, userChatMetaSnap, usernamesSnap, aliasesSnap] = await Promise.all([
     get(ref(db, `user_chats/${uid}`)).catch(() => null),
     get(ref(db, `user_reads/${uid}`)).catch(() => null),
     get(ref(db, `user_chat_meta/${uid}`)).catch(() => null),
     get(ref(db, 'usernames')).catch(() => null),
-    get(ref(db, 'login_index')).catch(() => null),
+    get(ref(db, 'username_aliases')).catch(() => null),
   ]);
   const chatIds = new Set([
     ...Object.keys(userChatsSnap?.val() || {}),
@@ -1364,8 +2174,11 @@ export async function deleteUserAccount(uid, { deletedBy = null, ban = false } =
   for (const [name, value] of Object.entries(usernamesSnap?.val() || {})) {
     if (value === uid) deleteNode(`usernames/${name}`);
   }
-  for (const [name, record] of Object.entries(loginIndexSnap?.val() || {})) {
-    if (record && typeof record === 'object' && record.uid === uid) {
+  for (const [name, record] of Object.entries(aliasesSnap?.val() || {})) {
+    if (record && record.type === 'user' && record.target === uid) {
+      deleteNode(`username_aliases/${name}`);
+      // Узел /login_index целиком не читается (правило только на имя),
+      // поэтому вход по дополнительному имени убираем по его названию.
       deleteNode(`login_index/${name}`);
     }
   }

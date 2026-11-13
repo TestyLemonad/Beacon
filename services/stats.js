@@ -6,13 +6,13 @@
  * сырые данные в services/stats-core.js.
  */
 import { ref, get, set, onValue } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=39';
+import { db } from '../firebase-config.js?v=45';
 import {
   buildGlobalStats,
   buildPersonalStats,
   buildChannelStats,
   toPublicSnapshot,
-} from './stats-core.js?v=39';
+} from './stats-core.js?v=45';
 
 /** Ошибка «нет прав» (правила RTDB ещё не опубликованы). */
 export function isPermissionDenied(error) {
@@ -195,6 +195,95 @@ export function normalizeChannelUsername(value) {
   return String(value || '').trim().replace(/^@+/, '').toLowerCase();
 }
 
+/** Превратить узел канала в строку списка каналов. */
+function toChannelItem(id, chat, uid = '') {
+  return {
+    id,
+    title: String(chat?.title || (chat?.username ? '@' + chat.username : 'Канал')),
+    username: String(chat?.username || ''),
+    subscribers: chat?.subscribers
+      ? Object.keys(chat.subscribers).length
+      : Number(chat?.subscribersCount) || 0,
+    requiresSubscription: chat?.requiresSubscription === true,
+    isOwner: Boolean(uid && chat?.owner === uid),
+    isAdmin: Boolean(uid && (chat?.owner === uid || chat?.admins?.[uid])),
+  };
+}
+
+/**
+ * Справочник каналов для поиска по названию: индексируем /channel_usernames,
+ * поэтому не нужны корневые права на /chats. Кешируется на минуту.
+ */
+let channelDirectory = { at: 0, items: [] };
+
+async function loadChannelDirectory() {
+  const now = Date.now();
+  if (channelDirectory.items.length && now - channelDirectory.at < 60_000) {
+    return channelDirectory.items;
+  }
+
+  const index = await safeRead('channel_usernames', {});
+  const ids = [...new Set(Object.values(index || {}).filter((id) => typeof id === 'string'))];
+  const rows = await mapLimit(ids, 6, async (chatId) => {
+    const chat = await safeRead(`chats/${chatId}`, null);
+    return chat?.type === 'channel' ? { id: chatId, chat } : null;
+  });
+
+  const items = rows.filter(Boolean).map(({ id, chat }) => toChannelItem(id, chat));
+  channelDirectory = { at: now, items };
+  return items;
+}
+
+/** Сбросить кеш справочника (после публикации снимка и т.п.). */
+export function resetChannelDirectory() {
+  channelDirectory = { at: 0, items: [] };
+}
+
+/**
+ * Поиск каналов по названию и @username.
+ * @param {string} query
+ * @param {{ uid?: string, known?: Array<object>, limit?: number }} options
+ */
+export async function searchChannels(query, { uid = '', known = [], limit = 12 } = {}) {
+  const raw = String(query || '').trim();
+  const needle = raw.replace(/^@+/, '').toLowerCase();
+  if (!needle) return [];
+
+  const seen = new Map();
+  const matches = (item) => {
+    const title = String(item.title || '').toLowerCase();
+    const username = String(item.username || '').toLowerCase();
+    return title.includes(needle) || username.includes(needle);
+  };
+
+  for (const item of known || []) {
+    if (item && item.id && matches(item)) seen.set(item.id, { ...item });
+  }
+
+  try {
+    const directory = await loadChannelDirectory();
+    for (const item of directory) {
+      if (seen.has(item.id) || !matches(item)) continue;
+      seen.set(item.id, { ...item });
+    }
+  } catch (error) {
+    if (!isPermissionDenied(error)) throw error;
+  }
+
+  return [...seen.values()]
+    .map((item) => ({ ...item, isOwner: Boolean(uid && item.isOwner), isAdmin: Boolean(uid && item.isAdmin) }))
+    .sort((a, b) => {
+      const aExact = a.username === needle || a.title.toLowerCase() === needle;
+      const bExact = b.username === needle || b.title.toLowerCase() === needle;
+      if (aExact !== bExact) return aExact ? -1 : 1;
+      const aStarts = a.title.toLowerCase().startsWith(needle) || a.username.startsWith(needle);
+      const bStarts = b.title.toLowerCase().startsWith(needle) || b.username.startsWith(needle);
+      if (aStarts !== bStarts) return aStarts ? -1 : 1;
+      return (b.subscribers || 0) - (a.subscribers || 0) || a.title.localeCompare(b.title, 'ru');
+    })
+    .slice(0, limit);
+}
+
 /**
  * Мои каналы: подписки, владение и админство из /user_chats.
  * @param {string} uid
@@ -214,15 +303,7 @@ export async function loadMyChannels(uid, { onProgress = null } = {}) {
 
   return rows
     .filter(Boolean)
-    .map(({ id, chat }) => ({
-      id,
-      title: String(chat.title || (chat.username ? '@' + chat.username : 'Канал')),
-      username: String(chat.username || ''),
-      subscribers: chat.subscribers ? Object.keys(chat.subscribers).length : Number(chat.subscribersCount) || 0,
-      requiresSubscription: chat.requiresSubscription === true,
-      isOwner: chat.owner === uid,
-      isAdmin: chat.owner === uid || Boolean(chat.admins?.[uid]),
-    }))
+    .map(({ id, chat }) => toChannelItem(id, chat, uid))
     .sort((a, b) => b.subscribers - a.subscribers || a.title.localeCompare(b.title, 'ru'));
 }
 
@@ -263,7 +344,7 @@ export async function loadChannelStats({ chatId, uid, isRoot = false, onProgress
 
   const stats = buildChannelStats({
     uid,
-    chat,
+    chat: { ...chat, id: chatId },
     messages: messages || {},
     views: views || {},
     comments: comments || {},

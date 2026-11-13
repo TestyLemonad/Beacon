@@ -10,10 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=39';
-import * as Chat from './services/chat.js?v=39';
-import * as Sessions from './services/sessions.js?v=39';
-import * as Invites from './services/invites.js?v=39';
+import * as Auth from './services/auth.js?v=45';
+import * as Chat from './services/chat.js?v=45';
+import * as Sessions from './services/sessions.js?v=45';
+import * as Invites from './services/invites.js?v=45';
 
 /* ============================================================
  *  DOM
@@ -125,6 +125,7 @@ const dom = {
   chatMenuType: $('chat-menu-type'),
   chatMenuDescription: $('chat-menu-description'),
   chatMenuUsername: $('chat-menu-username'),
+  chatMenuAliases: $('chat-menu-aliases'),
   chatMenuPresence: $('chat-menu-presence'),
   chatMenuActions: $('chat-menu-actions'),
   chatMenuMembersBlock: $('chat-menu-members-block'),
@@ -232,6 +233,49 @@ const dom = {
   invitesEmpty: $('invites-empty'),
   invitesLoadError: $('invites-load-error'),
 
+  // Резерв юзернеймов (окно root-админа)
+  prefsReservedField: $('prefs-reserved-field'),
+  prefsReservedBtn: $('prefs-reserved-btn'),
+  reservedOverlay: $('reserved-overlay'),
+  reservedClose: $('reserved-close'),
+  reservedForm: $('reserved-form'),
+  reservedInput: $('reserved-input'),
+  reservedError: $('reserved-error'),
+  reservedCancel: $('reserved-cancel'),
+  reservedSubmit: $('reserved-submit'),
+  reservedSearch: $('reserved-search'),
+  reservedStatusFilter: $('reserved-status-filter'),
+  reservedTypeFilter: $('reserved-type-filter'),
+  reservedCount: $('reserved-count'),
+  reservedResult: $('reserved-result'),
+  reservedList: $('reserved-list'),
+  reservedEmpty: $('reserved-empty'),
+  reservedLoadError: $('reserved-load-error'),
+  reservedRemoveForm: $('reserved-remove-form'),
+  reservedRemoveInput: $('reserved-remove-input'),
+  reservedRemoveSubmit: $('reserved-remove-submit'),
+  reservedRemoveError: $('reserved-remove-error'),
+
+  // Дополнительные юзернеймы (окно root-админа)
+  prefsAliasesField: $('prefs-aliases-field'),
+  prefsAliasesBtn: $('prefs-aliases-btn'),
+  aliasesOverlay: $('aliases-overlay'),
+  aliasesClose: $('aliases-close'),
+  aliasesForm: $('aliases-form'),
+  aliasesType: $('aliases-type'),
+  aliasesTarget: $('aliases-target'),
+  aliasesInput: $('aliases-input'),
+  aliasesSubmit: $('aliases-submit'),
+  aliasesError: $('aliases-error'),
+  aliasesCancel: $('aliases-cancel'),
+  aliasesResult: $('aliases-result'),
+  aliasesSearch: $('aliases-search'),
+  aliasesFilter: $('aliases-filter'),
+  aliasesCount: $('aliases-count'),
+  aliasesList: $('aliases-list'),
+  aliasesEmpty: $('aliases-empty'),
+  aliasesLoadError: $('aliases-load-error'),
+
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
   archiveClose: $('archive-close'),
@@ -267,6 +311,7 @@ const dom = {
   statsCards: $('stats-cards'),
   statsChart: $('stats-chart'),
   statsTop: $('stats-top'),
+  statsFullLink: $('stats-full-link'),
 
   // Создание группы: тип, юзернейм, описание
   groupDescription: $('group-description'),
@@ -276,6 +321,7 @@ const dom = {
   groupMembersField: $('group-members-field'),
 
   // Профиль: аватарка и чёрный список
+  profileAliases: $('profile-aliases'),
   avatarPreview: $('avatar-preview'),
   avatarValue: $('avatar-value'),
   avatarKindBtns: Array.from(document.querySelectorAll('[data-avatar-kind]')),
@@ -310,6 +356,7 @@ const dom = {
   settingsTypeBtns: Array.from(document.querySelectorAll('[data-settings-type]')),
   settingsUsernameField: $('settings-username-field'),
   settingsUsername: $('settings-username'),
+  settingsUsernameAliases: $('settings-username-aliases'),
   settingsChannelBlock: $('settings-channel-block'),
   settingsRequiresSubscription: $('settings-requires-subscription'),
   settingsAdminsBlock: $('settings-admins-block'),
@@ -396,6 +443,7 @@ const state = {
 
   // Супер-админ (тестовые права) и баны
   rootAdmins: new Set(),    // uid из /root_admins
+  usernameAliases: new Map(), // $name -> { type, target, at, by } из /username_aliases
   bannedUsers: new Set(),   // uid из /banned_users (метки в меню чата)
   myBan: null,              // моя запись бана { by, at } или null
   myDeleted: false,         // мой аккаунт удалён (/deleted_users/$uid)
@@ -429,6 +477,7 @@ const state = {
     myDeleted: null,        // /deleted_users/$uid
     bans: null,             // /banned_users
     rootAdmins: null,       // /root_admins
+    usernameAliases: null,  // /username_aliases
     chatScoped: [],         // подписки активного чата (typing, голоса, комментарии…)
     chatScopedId: null,     // id чата, для которого настроены подписки chatScoped
   },
@@ -567,6 +616,28 @@ function getProfileName(profile) {
   if (profile.deleted) return Chat.DELETED_ACCOUNT_NAME || 'Удалённый аккаунт';
   const full = [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim();
   return full || (profile.username ? '@' + profile.username : null);
+}
+
+/** Дополнительные юзернеймы цели: [{ name, type, target, at, by }]. */
+function aliasesForTarget(type, target) {
+  if (!type || !target) return [];
+  return [...state.usernameAliases.entries()]
+    .filter(([, record]) => record && record.type === type && record.target === target)
+    .map(([name, record]) => ({ name, ...record }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** Показать строку «А также @a, @b» либо скрыть её. */
+function applyAliasHint(element, type, target) {
+  if (!element) return;
+  const aliases = aliasesForTarget(type, target);
+  if (!aliases.length) {
+    element.textContent = '';
+    element.classList.add('hidden');
+    return;
+  }
+  element.textContent = 'А также ' + aliases.map((alias) => '@' + alias.name).join(', ');
+  element.classList.remove('hidden');
 }
 
 /**
@@ -1540,6 +1611,50 @@ function removeUrlParam(name) {
   }
 }
 
+/** Записать ?u=@username в адрес, не создавая записей в истории. */
+function syncUserUrl(username) {
+  const value = username ? '@' + username : '';
+  if (!value) {
+    removeUrlParam('u');
+    return;
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('u', value);
+    // URLSearchParams кодирует «@» как %40 — в адресе оставляем читаемый вид.
+    const search = url.search.replace(/%40/gi, '@');
+    const next = `${url.pathname}${search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, '', next);
+  } catch (error) {
+    console.warn('Не удалось обновить адрес:', error);
+  }
+}
+
+/**
+ * Подставить ?u= под открытый чат: человек по @username, канал или группа.
+ * Личный чат без юзернейма у собеседника просто убирает параметр.
+ */
+async function syncChatUrl(chat) {
+  if (!chat) return;
+
+  let username = String(chat.username || '');
+  if (chat.type === 'private') {
+    const peerUid = getPrivatePeerUid(chat);
+    if (!peerUid) {
+      syncUserUrl('');
+      return;
+    }
+    let profile = Chat.getCachedUserProfile(peerUid);
+    if (!profile?.username) {
+      profile = await Chat.getUserProfile(peerUid).catch(() => null);
+    }
+    username = String(profile?.username || '');
+  }
+
+  syncUserUrl(username);
+}
+
 /** Открыть глобальный поиск по запросу (также используется для @упоминаний). */
 function openGlobalSearch(rawQuery) {
   const query = String(rawQuery || '').trim();
@@ -1556,11 +1671,41 @@ function openGlobalSearch(rawQuery) {
 /** Открыть пользователя, канал или публичную группу по @юзернейму. */
 async function openDeepLinkUsername(rawUsername) {
   const username = Chat.normalizeUsername(rawUsername);
-  removeUrlParam('u');
 
   if (!Chat.isValidUsername(username)) {
     if (rawUsername) openGlobalSearch(rawUsername);
     return;
+  }
+
+  // Дополнительный юзернейм ведёт на основной профиль цели.
+  try {
+    const alias = await Chat.getUsernameAlias(username);
+    if (alias?.type === 'user') {
+      const profile = await Chat.getUserProfile(alias.target);
+      if (profile) {
+        if (alias.target === state.user?.uid) {
+          openGlobalSearch('@' + username);
+          toast('Это ваш юзернейм');
+          return;
+        }
+        await openPrivateChatWith(alias.target);
+        return;
+      }
+    } else if (alias && (alias.type === 'channel' || alias.type === 'group')) {
+      const chat = await Chat.getChat(alias.target);
+      if (chat) {
+        exitSearchMode();
+        const uid = state.user?.uid;
+        const isMember = chat.type === 'group'
+          ? Boolean(chat.users?.[uid])
+          : Boolean(chat.subscribers?.[uid] || chat.admins?.[uid] || chat.owner === uid);
+        if (isMember) selectChat(alias.target);
+        else openChannelPreview(alias.target);
+        return;
+      }
+    }
+  } catch (error) {
+    console.warn('Не удалось открыть дополнительный юзернейм:', error);
   }
 
   let target = null;
@@ -1848,6 +1993,8 @@ function selectChat(chatId) {
   markActiveChatRead();
   renderChatList();
   renderMainPanel();
+  // Ссылка ?u=@… живёт вместе с открытым чатом: по ней можно поделиться.
+  syncChatUrl(state.chats.get(chatId) || null);
   if (chatChanged && window.innerWidth > 768) dom.messageInput.focus();
 }
 
@@ -2202,9 +2349,16 @@ function buildMessageText(text) {
   return span;
 }
 
-/** Клик по @упоминанию / #хэштегу: открыть поиск по этому токену. */
-function openMentionOrHashtag(token) {
-  openGlobalSearch(token);
+/** Клик по @упоминанию / #хэштегу: сразу открыть адресата, а не поиск. */
+async function openMentionOrHashtag(token) {
+  const value = String(token || '').trim();
+  // Хэштеги ищутся как обычный запрос, а @упоминание ведёт прямо к человеку,
+  // каналу или группе — поиск остаётся запасным путём, если адресат не найден.
+  if (!value.startsWith('@')) {
+    openGlobalSearch(value);
+    return;
+  }
+  await openDeepLinkUsername(value);
 }
 
 /** Блок опроса внутри сообщения: живые результаты и голосование. */
@@ -2618,6 +2772,13 @@ function startSubscriptions() {
     renderPrefsModal();
     if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
   });
+  state.subscriptions.usernameAliases = Chat.subscribeToUsernameAliases((map) => {
+    state.usernameAliases = new Map(Object.entries(map || {}));
+    if (!dom.profileOverlay.classList.contains('hidden')) renderProfileAliases();
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+    if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsAliases();
+    if (!dom.aliasesOverlay.classList.contains('hidden')) loadUsernameAliases();
+  });
   state.subscriptions.bans = Chat.subscribeToBans((map) => {
     state.bannedUsers = new Set(Object.keys(map || {}).filter((key) => map[key]));
     if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
@@ -2645,6 +2806,7 @@ function teardownSubscriptions() {
   state.subscriptions.myDeleted?.();
   state.subscriptions.bans?.();
   state.subscriptions.rootAdmins?.();
+  state.subscriptions.usernameAliases?.();
   for (const unsubscribe of state.subscriptions.chatMeta.values()) unsubscribe();
   clearChatScoped();
   clearInterval(typingTick);
@@ -2664,6 +2826,7 @@ function teardownSubscriptions() {
   state.subscriptions.myDeleted = null;
   state.subscriptions.bans = null;
   state.subscriptions.rootAdmins = null;
+  state.subscriptions.usernameAliases = null;
   state.subscriptions.chatMeta.clear();
   state.chats.clear();
   state.myChatIds = new Set();
@@ -2680,6 +2843,7 @@ function teardownSubscriptions() {
   state.reads = new Map();
   state.presence = new Map();
   state.rootAdmins = new Set();
+  state.usernameAliases = new Map();
   state.bannedUsers = new Set();
   state.myBan = null;
   state.myDeleted = false;
@@ -2905,6 +3069,7 @@ function openProfileModal() {
   dom.pfFirstname.value = state.profile?.firstName || '';
   dom.pfLastname.value = state.profile?.lastName || '';
   dom.pfBio.value = state.profile?.bio || '';
+  renderProfileAliases();
   initAvatarEditor();
   dom.profileError.classList.add('hidden');
   dom.pfUsername.focus();
@@ -2912,6 +3077,11 @@ function openProfileModal() {
 
 function closeProfileModal() {
   dom.profileOverlay.classList.add('hidden');
+}
+
+/** Строка «А также …» в профиле: дополнительные имена ведут на основной. */
+function renderProfileAliases() {
+  applyAliasHint(dom.profileAliases, 'user', state.user?.uid);
 }
 
 /* ============================================================
@@ -3988,6 +4158,7 @@ function openSettingsModal() {
   dom.settingsDelete.classList.toggle('hidden', !canManageGroupMeta);
 
   dom.settingsError.classList.add('hidden');
+  renderSettingsAliases();
   dom.settingsOverlay.classList.remove('hidden');
 }
 
@@ -4002,6 +4173,16 @@ function setSettingsTypeChoice(type) {
 
 function closeSettingsModal() {
   dom.settingsOverlay.classList.add('hidden');
+}
+
+/** Дополнительные имена публичной группы в её настройках. */
+function renderSettingsAliases() {
+  const chat = settingsChatId ? state.chats.get(settingsChatId) : null;
+  if (!chat || chat.type !== 'group') {
+    applyAliasHint(dom.settingsUsernameAliases, '', '');
+    return;
+  }
+  applyAliasHint(dom.settingsUsernameAliases, 'group', settingsChatId);
 }
 
 /**
@@ -4464,6 +4645,13 @@ function renderChatMenu() {
   dom.chatMenuDescription.classList.toggle('hidden', !description);
   dom.chatMenuUsername.textContent = handle;
   dom.chatMenuUsername.classList.toggle('hidden', !handle);
+
+  // Дополнительные юзернеймы — под основным, с припиской «А также».
+  if (chat.type === 'private') {
+    applyAliasHint(dom.chatMenuAliases, peerUid ? 'user' : '', peerUid || '');
+  } else {
+    applyAliasHint(dom.chatMenuAliases, chat.type, state.activeChatId);
+  }
   updateChatStatus(); // строка «в сети / был(а)…» под юзернеймом
 
   // Кнопки действий.
@@ -4843,6 +5031,8 @@ function closePrefsModal() {
   closeSessionsModal();
   closePasswordModal();
   closeInvitesModal();
+  closeReservedModal();
+  closeAliasesModal();
   dom.prefsOverlay.classList.add('hidden');
 }
 
@@ -4867,6 +5057,8 @@ function renderPrefsModal() {
   const adminOn = isRoot && state.settings?.adminMode !== false;
   dom.prefsAdminField.classList.toggle('hidden', !isRoot);
   dom.prefsInvitesField.classList.toggle('hidden', !isRoot);
+  dom.prefsReservedField.classList.toggle('hidden', !isRoot);
+  dom.prefsAliasesField.classList.toggle('hidden', !isRoot);
   dom.prefsAdminToggle.checked = adminOn;
   dom.prefsDeleteUserField.classList.toggle('hidden', !adminOn);
   dom.prefsDeleteUserError.classList.add('hidden');
@@ -5184,6 +5376,459 @@ function renderCreatedInviteCodes(created) {
 function showInvitesError(message) {
   dom.invitesError.textContent = message;
   dom.invitesError.classList.remove('hidden');
+}
+
+/* ============================================================
+ *  Резерв юзернеймов (только root-админы)
+ * ============================================================ */
+
+const RESERVED_STATUS_LABELS = {
+  free: 'Свободен',
+  user: 'Занят пользователем',
+  channel: 'Занят каналом',
+  group: 'Занят группой',
+  alias: 'Выдан как доп.',
+};
+
+const RESERVED_SKIP_REASONS = {
+  invalid: 'неверный формат',
+  reserved: 'уже зарезервирован',
+  user: 'занят пользователем',
+  channel: 'занят каналом',
+  group: 'занят группой',
+  alias: 'выдан как дополнительный',
+  missing: 'не был зарезервирован',
+};
+
+const reservedUi = {
+  items: [],
+  status: 'all',
+  type: 'all',
+  query: '',
+};
+
+function openReservedModal() {
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  reservedUi.items = [];
+  reservedUi.status = 'all';
+  reservedUi.type = 'all';
+  reservedUi.query = '';
+
+  dom.reservedInput.value = '';
+  dom.reservedRemoveInput.value = '';
+  dom.reservedSearch.value = '';
+  dom.reservedTypeFilter.value = 'all';
+  dom.reservedStatusFilter.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.statusFilter === 'all');
+  });
+
+  dom.reservedError.classList.add('hidden');
+  dom.reservedRemoveError.classList.add('hidden');
+  dom.reservedLoadError.classList.add('hidden');
+  dom.reservedResult.classList.add('hidden');
+  dom.reservedResult.textContent = '';
+  dom.reservedList.innerHTML = '';
+  dom.reservedEmpty.classList.add('hidden');
+  dom.reservedCount.textContent = '';
+  dom.reservedOverlay.classList.remove('hidden');
+  loadReservedUsernames();
+}
+
+function closeReservedModal() {
+  dom.reservedOverlay.classList.add('hidden');
+}
+
+async function loadReservedUsernames() {
+  dom.reservedLoadError.classList.add('hidden');
+  dom.reservedCount.textContent = 'Загружаем…';
+  try {
+    reservedUi.items = await Chat.listReservedUsernames();
+    renderReservedUsernames();
+  } catch (error) {
+    console.error(error);
+    reservedUi.items = [];
+    dom.reservedList.innerHTML = '';
+    dom.reservedEmpty.classList.add('hidden');
+    dom.reservedCount.textContent = '';
+    dom.reservedLoadError.textContent = error?.message || 'Не удалось загрузить список';
+    dom.reservedLoadError.classList.remove('hidden');
+  }
+}
+
+function renderReservedUsernames() {
+  dom.reservedList.innerHTML = '';
+
+  const visible = reservedUi.items.filter((item) => {
+    const statusMatch = reservedUi.status === 'all'
+      || (reservedUi.status === 'free' ? item.status === 'free' : item.status !== 'free');
+    const typeMatch = reservedUi.type === 'all' || item.status === reservedUi.type;
+    const queryMatch = !reservedUi.query || item.name.includes(reservedUi.query);
+    return statusMatch && typeMatch && queryMatch;
+  });
+
+  dom.reservedCount.textContent = reservedUi.items.length
+    ? `Показано ${visible.length} из ${reservedUi.items.length}`
+    : '';
+  dom.reservedEmpty.classList.toggle('hidden', visible.length > 0);
+  dom.reservedEmpty.textContent = reservedUi.items.length
+    ? 'Ничего не найдено по фильтрам.'
+    : 'Пока ничего не зарезервировано.';
+
+  visible.forEach((item) => {
+    const row = createEl('div', 'reserved-row');
+    const body = createEl('div', 'reserved-row-body');
+
+    const title = createEl('div', 'reserved-row-title');
+    title.append(createEl('span', 'reserved-name', `@${item.name}`));
+    title.append(createEl('span', `reserved-status ${item.status}`,
+      RESERVED_STATUS_LABELS[item.status] || 'Неизвестно'));
+    body.append(title);
+
+    const meta = [];
+    if (item.at) meta.push(`Зарезервирован: ${formatDayLabel(item.at)}`);
+    if (item.by) meta.push(`кем: ${item.by.slice(0, 8)}…`);
+    if (item.status !== 'free' && item.occupant) {
+      meta.push(`владелец: ${item.occupant.slice(0, 12)}…`);
+    }
+    if (meta.length) body.append(createEl('div', 'reserved-row-meta', meta.join(' · ')));
+
+    row.append(body);
+
+    const remove = createEl('button', 'btn ghost reserved-remove', 'Снять');
+    remove.type = 'button';
+    remove.addEventListener('click', () => removeReservedClick(item, remove));
+    row.append(remove);
+
+    dom.reservedList.append(row);
+  });
+}
+
+/** Показать, что добавлено/снято и какие имена пропущены. */
+function showReservedResult(result, action) {
+  const added = result.added || [];
+  const removed = result.removed || [];
+  const skipped = result.skipped || [];
+  const parts = [];
+
+  if (action === 'add' && added.length) {
+    parts.push(`Зарезервировано: ${added.map((name) => `@${name}`).join(', ')}`);
+  }
+  if (action === 'remove' && removed.length) {
+    parts.push(`Снято с резерва: ${removed.map((name) => `@${name}`).join(', ')}`);
+  }
+  if (skipped.length) {
+    const details = skipped.map((item) =>
+      `@${item.name} (${RESERVED_SKIP_REASONS[item.reason] || 'недоступно'})`);
+    parts.push(`Пропущено: ${details.join(', ')}`);
+  }
+
+  if (!parts.length) {
+    dom.reservedResult.classList.add('hidden');
+    dom.reservedResult.textContent = '';
+    return;
+  }
+
+  dom.reservedResult.textContent = parts.join('. ');
+  dom.reservedResult.classList.toggle('warn', skipped.length > 0);
+  dom.reservedResult.classList.remove('hidden');
+}
+
+async function submitReservedAdd(event) {
+  event.preventDefault();
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  dom.reservedError.classList.add('hidden');
+  dom.reservedResult.classList.add('hidden');
+
+  const raw = dom.reservedInput.value.trim();
+  if (!raw) {
+    dom.reservedError.textContent = 'Введите один или несколько юзернеймов';
+    dom.reservedError.classList.remove('hidden');
+    return;
+  }
+
+  dom.reservedSubmit.disabled = true;
+  dom.reservedSubmit.textContent = 'Резервируем…';
+  try {
+    const result = await Chat.reserveUsernames({ names: raw, uid: state.user.uid });
+    dom.reservedInput.value = '';
+    showReservedResult(result, 'add');
+    if (result.added.length) {
+      toast(`Зарезервировано имён: ${result.added.length}`, 'success');
+    } else {
+      toast('Новые имена не добавлены: все пропущены');
+    }
+    await loadReservedUsernames();
+  } catch (error) {
+    console.error(error);
+    dom.reservedError.textContent = error?.message || 'Не удалось зарезервировать юзернеймы';
+    dom.reservedError.classList.remove('hidden');
+  } finally {
+    dom.reservedSubmit.disabled = false;
+    dom.reservedSubmit.textContent = 'Зарезервировать';
+  }
+}
+
+async function submitReservedRemove(event) {
+  event.preventDefault();
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  dom.reservedRemoveError.classList.add('hidden');
+  dom.reservedResult.classList.add('hidden');
+
+  const raw = dom.reservedRemoveInput.value.trim();
+  if (!raw) {
+    dom.reservedRemoveError.textContent = 'Введите один или несколько юзернеймов';
+    dom.reservedRemoveError.classList.remove('hidden');
+    return;
+  }
+
+  dom.reservedRemoveSubmit.disabled = true;
+  dom.reservedRemoveSubmit.textContent = 'Снимаем…';
+  try {
+    const result = await Chat.releaseReservedUsernames(raw);
+    dom.reservedRemoveInput.value = '';
+    showReservedResult(result, 'remove');
+    if (result.removed.length) {
+      toast(`Снято с резерва имён: ${result.removed.length}`, 'success');
+    } else {
+      toast('Таких имён в резерве нет');
+    }
+    await loadReservedUsernames();
+  } catch (error) {
+    console.error(error);
+    dom.reservedRemoveError.textContent = error?.message || 'Не удалось снять резерв';
+    dom.reservedRemoveError.classList.remove('hidden');
+  } finally {
+    dom.reservedRemoveSubmit.disabled = false;
+    dom.reservedRemoveSubmit.textContent = 'Снять';
+  }
+}
+
+async function removeReservedClick(item, button) {
+  button.disabled = true;
+  try {
+    const result = await Chat.releaseReservedUsernames([item.name]);
+    showReservedResult(result, 'remove');
+    toast(`@${item.name} больше не зарезервирован`, 'success');
+    await loadReservedUsernames();
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Не удалось снять резерв', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ============================================================
+ *  Дополнительные юзернеймы (только root-админы)
+ * ============================================================ */
+
+const ALIAS_SKIP_REASONS = {
+  invalid: 'неверный формат',
+  taken: 'уже занят',
+  alias: 'уже выдан как дополнительный',
+  own: 'совпадает с основным',
+  missing: 'не найден',
+  reserved: 'зарезервирован',
+};
+
+const aliasesUi = {
+  items: [],
+  type: 'all',
+  query: '',
+};
+
+function openAliasesModal() {
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  aliasesUi.items = [];
+  aliasesUi.type = 'all';
+  aliasesUi.query = '';
+
+  dom.aliasesType.value = 'user';
+  dom.aliasesTarget.value = '';
+  dom.aliasesInput.value = '';
+  dom.aliasesSearch.value = '';
+  dom.aliasesFilter.value = 'all';
+  dom.aliasesError.classList.add('hidden');
+  dom.aliasesResult.classList.add('hidden');
+  dom.aliasesResult.textContent = '';
+  dom.aliasesLoadError.classList.add('hidden');
+  dom.aliasesList.innerHTML = '';
+  dom.aliasesEmpty.classList.add('hidden');
+  dom.aliasesCount.textContent = '';
+  dom.aliasesOverlay.classList.remove('hidden');
+  updateAliasTargetPlaceholder();
+  loadUsernameAliases();
+}
+
+function closeAliasesModal() {
+  dom.aliasesOverlay.classList.add('hidden');
+}
+
+/** Подсказка в поле цели в зависимости от выбранного типа. */
+function updateAliasTargetPlaceholder() {
+  const type = dom.aliasesType.value;
+  dom.aliasesTarget.placeholder = type === 'user'
+    ? '@username или ID пользователя'
+    : type === 'channel' ? '@username или ID канала' : '@username или ID публичной группы';
+}
+
+async function loadUsernameAliases() {
+  dom.aliasesLoadError.classList.add('hidden');
+  dom.aliasesCount.textContent = 'Загружаем…';
+  try {
+    aliasesUi.items = await Chat.listUsernameAliases();
+    renderUsernameAliases();
+  } catch (error) {
+    console.error(error);
+    aliasesUi.items = [];
+    dom.aliasesList.innerHTML = '';
+    dom.aliasesEmpty.classList.add('hidden');
+    dom.aliasesCount.textContent = '';
+    dom.aliasesLoadError.textContent = error?.message || 'Не удалось загрузить список';
+    dom.aliasesLoadError.classList.remove('hidden');
+  }
+}
+
+function renderUsernameAliases() {
+  dom.aliasesList.innerHTML = '';
+
+  const visible = aliasesUi.items.filter((item) => {
+    const typeMatch = aliasesUi.type === 'all' || item.type === aliasesUi.type;
+    const queryMatch = !aliasesUi.query || item.name.includes(aliasesUi.query);
+    return typeMatch && queryMatch;
+  });
+
+  dom.aliasesCount.textContent = aliasesUi.items.length
+    ? `Показано ${visible.length} из ${aliasesUi.items.length}`
+    : '';
+  dom.aliasesEmpty.classList.toggle('hidden', visible.length > 0);
+  dom.aliasesEmpty.textContent = aliasesUi.items.length
+    ? 'Ничего не найдено по фильтрам.'
+    : 'Дополнительных юзернеймов пока нет.';
+
+  visible.forEach((item) => {
+    const row = createEl('div', 'reserved-row');
+    const body = createEl('div', 'reserved-row-body');
+
+    const title = createEl('div', 'reserved-row-title');
+    title.append(createEl('span', 'reserved-name', `@${item.name}`));
+    title.append(createEl('span', `reserved-status ${item.type}`,
+      Chat.ALIAS_TYPE_LABELS[item.type] || 'Цель'));
+    body.append(title);
+
+    const target = item.targetUsername ? `@${item.targetUsername}` : item.target;
+    const meta = [`ведёт на ${target}${item.targetTitle ? ' · ' + item.targetTitle : ''}`];
+    if (item.at) meta.push(`Выдан: ${formatDayLabel(item.at)}, ${formatTime(item.at)}`);
+    if (item.targetMissing) meta.push('цель не найдена');
+    body.append(createEl('div', 'reserved-row-meta', meta.join(' · ')));
+
+    row.append(body);
+
+    const remove = createEl('button', 'btn ghost reserved-remove', 'Забрать');
+    remove.type = 'button';
+    remove.addEventListener('click', () => revokeAliasClick(item, remove));
+    row.append(remove);
+
+    dom.aliasesList.append(row);
+  });
+}
+
+/** Показать, что выдано/забрано и какие имена пропущены. */
+function showAliasesResult(result, action) {
+  const added = result.added || [];
+  const removed = result.removed || [];
+  const skipped = result.skipped || [];
+  const parts = [];
+
+  if (action === 'add' && added.length) {
+    parts.push(`Выдано: ${added.map((name) => `@${name}`).join(', ')}`);
+  }
+  if (action === 'remove' && removed.length) {
+    parts.push(`Забрано: ${removed.map((name) => `@${name}`).join(', ')}`);
+  }
+  if (skipped.length) {
+    const details = skipped.map((item) =>
+      `@${item.name} (${ALIAS_SKIP_REASONS[item.reason] || 'недоступно'})`);
+    parts.push(`Пропущено: ${details.join(', ')}`);
+  }
+
+  if (!parts.length) {
+    dom.aliasesResult.classList.add('hidden');
+    dom.aliasesResult.textContent = '';
+    return;
+  }
+
+  dom.aliasesResult.textContent = parts.join('. ');
+  dom.aliasesResult.classList.toggle('warn', skipped.length > 0);
+  dom.aliasesResult.classList.remove('hidden');
+}
+
+async function submitAliases(event) {
+  event.preventDefault();
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  dom.aliasesError.classList.add('hidden');
+  dom.aliasesResult.classList.add('hidden');
+
+  const target = dom.aliasesTarget.value.trim();
+  const names = dom.aliasesInput.value.trim();
+  if (!target) {
+    dom.aliasesError.textContent = 'Укажите @username или ID цели';
+    dom.aliasesError.classList.remove('hidden');
+    dom.aliasesTarget.focus();
+    return;
+  }
+  if (!names) {
+    dom.aliasesError.textContent = 'Введите один или несколько дополнительных юзернеймов';
+    dom.aliasesError.classList.remove('hidden');
+    dom.aliasesInput.focus();
+    return;
+  }
+
+  dom.aliasesSubmit.disabled = true;
+  dom.aliasesSubmit.textContent = 'Выдаём…';
+  try {
+    const result = await Chat.assignUsernameAliases({
+      names,
+      type: dom.aliasesType.value,
+      target,
+      uid: state.user.uid,
+    });
+    dom.aliasesInput.value = '';
+    showAliasesResult(result, 'add');
+    toast(result.added.length
+      ? `Выдано имён: ${result.added.length}`
+      : 'Новые имена не выданы: все пропущены', result.added.length ? 'success' : undefined);
+    await loadUsernameAliases();
+  } catch (error) {
+    console.error(error);
+    dom.aliasesError.textContent = error?.message || 'Не удалось выдать юзернеймы';
+    dom.aliasesError.classList.remove('hidden');
+  } finally {
+    dom.aliasesSubmit.disabled = false;
+    dom.aliasesSubmit.textContent = 'Выдать';
+  }
+}
+
+async function revokeAliasClick(item, button) {
+  if (!window.confirm(`Забрать @${item.name}? Оно перестанет вести на этот профиль.`)) return;
+
+  button.disabled = true;
+  try {
+    const result = await Chat.removeUsernameAliases([item.name]);
+    showAliasesResult(result, 'remove');
+    toast(`@${item.name} больше не дополнительный`, 'success');
+    await loadUsernameAliases();
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Не удалось забрать юзернейм', 'error');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /* ============================================================
@@ -5566,6 +6211,15 @@ async function openStatsModal() {
   dom.statsCards.innerHTML = createEl('p', 'stats-empty', 'Считаем…').outerHTML;
   dom.statsChart.innerHTML = '';
   dom.statsTop.innerHTML = '';
+  if (dom.statsFullLink) {
+    const target = chat.username ? '@' + chat.username : chatId;
+    const safe = encodeURIComponent(target).replace(/%40/gi, '@');
+    dom.statsFullLink.href = `dashboard/#channels/${safe}`;
+    dom.statsFullLink.textContent = chat.username
+      ? `Полная статистика @${chat.username} →`
+      : 'Полная статистика →';
+    dom.statsFullLink.classList.remove('hidden');
+  }
   dom.statsOverlay.classList.remove('hidden');
 
   try {
@@ -6070,6 +6724,51 @@ dom.invitesForm.addEventListener('submit', async (event) => {
     dom.invitesSubmit.textContent = 'Создать';
   }
 });
+
+// --- Резерв юзернеймов: окно root-админа ---
+dom.prefsReservedBtn.addEventListener('click', openReservedModal);
+dom.reservedClose.addEventListener('click', closeReservedModal);
+dom.reservedCancel.addEventListener('click', closeReservedModal);
+dom.reservedOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.reservedOverlay) closeReservedModal();
+});
+dom.reservedForm.addEventListener('submit', submitReservedAdd);
+dom.reservedRemoveForm.addEventListener('submit', submitReservedRemove);
+dom.reservedSearch.addEventListener('input', () => {
+  reservedUi.query = Chat.normalizeUsername(dom.reservedSearch.value);
+  renderReservedUsernames();
+});
+dom.reservedStatusFilter.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-status-filter]');
+  if (!btn) return;
+  reservedUi.status = btn.dataset.statusFilter || 'all';
+  dom.reservedStatusFilter.querySelectorAll('.seg-btn').forEach((item) => {
+    item.classList.toggle('active', item === btn);
+  });
+  renderReservedUsernames();
+});
+dom.reservedTypeFilter.addEventListener('change', () => {
+  reservedUi.type = dom.reservedTypeFilter.value || 'all';
+  renderReservedUsernames();
+});
+
+// --- Дополнительные юзернеймы: окно root-админа ---
+dom.prefsAliasesBtn.addEventListener('click', openAliasesModal);
+dom.aliasesClose.addEventListener('click', closeAliasesModal);
+dom.aliasesCancel.addEventListener('click', closeAliasesModal);
+dom.aliasesOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.aliasesOverlay) closeAliasesModal();
+});
+dom.aliasesForm.addEventListener('submit', submitAliases);
+dom.aliasesType.addEventListener('change', updateAliasTargetPlaceholder);
+dom.aliasesSearch.addEventListener('input', () => {
+  aliasesUi.query = Chat.normalizeUsername(dom.aliasesSearch.value);
+  renderUsernameAliases();
+});
+dom.aliasesFilter.addEventListener('change', () => {
+  aliasesUi.type = dom.aliasesFilter.value || 'all';
+  renderUsernameAliases();
+});
 dom.prefsThemeToggle.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-theme-choice]');
   if (btn) setTheme(btn.dataset.themeChoice);
@@ -6363,6 +7062,10 @@ document.addEventListener('keydown', (event) => {
   }
   if (!dom.invitesOverlay.classList.contains('hidden')) {
     closeInvitesModal();
+    return;
+  }
+  if (!dom.aliasesOverlay.classList.contains('hidden')) {
+    closeAliasesModal();
     return;
   }
   if (!dom.prefsOverlay.classList.contains('hidden')) {

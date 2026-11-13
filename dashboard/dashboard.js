@@ -10,7 +10,7 @@
  * Публичные цифры берутся из /public_stats; если правила базы ещё не
  * опубликованы, показывается статический снимок public-stats.json.
  */
-import { displayName } from '../services/stats-core.js?v=39';
+import { displayName } from '../services/stats-core.js?v=45';
 
 /*
  * Firebase подключается лениво: вкладка «Обзор» должна открываться и без
@@ -34,6 +34,7 @@ const state = {
   authToken: 0,
   activeTab: 'overview',
   pendingTab: '',
+  pendingChannel: '',
   overview: {
     data: null,
     source: '',
@@ -50,6 +51,7 @@ const state = {
   channels: {
     list: [],
     selectedId: null,
+    requested: '',
     data: null,
     loading: false,
     token: 0,
@@ -405,9 +407,66 @@ function allowedTabs() {
   return tabs;
 }
 
-function setTab(name, { updateHash = true, force = false } = {}) {
+/** Разобрать адрес: #channels/@signaly_mayaka, #global, #me. */
+function parseHash() {
+  const raw = location.hash.replace(/^#/, '');
+  if (!raw) return { tab: 'overview', channel: '' };
+  const [tabRaw, ...rest] = raw.split('/');
+  const tab = TAB_NAMES.includes(tabRaw) ? tabRaw : 'overview';
+  let channel = rest.join('/');
+  try {
+    channel = decodeURIComponent(channel);
+  } catch (error) {
+    // оставляем как есть
+  }
+  return { tab, channel: channel.trim() };
+}
+
+/** Цель ссылки на канал: @username, если он есть, иначе id. */
+function channelTarget(item) {
+  if (!item) return '';
+  return item.username ? `@${item.username}` : String(item.id || '');
+}
+
+function findChannelItem(idOrTarget) {
+  const value = String(idOrTarget || '').trim();
+  if (!value) return null;
+  if (value.startsWith('@')) {
+    const name = value.replace(/^@+/, '').toLowerCase();
+    return state.channels.list.find((item) => String(item.username || '').toLowerCase() === name) || null;
+  }
+  return state.channels.list.find((item) => item.id === value) || null;
+}
+
+/** Текущая ссылка на выбранный канал. */
+function channelsHash() {
+  const requested = state.channels.requested;
+  const target = requested || channelTarget(findChannelItem(state.channels.selectedId));
+  if (!target) return '#channels';
+  // «@» оставляем читаемым: #channels/@signaly_mayaka
+  const safe = encodeURIComponent(target).replace(/%40/gi, '@');
+  return `#channels/${safe}`;
+}
+
+/** Обновить адрес под выбранный канал, не создавая записей в истории. */
+function syncChannelsHash() {
+  if (state.activeTab !== 'channels') return;
+  const hash = channelsHash();
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+}
+
+function setTab(name, { updateHash = true, force = false, channel = null } = {}) {
   const allowed = allowedTabs();
-  const next = allowed.includes(name) ? name : 'overview';
+  const wanted = TAB_NAMES.includes(name) ? name : 'overview';
+  const next = allowed.includes(wanted) ? wanted : 'overview';
+
+  if (allowed.includes(wanted) && channel !== null) {
+    state.channels.requested = String(channel || '').trim();
+  } else if (!allowed.includes(wanted) && channel) {
+    // Ссылка на канал без входа: запомним и откроем после авторизации.
+    state.pendingChannel = String(channel || '').trim();
+  }
+
   state.activeTab = next;
 
   for (const button of document.querySelectorAll('.dash-tab')) {
@@ -419,13 +478,14 @@ function setTab(name, { updateHash = true, force = false } = {}) {
     setHidden($(`tab-${tabName}`), tabName !== next);
   }
 
-  if (updateHash && location.hash !== `#${next}`) {
-    history.replaceState(null, '', `#${next}`);
+  if (updateHash) {
+    const hash = next === 'channels' ? channelsHash() : `#${next}`;
+    if (location.hash !== hash) history.replaceState(null, '', hash);
   }
 
   if (next === 'overview') loadOverview({ force });
   if (next === 'me') loadMe({ force });
-  if (next === 'channels') ensureChannels({ force });
+  if (next === 'channels') ensureChannels({ force, target: state.channels.requested });
   if (next === 'global') loadGlobal({ force });
 }
 
@@ -468,7 +528,7 @@ function syncAuthUi() {
 
 async function loadStaticSnapshot() {
   try {
-    const response = await fetch('./public-stats.json?v=39', { cache: 'no-store' });
+    const response = await fetch('./public-stats.json?v=45', { cache: 'no-store' });
     if (!response.ok) return null;
     return await response.json();
   } catch (error) {
@@ -754,16 +814,18 @@ function renderMe(stats) {
  * ============================================================ */
 
 function clearChannels() {
+  state.channels.token += 1;
   state.channels.list = [];
   state.channels.selectedId = null;
-  state.channels.data = null;
+  state.channels.requested = '';
   state.channels.loading = false;
   state.channels.loaded = false;
-  state.channels.token += 1;
+  state.channels.data = null;
   setHidden($('channel-content'), true);
   setHidden($('channels-loading'), true);
   setHidden($('channels-empty'), false);
   hideError('channel-error');
+  hideFindResults();
   const select = $('channel-select');
   if (select) clear(select);
 }
@@ -788,7 +850,90 @@ function populateChannelSelect() {
   if (state.channels.selectedId) select.value = state.channels.selectedId;
 }
 
-async function ensureChannels({ force = false } = {}) {
+/** Добавить или обновить канал в списке (без дублей). */
+function upsertChannel(item) {
+  if (!item?.id) return null;
+  const existing = state.channels.list.find((channel) => channel.id === item.id);
+  if (existing) {
+    Object.assign(existing, item);
+    return existing;
+  }
+  state.channels.list.push(item);
+  return item;
+}
+
+/** Канал из ответа Stats.findChannelByUsername. */
+function channelItemFromChat(id, chat) {
+  return {
+    id,
+    title: String(chat?.title || (chat?.username ? '@' + chat.username : 'Канал')),
+    username: String(chat?.username || ''),
+    subscribers: chat?.subscribers
+      ? Object.keys(chat.subscribers).length
+      : Number(chat?.subscribersCount) || 0,
+    requiresSubscription: chat?.requiresSubscription === true,
+    isOwner: chat?.owner === state.uid,
+    isAdmin: chat?.owner === state.uid || Boolean(chat?.admins?.[state.uid]),
+  };
+}
+
+/**
+ * Открыть канал по ссылке: @username или id.
+ * @returns {Promise<boolean>} удалось ли открыть
+ */
+async function selectChannelTarget(target, { force = false } = {}) {
+  const value = String(target || '').trim();
+  if (!value) return false;
+
+  const known = findChannelItem(value);
+  if (known) {
+    state.channels.selectedId = known.id;
+    populateChannelSelect();
+    setHidden($('channels-empty'), true);
+    await loadChannel(known.id, { force });
+    return true;
+  }
+
+  hideError('channel-error');
+  setHidden($('channels-loading'), false);
+  setProgress('channels-progress-bar', 'channels-progress-text', 0, 1, 'Открываем канал…');
+
+  try {
+    if (value.startsWith('@')) {
+      const found = await Stats.findChannelByUsername(value);
+      if (!found) throw new Error(`Канал ${value} не найден`);
+      upsertChannel(channelItemFromChat(found.id, found.chat));
+      state.channels.selectedId = found.id;
+      state.channels.loaded = true;
+    } else {
+      // Ссылка по id: название подтянется после загрузки статистики.
+      upsertChannel({ id: value, title: 'Канал', username: '', subscribers: 0 });
+      state.channels.selectedId = value;
+      state.channels.loaded = true;
+    }
+    populateChannelSelect();
+    setHidden($('channels-empty'), true);
+    await loadChannel(state.channels.selectedId, { force });
+    return true;
+  } catch (error) {
+    // Ссылка не сработала: не оставляем вкладку пустой и не тащим битый
+    // адрес дальше — показываем первый канал из списка и сообщение об ошибке.
+    state.channels.requested = '';
+    const fallback = state.channels.list[0];
+    if (fallback) {
+      state.channels.selectedId = fallback.id;
+      populateChannelSelect();
+      setHidden($('channels-empty'), true);
+      await loadChannel(fallback.id, { force: true });
+    }
+    showError('channel-error', userErrorMessage(error));
+    return false;
+  } finally {
+    setHidden($('channels-loading'), true);
+  }
+}
+
+async function ensureChannels({ force = false, target = '' } = {}) {
   if (!state.user) {
     setHidden($('channels-gate'), false);
     setHidden($('channels-tools'), true);
@@ -802,6 +947,8 @@ async function ensureChannels({ force = false } = {}) {
 
   setHidden($('channels-gate'), true);
   setHidden($('channels-tools'), false);
+
+  if (target) state.channels.requested = String(target).trim();
 
   if (!state.channels.loaded || force) {
     state.channels.loaded = false;
@@ -824,13 +971,6 @@ async function ensureChannels({ force = false } = {}) {
         ),
       });
       state.channels.loaded = true;
-      if (!state.channels.list.length) {
-        setHidden($('channels-empty'), false);
-        setHidden($('channels-loading'), true);
-        populateChannelSelect();
-        return;
-      }
-      state.channels.selectedId = state.channels.list[0].id;
       populateChannelSelect();
     } catch (error) {
       showError('channel-error', userErrorMessage(error));
@@ -839,19 +979,34 @@ async function ensureChannels({ force = false } = {}) {
     }
   }
 
-  if (!state.channels.selectedId && state.channels.list.length) {
+  if (state.channels.requested) {
+    setHidden($('channels-loading'), true);
+    await selectChannelTarget(state.channels.requested, { force });
+    syncChannelsHash();
+    return;
+  }
+
+  if (!state.channels.list.length) {
+    setHidden($('channels-empty'), false);
+    setHidden($('channels-loading'), true);
+    populateChannelSelect();
+    return;
+  }
+
+  if (!state.channels.selectedId || !findChannelItem(state.channels.selectedId)) {
     state.channels.selectedId = state.channels.list[0].id;
     populateChannelSelect();
   }
 
   if (state.channels.selectedId) {
     await loadChannel(state.channels.selectedId, { force });
+    syncChannelsHash();
   }
 }
 
 async function loadChannel(chatId, { force = false } = {}) {
   if (!chatId || state.channels.loading) return;
-  if (state.channels.data && state.channels.data.id === chatId && !force) return;
+  if (state.channels.data && state.channels.data.id === chatId && state.channels.selectedId === chatId && !force) return;
 
   const token = ++state.channels.token;
   state.channels.loading = true;
@@ -875,9 +1030,25 @@ async function loadChannel(chatId, { force = false } = {}) {
       ),
     });
     if (token !== state.channels.token) return;
+
+    upsertChannel({
+      id: chatId,
+      title: data.title,
+      username: data.username,
+      subscribers: data.totals.subscribers,
+      requiresSubscription: data.requiresSubscription,
+      isOwner: data.roles.isOwner,
+      isAdmin: data.roles.isAdmin,
+    });
     state.channels.data = data;
+    state.channels.selectedId = chatId;
+    populateChannelSelect();
+    if (!state.channels.requested || state.channels.requested === chatId || state.channels.requested === `@${data.username}`) {
+      state.channels.requested = channelTarget({ id: chatId, username: data.username });
+    }
     renderChannel(data);
     setHidden($('channel-content'), false);
+    syncChannelsHash();
   } catch (error) {
     if (token !== state.channels.token) return;
     showError('channel-error', userErrorMessage(error));
@@ -1065,37 +1236,93 @@ async function findChannel(event) {
     return;
   }
   hideError('channel-error');
+  hideFindResults();
   const input = $('channel-find-input');
   const value = String(input?.value || '').trim();
   if (!value) return;
 
+  const button = $('channel-find-form')?.querySelector('button');
+  if (button) button.disabled = true;
+
   try {
-    const found = await Stats.findChannelByUsername(value);
-    if (!found) throw new Error('Канал с таким @username не найден');
-    const chat = found.chat;
-    const item = {
-      id: found.id,
-      title: String(chat.title || (chat.username ? '@' + chat.username : 'Канал')),
-      username: String(chat.username || ''),
-      subscribers: chat.subscribers ? Object.keys(chat.subscribers).length : Number(chat.subscribersCount) || 0,
-      requiresSubscription: chat.requiresSubscription === true,
-      isOwner: chat.owner === state.uid,
-      isAdmin: chat.owner === state.uid || Boolean(chat.admins?.[state.uid]),
-    };
+    const found = await Stats.searchChannels(value, {
+      uid: state.uid,
+      known: state.channels.list,
+    });
+    if (!found.length) throw new Error('Канал с таким названием или @username не найден');
 
-    const existing = state.channels.list.find((channel) => channel.id === item.id);
-    if (existing) Object.assign(existing, item);
-    else state.channels.list.unshift(item);
+    if (found.length === 1) {
+      await openFoundChannel(found[0]);
+      if (input) input.value = '';
+      return;
+    }
 
-    state.channels.selectedId = item.id;
-    state.channels.loaded = true;
-    populateChannelSelect();
-    if (input) input.value = '';
-    setHidden($('channels-empty'), true);
-    await loadChannel(item.id, { force: true });
+    renderFindResults(found, value);
   } catch (error) {
     showError('channel-error', userErrorMessage(error));
+  } finally {
+    if (button) button.disabled = false;
   }
+}
+
+/** Список найденных каналов: выбираем нужный. */
+function renderFindResults(items, query) {
+  const box = $('channel-find-results');
+  if (!box) return;
+  clear(box);
+  box.append(el('p', 'dash-find-hint', `Найдено ${formatNumber(items.length)} — выберите канал:`));
+
+  for (const item of items) {
+    const button = el('button', 'dash-find-item');
+    button.type = 'button';
+    button.append(renderAvatar({ avatar: null, username: item.username }, item.id));
+
+    const body = el('div', 'dash-find-item-body');
+    body.append(el('span', 'dash-find-item-title', item.title));
+    const meta = [];
+    if (item.username) meta.push('@' + item.username);
+    meta.push(`${formatNumber(item.subscribers)} ${plural(item.subscribers, ['подписчик', 'подписчика', 'подписчиков'])}`);
+    body.append(el('span', 'dash-find-item-meta', meta.join(' · ')));
+    button.append(body);
+
+    button.addEventListener('click', () => {
+      openFoundChannel(item)
+        .then(() => {
+          hideFindResults();
+          const input = $('channel-find-input');
+          if (input) input.value = '';
+        })
+        .catch((error) => showError('channel-error', userErrorMessage(error)));
+    });
+
+    box.append(button);
+  }
+
+  const input = $('channel-find-input');
+  if (input) input.placeholder = query;
+  box.classList.remove('hidden');
+}
+
+function hideFindResults() {
+  const box = $('channel-find-results');
+  if (box) {
+    clear(box);
+    box.classList.add('hidden');
+  }
+}
+
+/** Открыть найденный канал и запомнить его в ссылке. */
+async function openFoundChannel(item) {
+  if (!item?.id) return;
+  hideError('channel-error');
+  upsertChannel(item);
+  state.channels.loaded = true;
+  state.channels.selectedId = item.id;
+  state.channels.requested = channelTarget(item);
+  populateChannelSelect();
+  setHidden($('channels-empty'), true);
+  await loadChannel(item.id, { force: true });
+  syncChannelsHash();
 }
 
 /* ============================================================
@@ -1189,14 +1416,16 @@ async function loadGlobal({ force = false } = {}) {
 function renderGlobal(stats) {
   renderMetrics($('global-cards'), [
     { value: stats.users.active, label: 'пользователей', hint: `${formatNumber(stats.users.deleted)} удалённых · ${formatNumber(stats.users.banned)} забаненных` },
-    { value: stats.chats.total, label: 'чатов', hint: `${formatNumber(stats.chats.channels)} каналов · ${formatNumber(stats.chats.groups)} групп` },
+    { value: stats.chats.channels, label: 'каналов', hint: `${formatNumber(stats.engagement.subscribers)} подписок` },
     { value: stats.messages.total, label: 'сообщений', hint: `${formatNumber(stats.messages.today)} сегодня` },
     { value: stats.presence.online, label: 'онлайн сейчас', hint: `${formatNumber(stats.presence.activeWeek)} за неделю` },
     { value: stats.engagement.views, label: 'просмотров', hint: `${formatNumber(stats.engagement.uniqueViewers)} зрителей` },
     { value: stats.engagement.comments, label: 'комментариев', hint: `${formatNumber(stats.engagement.commenters)} авторов` },
     { value: stats.engagement.reactions, label: 'реакций', hint: `${formatNumber(stats.engagement.reactors)} человек` },
-    { value: stats.engagement.pollVotes, label: 'голосов в опросах', hint: `${formatNumber(stats.engagement.polls)} опросов` },
-    { value: stats.engagement.subscribers, label: 'подписок на каналы' },
+    { value: stats.engagement.polls, label: 'опросов', hint: `${formatNumber(stats.engagement.pollVotes)} голосов` },
+    { value: stats.chats.groups, label: 'групп', hint: `${formatNumber(stats.chats.groupsPublic)} публичных · ${formatNumber(stats.chats.groupsPrivate)} приватных` },
+    { value: stats.messages.last7, label: 'сообщений за неделю', hint: `${formatNumber(stats.messages.last30)} за месяц` },
+    { value: stats.users.registeredWeek, label: 'новых за неделю', hint: `${formatNumber(stats.users.registeredMonth)} за месяц` },
     { value: stats.invites.redeemed, label: 'использовано инвайтов', hint: `${formatNumber(stats.invites.active)} активных кодов` },
   ]);
 
@@ -1207,6 +1436,41 @@ function renderGlobal(stats) {
   renderBarChart($('global-chart-users'), stats.users.daily, {
     emptyText: 'Новых пользователей пока нет',
     title: 'пользователей',
+  });
+
+  // Те же цифры, что видит анонимный посетитель на вкладке «Обзор».
+  renderKeyValues($('global-public-summary'), [
+    { label: 'Активных пользователей', value: formatNumber(stats.users.active) },
+    { label: 'Каналов', value: formatNumber(stats.chats.channels) },
+    { label: 'Групп', value: formatNumber(stats.chats.groups) },
+    { label: 'Личных чатов', value: formatNumber(stats.chats.private) },
+    { label: 'Сообщений', value: formatNumber(stats.messages.total) },
+    { label: 'Сообщений сегодня / 7 / 30 дней', value: `${formatNumber(stats.messages.today)} / ${formatNumber(stats.messages.last7)} / ${formatNumber(stats.messages.last30)}` },
+    { label: 'Онлайн сейчас', value: formatNumber(stats.presence.online) },
+    { label: 'Активны сегодня / 7 / 30 дней', value: `${formatNumber(stats.presence.activeToday)} / ${formatNumber(stats.presence.activeWeek)} / ${formatNumber(stats.presence.activeMonth)}` },
+    { label: 'Просмотров постов', value: formatNumber(stats.engagement.views) },
+    { label: 'Комментариев', value: formatNumber(stats.engagement.comments) },
+    { label: 'Реакций', value: formatNumber(stats.engagement.reactions) },
+    { label: 'Опросов и голосов', value: `${formatNumber(stats.engagement.polls)} / ${formatNumber(stats.engagement.pollVotes)}` },
+    { label: 'Подписок на каналы', value: formatNumber(stats.engagement.subscribers) },
+    { label: 'Регистраций сегодня / 7 / 30 дней', value: `${formatNumber(stats.users.registeredToday)} / ${formatNumber(stats.users.registeredWeek)} / ${formatNumber(stats.users.registeredMonth)}` },
+  ]);
+
+  renderBarList($('global-message-kinds'), [
+    { label: 'Личные чаты', value: stats.messages.byKind.private },
+    { label: 'Группы', value: stats.messages.byKind.group },
+    { label: 'Каналы', value: stats.messages.byKind.channel },
+    { label: 'Избранное', value: stats.messages.saved },
+    { label: 'Без типа', value: stats.messages.byKind.unknown },
+  ], { emptyText: 'Сообщений пока нет' });
+
+  renderBarChart($('global-chart-monthly'), stats.messages.monthly, {
+    emptyText: 'Сообщений пока нет',
+    title: 'сообщений',
+  });
+  renderBarChart($('global-weekday'), stats.messages.byWeekday, {
+    emptyText: 'Сообщений пока нет',
+    title: 'сообщений',
   });
 
   renderBarList($('global-chats'), [
@@ -1258,6 +1522,41 @@ function renderGlobal(stats) {
       formatNumber(user.messages),
     ]),
     'Сообщений пока нет',
+  );
+
+  // Полный список каналов: всё, что есть в базе, а не только топ.
+  renderTable(
+    $('global-all-channels'),
+    ['Канал', 'Подписчики', 'Посты', 'Просмотры', 'Комм.', 'За 30 дней', 'Последний пост'],
+    (stats.channelRows || []).map((channel) => [
+      channelRow(channel.title, channel.username),
+      formatNumber(channel.subscribers),
+      formatNumber(channel.messages),
+      formatNumber(channel.views),
+      formatNumber(channel.comments),
+      formatNumber(channel.postsLast30),
+      channel.lastMessageAt ? `${formatDay(channel.lastMessageAt)} (${timeAgo(channel.lastMessageAt)})` : '—',
+    ]),
+    'Каналов пока нет',
+  );
+
+  renderBarList(
+    $('global-top-channels-posts'),
+    (stats.topChannelsByMessages || []).map((channel) => ({
+      label: channel.username ? `${channel.title} · @${channel.username}` : channel.title,
+      value: channel.messages,
+      hint: `${formatNumber(channel.views)} просм. · ${formatNumber(channel.comments)} комм.`,
+    })),
+    { emptyText: 'Постов пока нет' },
+  );
+
+  renderBarList(
+    $('global-reactions'),
+    (stats.engagement.reactionEmoji || []).map(([emoji, count]) => ({
+      label: emoji,
+      value: count,
+    })),
+    { emptyText: 'Реакций пока нет' },
   );
 
   renderBarChart($('global-hours'), stats.messages.byHour, {
@@ -1352,9 +1651,13 @@ async function handleAuth(user) {
   syncAuthUi();
 
   const pending = state.pendingTab || '';
+  const pendingChannel = state.pendingChannel || '';
   state.pendingTab = '';
+  state.pendingChannel = '';
   if (pending && allowedTabs().includes(pending)) {
-    setTab(pending, { updateHash: false });
+    setTab(pending, { updateHash: true, channel: pendingChannel });
+  } else if (pendingChannel && allowedTabs().includes('channels')) {
+    setTab('channels', { updateHash: true, channel: pendingChannel });
   }
 }
 
@@ -1379,8 +1682,8 @@ async function connectFirebase() {
   try {
     const [authModule, config, statsModule] = await Promise.all([
       import('https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js'),
-      import('../firebase-config.js?v=39'),
-      import('../services/stats.js?v=39'),
+      import('../firebase-config.js?v=45'),
+      import('../services/stats.js?v=45'),
     ]);
     Firebase = authModule;
     auth = config.auth;
@@ -1424,16 +1727,22 @@ function init() {
 
   $('channel-select')?.addEventListener('change', (event) => {
     state.channels.selectedId = event.target.value;
+    state.channels.requested = channelTarget(findChannelItem(event.target.value));
+    hideFindResults();
     loadChannel(state.channels.selectedId, { force: true });
+    syncChannelsHash();
   });
   $('channel-find-form')?.addEventListener('submit', findChannel);
 
   window.addEventListener('hashchange', () => {
-    const name = location.hash.replace(/^#/, '') || 'overview';
-    setTab(name, { updateHash: false });
+    const { tab, channel } = parseHash();
+    setTab(tab, { updateHash: false, channel });
   });
 
-  state.pendingTab = location.hash.replace(/^#/, '') || '';
+  const initial = parseHash();
+  state.pendingTab = initial.tab === 'overview' ? '' : initial.tab;
+  state.pendingChannel = initial.channel;
+  state.channels.requested = initial.channel;
   setTab('overview', { updateHash: false });
   loadOverview();
 

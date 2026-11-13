@@ -1394,6 +1394,122 @@ textarea:-webkit-autofill {
   padding: 6px 10px;
   font-size: 12.5px;
 }
+
+/* Резерв юзернеймов (окно root-админа) */
+.reserved-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}.reserved-tools .input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.reserved-tools .segmented {
+  flex: 0 0 auto;
+}
+.aliases-target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.aliases-target-row .input:first-child {
+  flex: 0 0 150px;
+}
+.aliases-target-row .input:last-child {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.reserved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.reserved-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.reserved-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.reserved-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.reserved-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.reserved-status {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.reserved-status.free {
+  border-color: rgba(123, 196, 127, 0.5);
+  color: var(--success);
+}
+.reserved-status.user,
+.reserved-status.channel,
+.reserved-status.group,
+.reserved-status.alias {
+  border-color: rgba(255, 184, 77, 0.45);
+  color: var(--accent-text);
+}
+.reserved-row-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.reserved-remove {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.reserved-result {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(123, 196, 127, 0.4);
+  background: rgba(123, 196, 127, 0.08);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.reserved-result.warn {
+  border-color: rgba(255, 184, 77, 0.45);
+  background: rgba(255, 184, 77, 0.08);
+}
+.reserved-remove-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.reserved-remove-form .input {
+  flex: 1;
+  min-width: 0;
+}
 .session-row {
   display: flex;
   align-items: center;
@@ -1650,6 +1766,15 @@ html[data-theme='light'] .toast.success {
   font-size: 13px;
   text-align: center;
   color: var(--accent-text);
+  user-select: text;
+}
+.chat-menu-aliases {
+  margin-top: -7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
   user-select: text;
 }
 .chat-menu-actions {
@@ -3258,6 +3383,50 @@ html[data-theme='light'] .message.own .msg-url {
   font-size: 13px;
   color: var(--text-muted);
   padding: 4px 2px;
+}
+/* Длинное название канала не выдавливает кнопку закрытия */
+#stats-heading {
+  flex: 1;
+  min-width: 0;
+}
+/* Переход на полную статистику в дашборде */
+.stats-full-link {
+  margin-top: 4px;
+  text-align: center;
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .stats-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stats-card {
+    padding: 10px 11px;
+  }
+  .stats-card-value {
+    font-size: 19px;
+  }
+  .stats-chart {
+    gap: 2px;
+    padding: 8px 6px;
+  }
+  .stats-bar-col {
+    min-width: 0;
+  }
+  .stats-bar {
+    max-width: none;
+    border-radius: 3px 3px 1px 1px;
+  }
+  /* На телефоне 14 подписей не помещаются: оставляем края, остальное — в title */
+  .stats-bar-label {
+    display: none;
+  }
+  .stats-bar-col:first-child .stats-bar-label,
+  .stats-bar-col:last-child .stats-bar-label {
+    display: block;
+    font-size: 9px;
+  }
 }
 
 /* Поиск по сообщениям: фильтры и результаты (идея 17) */

@@ -53,6 +53,38 @@
     }
   },
 
+  "reserved_usernames": {
+    "smotritel": {
+      "at": 1728723605,
+      "by": "user1_id"
+    },
+    "faros": {
+      "at": 1728723605,
+      "by": "user1_id"
+    }
+  },
+
+  "username_aliases": {
+    "mayak_lighthouse": {
+      "type": "user",
+      "target": "user1_id",
+      "at": 1728723605,
+      "by": "user1_id"
+    },
+    "signaly_tuman": {
+      "type": "channel",
+      "target": "channel_1",
+      "at": 1728723605,
+      "by": "user1_id"
+    },
+    "komanda_mayaka_chat": {
+      "type": "group",
+      "target": "chat_group_2",
+      "at": 1728723605,
+      "by": "user1_id"
+    }
+  },
+
   "sessions": {
     "user1_id": {
       "session_1": {

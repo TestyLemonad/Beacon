@@ -14,8 +14,8 @@
   <meta name="theme-color" content="#121212" />
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="../styles.css?v=39" />
-  <link rel="stylesheet" href="dashboard.css?v=39" />
+  <link rel="stylesheet" href="../styles.css?v=45" />
+  <link rel="stylesheet" href="dashboard.css?v=45" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -235,13 +235,15 @@
 
         <form id="channel-find-form" class="dash-find-form">
           <label class="dash-field">
-            <span>Или найдите по @username</span>
-            <input id="channel-find-input" class="input" type="text" placeholder="@signaly_mayaka"
+            <span>Найти по названию или @username</span>
+            <input id="channel-find-input" class="input" type="text" placeholder="Сигналы маяка или @signaly_mayaka"
                    autocomplete="off" spellcheck="false" />
           </label>
           <button class="btn ghost" type="submit">Найти</button>
         </form>
       </div>
+
+      <div id="channel-find-results" class="dash-find-results hidden"></div>
 
       <div id="channels-empty" class="dash-empty hidden">
         <h2>Каналов пока нет</h2>
@@ -390,6 +392,42 @@
         <div class="dash-grid-2">
           <section class="dash-panel">
             <header class="dash-panel-head">
+              <h2>Сводка как в «Обзоре»</h2>
+              <p>Все публичные показатели мессенджера</p>
+            </header>
+            <div id="global-public-summary"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Сообщения по типам чатов</h2>
+              <p>Личные, группы, каналы и «Избранное»</p>
+            </header>
+            <div id="global-message-kinds"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Сообщения по месяцам</h2>
+              <p>Последние 12 месяцев</p>
+            </header>
+            <div id="global-chart-monthly" class="dash-chart"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Активность по дням недели</h2>
+              <p>Когда в Beacon пишут чаще</p>
+            </header>
+            <div id="global-weekday" class="dash-chart"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
               <h2>Структура чатов</h2>
               <p>Сколько чего в мессенджере</p>
             </header>
@@ -423,6 +461,32 @@
           </section>
         </div>
 
+        <section class="dash-panel">
+          <header class="dash-panel-head">
+            <h2>Все каналы</h2>
+            <p>Полный список с показателями</p>
+          </header>
+          <div id="global-all-channels"></div>
+        </section>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Каналы по числу постов</h2>
+              <p>Кто публикует чаще</p>
+            </header>
+            <div id="global-top-channels-posts"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Реакции</h2>
+              <p>Какие эмодзи ставят чаще</p>
+            </header>
+            <div id="global-reactions"></div>
+          </section>
+        </div>
+
         <div class="dash-grid-2">
           <section class="dash-panel">
             <header class="dash-panel-head">
@@ -451,6 +515,6 @@
     <a href="../">Вернуться в мессенджер</a>
   </footer>
 
-  <script type="module" src="dashboard.js?v=39"></script>
+  <script type="module" src="dashboard.js?v=45"></script>
 </body>
 </html>

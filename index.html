@@ -17,7 +17,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=39" />
+  <link rel="stylesheet" href="styles.css?v=45" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -434,6 +434,7 @@
           <label for="pf-username">Юзернейм</label>
           <input id="pf-username" class="input" type="text" placeholder="smotritel_mayaka" autocomplete="off" />
           <p class="field-hint">3–32 символа (a–z, 0–9, «_»). По нему вас находят другие.</p>
+          <p id="profile-aliases" class="field-hint hidden"></p>
         </div>
         <div class="field">
           <label for="pf-firstname">Имя</label>
@@ -581,6 +582,7 @@
           <label for="settings-username">Юзернейм группы</label>
           <input id="settings-username" class="input" type="text" placeholder="@komanda_mayaka" autocomplete="off" />
           <p class="field-hint">По нему группу найдут и смогут присоединиться.</p>
+          <p id="settings-username-aliases" class="field-hint hidden"></p>
         </div>
 
         <!-- Канал: доступ к чтению без подписки -->
@@ -641,6 +643,7 @@
       </div>
       <p id="chat-menu-description" class="chat-menu-description hidden"></p>
       <p id="chat-menu-username" class="chat-menu-username"></p>
+      <p id="chat-menu-aliases" class="chat-menu-aliases hidden"></p>
       <p id="chat-menu-presence" class="chat-menu-presence hidden"></p>
       <div id="chat-menu-actions" class="chat-menu-actions"></div>
       <div id="chat-menu-members-block" class="chat-menu-members hidden">
@@ -770,6 +773,20 @@
           <label>Приглашения</label>
           <button id="prefs-invites-btn" class="btn ghost full" type="button">Инвайт-коды</button>
           <p class="field-hint">Регистрация в Beacon закрыта: новые аккаунты создаются только по приглашению.</p>
+        </div>
+
+        <!-- Резерв юзернеймов: виден только супер-администраторам -->
+        <div class="field hidden" id="prefs-reserved-field">
+          <label>Юзернеймы</label>
+          <button id="prefs-reserved-btn" class="btn ghost full" type="button">Зарезервированные юзернеймы</button>
+          <p class="field-hint">Зарезервированные имена нельзя занять: они недоступны для смены юзернейма и создания каналов или публичных групп.</p>
+        </div>
+
+        <!-- Дополнительные юзернеймы: видны только супер-администраторам -->
+        <div class="field hidden" id="prefs-aliases-field">
+          <label>Дополнительные юзернеймы</label>
+          <button id="prefs-aliases-btn" class="btn ghost full" type="button">Выдать доп. юзернеймы</button>
+          <p class="field-hint">Дополнительные имена для пользователей, каналов и публичных групп. Показываются в профиле под основным и ведут на него.</p>
         </div>
 
         <div class="field">
@@ -933,6 +950,122 @@
     </div>
   </div>
 
+  <!-- Зарезервированные юзернеймы: отдельное окно, открывается из настроек (только root-админам) -->
+  <div id="reserved-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Зарезервированные юзернеймы</h3>
+        <button id="reserved-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="field-hint">Имена из списка нельзя занять: они блокируются при смене юзернейма, создании каналов и публичных групп. Уже занятые имена при добавлении пропускаются.</p>
+
+      <form id="reserved-form" class="create-form">
+        <div class="field">
+          <label for="reserved-input">Зарезервировать</label>
+          <input id="reserved-input" class="input" type="text" placeholder="@name, @other_name" autocomplete="off" spellcheck="false" />
+          <p class="field-hint">Можно несколько через запятую или пробел.</p>
+        </div>
+
+        <p id="reserved-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="reserved-cancel" class="btn ghost" type="button">Закрыть</button>
+          <button id="reserved-submit" class="btn primary" type="submit">Зарезервировать</button>
+        </div>
+      </form>
+
+      <div class="reserved-tools">
+        <input id="reserved-search" class="input" type="search" placeholder="Поиск по юзернейму" autocomplete="off" spellcheck="false" />
+        <div class="segmented" id="reserved-status-filter">
+          <button class="seg-btn active" type="button" data-status-filter="all">Все</button>
+          <button class="seg-btn" type="button" data-status-filter="free">Свободные</button>
+          <button class="seg-btn" type="button" data-status-filter="taken">Занятые</button>
+        </div>
+        <select id="reserved-type-filter" class="input" aria-label="Тип занятости">
+          <option value="all">Любой тип</option>
+          <option value="user">Пользователь</option>
+          <option value="channel">Канал</option>
+          <option value="group">Группа</option>
+          <option value="alias">Доп. юзернейм</option>
+        </select>
+      </div>
+
+      <p id="reserved-count" class="field-hint"></p>
+      <p id="reserved-result" class="reserved-result hidden"></p>
+
+      <div id="reserved-list" class="reserved-list"></div>
+      <p id="reserved-empty" class="sidebar-empty hidden">Пока ничего не зарезервировано.</p>
+      <p id="reserved-load-error" class="form-error hidden"></p>
+
+      <form id="reserved-remove-form" class="reserved-remove-form">
+        <input id="reserved-remove-input" class="input" type="text" placeholder="Снять резерв: @name, @other" autocomplete="off" spellcheck="false" />
+        <button id="reserved-remove-submit" class="btn ghost" type="submit">Снять</button>
+      </form>
+      <p id="reserved-remove-error" class="form-error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Дополнительные юзернеймы: отдельное окно, открывается из настроек (только root-админам) -->
+  <div id="aliases-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Дополнительные юзернеймы</h3>
+        <button id="aliases-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="field-hint">Дополнительные имена показываются в профиле под основным с припиской «А также». Поиск, ссылки, упоминания и вход ведут на основной профиль.</p>
+
+      <form id="aliases-form" class="create-form">
+        <div class="field">
+          <label for="aliases-target">Кому выдать</label>
+          <div class="aliases-target-row">
+            <select id="aliases-type" class="input" aria-label="Тип цели">
+              <option value="user">Пользователь</option>
+              <option value="channel">Канал</option>
+              <option value="group">Группа</option>
+            </select>
+            <input id="aliases-target" class="input" type="text" placeholder="@username или ID"
+                   autocomplete="off" spellcheck="false" />
+          </div>
+          <p class="field-hint">Основной @username или ID. Можно указать себя. Приватной группе сначала нужно стать публичной.</p>
+        </div>
+
+        <div class="field">
+          <label for="aliases-input">Дополнительные юзернеймы</label>
+          <input id="aliases-input" class="input" type="text" placeholder="@alias, @other_alias"
+                 autocomplete="off" spellcheck="false" />
+          <p class="field-hint">Можно несколько через запятую или пробел.</p>
+        </div>
+
+        <p id="aliases-error" class="form-error hidden"></p>
+
+        <div class="modal-actions">
+          <button id="aliases-cancel" class="btn ghost" type="button">Закрыть</button>
+          <button id="aliases-submit" class="btn primary" type="submit">Выдать</button>
+        </div>
+      </form>
+
+      <p id="aliases-result" class="reserved-result hidden"></p>
+
+      <div class="reserved-tools">
+        <input id="aliases-search" class="input" type="search" placeholder="Поиск по юзернейму"
+               autocomplete="off" spellcheck="false" />
+        <select id="aliases-filter" class="input" aria-label="Тип цели">
+          <option value="all">Все типы</option>
+          <option value="user">Пользователи</option>
+          <option value="channel">Каналы</option>
+          <option value="group">Группы</option>
+        </select>
+      </div>
+
+      <p id="aliases-count" class="field-hint"></p>
+      <div id="aliases-list" class="reserved-list"></div>
+      <p id="aliases-empty" class="sidebar-empty hidden">Дополнительных юзернеймов пока нет.</p>
+      <p id="aliases-load-error" class="form-error hidden"></p>
+    </div>
+  </div>
+
   <!-- Архив: чаты, убранные из основного списка -->
   <div id="archive-overlay" class="overlay hidden">
     <div class="modal">
@@ -1016,6 +1149,8 @@
       <div id="stats-chart" class="stats-chart"></div>
       <h4 class="stats-subtitle">Лучшие посты</h4>
       <div id="stats-top" class="blocked-list"></div>
+      <a id="stats-full-link" class="btn ghost full stats-full-link hidden" href="dashboard/"
+         target="_blank" rel="noopener">Полная статистика →</a>
     </div>
   </div>
 
@@ -1038,6 +1173,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=39"></script>
+  <script type="module" src="app.js?v=45"></script>
 </body>
 </html>
