@@ -20,7 +20,7 @@
  * может любой — иначе регистрация не смогла бы проверить код до входа.
  */
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=45';
+import { db } from '../firebase-config.js?v=46';
 
 /** Алфавит без похожих символов: нет I, L, O, U, 0, 1. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

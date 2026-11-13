@@ -10,7 +10,7 @@
  * Публичные цифры берутся из /public_stats; если правила базы ещё не
  * опубликованы, показывается статический снимок public-stats.json.
  */
-import { displayName } from '../services/stats-core.js?v=45';
+import { displayName } from '../services/stats-core.js?v=46';
 
 /*
  * Firebase подключается лениво: вкладка «Обзор» должна открываться и без
@@ -528,7 +528,7 @@ function syncAuthUi() {
 
 async function loadStaticSnapshot() {
   try {
-    const response = await fetch('./public-stats.json?v=45', { cache: 'no-store' });
+    const response = await fetch('./public-stats.json?v=46', { cache: 'no-store' });
     if (!response.ok) return null;
     return await response.json();
   } catch (error) {
@@ -1552,9 +1552,9 @@ function renderGlobal(stats) {
 
   renderBarList(
     $('global-reactions'),
-    (stats.engagement.reactionEmoji || []).map(([emoji, count]) => ({
-      label: emoji,
-      value: count,
+    (stats.engagement.reactionEmoji || []).map((item) => ({
+      label: item?.emoji,
+      value: item?.count,
     })),
     { emptyText: 'Реакций пока нет' },
   );
@@ -1682,8 +1682,8 @@ async function connectFirebase() {
   try {
     const [authModule, config, statsModule] = await Promise.all([
       import('https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js'),
-      import('../firebase-config.js?v=45'),
-      import('../services/stats.js?v=45'),
+      import('../firebase-config.js?v=46'),
+      import('../services/stats.js?v=46'),
     ]);
     Firebase = authModule;
     auth = config.auth;
