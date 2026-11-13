@@ -10,7 +10,7 @@
  * Публичные цифры берутся из /public_stats; если правила базы ещё не
  * опубликованы, показывается статический снимок public-stats.json.
  */
-import { displayName } from '../services/stats-core.js?v=46';
+import { displayName } from '../services/stats-core.js?v=47';
 
 /*
  * Firebase подключается лениво: вкладка «Обзор» должна открываться и без
@@ -528,7 +528,7 @@ function syncAuthUi() {
 
 async function loadStaticSnapshot() {
   try {
-    const response = await fetch('./public-stats.json?v=46', { cache: 'no-store' });
+    const response = await fetch('./public-stats.json?v=47', { cache: 'no-store' });
     if (!response.ok) return null;
     return await response.json();
   } catch (error) {
@@ -1682,8 +1682,8 @@ async function connectFirebase() {
   try {
     const [authModule, config, statsModule] = await Promise.all([
       import('https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js'),
-      import('../firebase-config.js?v=46'),
-      import('../services/stats.js?v=46'),
+      import('../firebase-config.js?v=47'),
+      import('../services/stats.js?v=47'),
     ]);
     Firebase = authModule;
     auth = config.auth;

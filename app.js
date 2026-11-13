@@ -10,10 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=46';
-import * as Chat from './services/chat.js?v=46';
-import * as Sessions from './services/sessions.js?v=46';
-import * as Invites from './services/invites.js?v=46';
+import * as Auth from './services/auth.js?v=47';
+import * as Chat from './services/chat.js?v=47';
+import * as Sessions from './services/sessions.js?v=47';
+import * as Invites from './services/invites.js?v=47';
 
 /* ============================================================
  *  DOM
@@ -478,6 +478,7 @@ const state = {
     bans: null,             // /banned_users
     rootAdmins: null,       // /root_admins
     usernameAliases: null,  // /username_aliases
+    userProfiles: new Map(), // uid -> unsubscribe для живых профилей (/users/$uid)
     chatScoped: [],         // подписки активного чата (typing, голоса, комментарии…)
     chatScopedId: null,     // id чата, для которого настроены подписки chatScoped
   },
@@ -510,6 +511,8 @@ let messagesObserver = null;        // IntersectionObserver просмотров
 let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
 let accountDeletionInProgress = false; // удаляем аккаунт: не реагируем на отзыв сессии
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
+let profileRefreshTimer = null;     // отложенная перерисовка после изменения профилей
+let profileRefreshPending = false;  // перерисовка уже запрошена
 
 /** Канал-промо @dev: показывается вверху списка, пока пользователь не подписан и не скрыл его. */
 const DEV_CHANNEL_ID = '-P4EgAjn7KM6VFk2-rc_';
@@ -825,7 +828,11 @@ function activeTypers() {
   const now = Date.now() / 1000;
   return [...state.typingMap.entries()]
     .filter(([uid, info]) => uid !== state.user?.uid && info && (now - Number(info.ts || 0)) < 7)
-    .map(([uid, info]) => ({ uid, name: info.name || getSenderName(uid) }));
+    .map(([uid, info]) => ({
+      uid,
+      // Имя берём из живого профиля, а запись typing — запасной вариант.
+      name: getProfileName(Chat.getCachedUserProfile(uid)) || info.name || 'Пользователь',
+    }));
 }
 
 /**
@@ -899,16 +906,107 @@ function updateSidebarUser() {
  *  Догрузка профилей (имена отправителей, собеседников)
  * ============================================================ */
 
+/** Видимые в интерфейсе поля профиля — по ним ловим изменения. */
+function profileSnapshotKey(profile) {
+  if (!profile) return '';
+  return JSON.stringify([
+    profile.username || '',
+    profile.firstName || '',
+    profile.lastName || '',
+    profile.bio || '',
+    profile.deleted === true,
+    profile.avatar || null,
+  ]);
+}
+
+/** Подписаться на живые профили, которых ещё нет в реестре подписок. */
+function watchUserProfiles(uids) {
+  if (!state.user) return;
+  for (const uid of new Set(uids)) {
+    if (!uid || state.subscriptions.userProfiles.has(uid)) continue;
+
+    let previousKey = profileSnapshotKey(Chat.getCachedUserProfile(uid));
+    const unsubscribe = Chat.subscribeToUserProfile(uid, (profile) => {
+      const nextKey = profileSnapshotKey(profile);
+      if (nextKey === previousKey) return;
+      previousKey = nextKey;
+
+      if (uid === state.user?.uid) {
+        state.profile = profile;
+        updateSidebarUser();
+      }
+      scheduleProfileRefresh();
+    });
+    state.subscriptions.userProfiles.set(uid, unsubscribe);
+  }
+}
+
+/** Перерисовать всё, где показываются имена, био и аватарки пользователей. */
+function refreshProfileViews() {
+  if (!state.user || dom.messengerScreen.classList.contains('hidden')) return;
+
+  renderChatList();
+  if (state.search.query) renderSearchResults();
+  if (state.activeChatId || state.channelPreview) renderMainPanel();
+  if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+  if (!dom.archiveOverlay.classList.contains('hidden')) renderArchiveList();
+  if (!dom.blockedOverlay.classList.contains('hidden')) renderBlockedList();
+  if (!dom.forwardOverlay.classList.contains('hidden') && state.forwardMessage) {
+    openForwardModal(state.forwardMessage);
+  }
+
+  if (settingsChatId && !dom.settingsOverlay.classList.contains('hidden')) {
+    const chat = state.chats.get(settingsChatId);
+    if (chat?.type === 'group') renderSettingsMembers(chat);
+    if (chat?.type === 'channel') renderSettingsAdmins(chat);
+  }
+
+  // Комментарии: сохраняем позицию прокрутки, чтобы чтение не сбивалось.
+  if (!dom.commentsOverlay.classList.contains('hidden') && state.commentsPost) {
+    const scrollTop = dom.commentsList.scrollTop;
+    renderComments(state.chatComments);
+    dom.commentsList.scrollTop = scrollTop;
+  }
+
+  if (state.composerMode?.type === 'reply') {
+    dom.composerContextTitle.textContent = `Ответ ${getSenderName(state.composerMode.message.sender)}`;
+  }
+}
+
+/** Отложенная перерисовка: несколько изменений подряд схлопываются в одну. */
+function scheduleProfileRefresh() {
+  if (profileRefreshPending) return;
+  profileRefreshPending = true;
+  profileRefreshTimer = window.setTimeout(() => {
+    profileRefreshTimer = null;
+    profileRefreshPending = false;
+    refreshProfileViews();
+  }, 120);
+}
+
+/** Снять живые подписки на профили (выход из аккаунта). */
+function stopProfileWatch() {
+  clearTimeout(profileRefreshTimer);
+  profileRefreshTimer = null;
+  profileRefreshPending = false;
+  for (const unsubscribe of state.subscriptions.userProfiles.values()) unsubscribe();
+  state.subscriptions.userProfiles.clear();
+}
+
 /**
- * Загрузить отсутствующие профили и перерисовать UI.
+ * Загрузить отсутствующие профили, подписаться на изменения и перерисовать UI.
  * Профили кэшируются в services/chat.js, поэтому повторных
  * запросов и циклов перерисовки не возникает.
  */
 async function hydrateUsers(uids) {
   if (!state.user) return;
-  const missing = [...new Set(uids)]
-    .filter(Boolean)
-    .filter((uid) => Chat.getCachedUserProfile(uid) === undefined);
+  const unique = [...new Set(uids)].filter(Boolean);
+  if (!unique.length) return;
+
+  // Показанные профили держим живыми: имя, био и аватарка обновляются сразу.
+  watchUserProfiles(unique);
+
+  const missing = unique.filter((uid) => Chat.getCachedUserProfile(uid) === undefined);
   if (!missing.length) return;
 
   await Promise.allSettled(missing.map((uid) => Chat.getUserProfile(uid)));
@@ -1301,18 +1399,22 @@ async function runSearch(rawQuery) {
 
 /** Строка результата «пользователь». */
 function buildUserRow(user) {
+  // Снимок из поиска мог устареть — показываем свежий профиль из кэша.
+  const cached = Chat.getCachedUserProfile(user.uid);
+  const profile = cached === undefined ? user : { ...user, ...(cached || {}) };
+
   const item = createEl('div', 'chat-item');
   item.tabIndex = 0;
   const avatar = createEl('div', 'avatar');
-  applyProfileAvatar(avatar, user, user.uid);
+  applyProfileAvatar(avatar, profile, user.uid);
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', getProfileName(user) || '@' + user.username));
+  top.append(createEl('span', 'chat-item-title', getProfileName(profile) || '@' + profile.username));
   if (state.blocked.has(user.uid)) top.append(createEl('span', 'search-badge muted', 'в ЧС'));
 
   const bottom = createEl('div', 'chat-item-bottom');
-  const subtitle = '@' + user.username + (user.bio ? ' · ' + user.bio : '');
+  const subtitle = '@' + profile.username + (profile.bio ? ' · ' + profile.bio : '');
   bottom.append(createEl('span', 'chat-item-preview', subtitle));
 
   body.append(top, bottom);
@@ -1553,6 +1655,9 @@ function renderSearchResults() {
   addSection('Пользователи', users.map(buildUserRow));
   addSection('Группы', groups.map(buildGroupRow));
   addSection('Каналы', channels.map(buildChannelRow));
+
+  // Следим за найденными людьми: имя и аватарка могут измениться.
+  hydrateUsers(users.map((user) => user.uid));
 
   const normalized = Chat.normalizeUsername(query);
   const hasPrefix = Boolean(normalized) && Chat.isValidUsername(normalized);
@@ -2710,6 +2815,9 @@ function startSubscriptions() {
   if (!state.user || state.subscriptions.userChats) return;
   const uid = state.user.uid;
 
+  // Свой профиль тоже живой: имя и аватарка меняются с другого устройства.
+  watchUserProfiles([uid]);
+
   state.subscriptions.userChats = Chat.subscribeToUserChats(
     uid,
     handleUserChatsUpdate,
@@ -2792,6 +2900,7 @@ function startSubscriptions() {
 function teardownSubscriptions() {
   const uid = state.user?.uid || null;
   sessionStartedForUid = null;
+  stopProfileWatch();
 
   state.subscriptions.userChats?.();
   state.subscriptions.messages?.();

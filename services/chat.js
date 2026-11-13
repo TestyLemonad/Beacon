@@ -62,7 +62,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=46';
+import { auth, db } from '../firebase-config.js?v=47';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -78,6 +78,9 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 /** Кэш профилей /users/$uid: uid -> профиль | null (если не найден). */
 const usersCache = new Map();
+
+/** Живые подписки на профили: uid -> { unsubscribe, listeners: Set<{onChange, onError}> }. */
+const userProfileSubscriptions = new Map();
 
 /* ============================================================
  *  Юзернеймы
@@ -941,6 +944,67 @@ export async function getUserProfile(uid, { force = false } = {}) {
     usersCache.set(uid, null);
   }
   return usersCache.get(uid);
+}
+
+/**
+ * Подписка на профиль /users/$uid в реальном времени.
+ * Кэш обновляется до вызова обработчика, поэтому все следующие
+ * getCachedUserProfile() сразу видят свежие имя, био и аватарку.
+ *
+ * @param {string} uid
+ * @param {(profile: object|null) => void} onChange — вызывается при каждом изменении
+ * @param {((error: Error) => void)|null} onError
+ * @returns {() => void} функция отписки
+ */
+export function subscribeToUserProfile(uid, onChange, onError = null) {
+  if (!uid || typeof onChange !== 'function') return () => {};
+
+  let entry = userProfileSubscriptions.get(uid);
+  if (!entry) {
+    const listeners = new Set();
+    const unsubscribe = onValue(
+      ref(db, `users/${uid}`),
+      (snapshot) => {
+        const profile = snapshot.val() || null;
+        usersCache.set(uid, profile);
+        for (const listener of [...listeners]) {
+          try {
+            listener.onChange(profile);
+          } catch (error) {
+            console.error(`Ошибка обработчика профиля ${uid}:`, error);
+          }
+        }
+      },
+      (error) => {
+        console.error(`Ошибка подписки на профиль ${uid}:`, error);
+        for (const listener of [...listeners]) {
+          if (!listener.onError) continue;
+          try {
+            listener.onError(error);
+          } catch (listenerError) {
+            console.error(`Ошибка обработчика профиля ${uid}:`, listenerError);
+          }
+        }
+      },
+    );
+    entry = { unsubscribe, listeners };
+    userProfileSubscriptions.set(uid, entry);
+  }
+
+  const registration = { onChange, onError };
+  entry.listeners.add(registration);
+
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    const current = userProfileSubscriptions.get(uid);
+    if (!current) return;
+    current.listeners.delete(registration);
+    if (current.listeners.size) return;
+    current.unsubscribe();
+    userProfileSubscriptions.delete(uid);
+  };
 }
 
 /**
