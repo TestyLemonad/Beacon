@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Статистика · Beacon</title>
+
+  <link rel="icon" type="image/png" href="../icon.png" />
+  <link rel="apple-touch-icon" href="../icon.png" />
+
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://testy-beacon.firebaseapp.com" />
+  <link rel="preconnect" href="https://testy-beacon-default-rtdb.firebaseio.com" />
+  <meta name="theme-color" content="#121212" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+
+  <link rel="stylesheet" href="../styles.css?v=39" />
+  <link rel="stylesheet" href="dashboard.css?v=39" />
+
+  <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
+  <script>
+    try {
+      if (localStorage.getItem('beacon-theme') === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    } catch (e) { /* приватный режим — остаётся тёмная тема */ }
+  </script>
+</head>
+<body class="dash-body">
+  <header class="dash-header">
+    <a class="dash-brand" href="../" title="Вернуться в Beacon">
+      <img src="../icon.png" alt="" class="dash-logo" />
+      <span class="dash-brand-text">
+        <strong>Beacon</strong>
+        <small>статистика</small>
+      </span>
+    </a>
+
+    <nav class="dash-tabs" role="tablist" aria-label="Разделы статистики">
+      <button class="dash-tab active" type="button" role="tab" data-tab="overview" aria-selected="true">Обзор</button>
+      <button class="dash-tab hidden" type="button" role="tab" data-tab="me" aria-selected="false">Моя статистика</button>
+      <button class="dash-tab hidden" type="button" role="tab" data-tab="channels" aria-selected="false">Каналы</button>
+      <button class="dash-tab hidden" type="button" role="tab" data-tab="global" aria-selected="false">Весь Beacon</button>
+    </nav>
+
+    <div class="dash-header-tools">
+      <span id="dash-account" class="dash-account">Без входа</span>
+      <button id="dash-theme" class="dash-icon-btn" type="button" title="Сменить тему" aria-label="Сменить тему">◐</button>
+      <a class="dash-back" href="../">В мессенджер</a>
+    </div>
+  </header>
+
+  <main class="dash-main">
+    <div id="dash-auth-note" class="dash-note">
+      <span>Сейчас вы смотрите публичную статистику. Войдите, чтобы открыть личные вкладки.</span>
+      <a href="../">Войти в Beacon</a>
+    </div>
+
+    <!-- ============================================================
+         Публичный обзор
+         ============================================================ -->
+    <section id="tab-overview" class="dash-tab-panel" role="tabpanel" aria-labelledby="tab-overview">
+      <div class="dash-hero">
+        <div>
+          <h1>Beacon в цифрах</h1>
+          <p>Пользователи, каналы, сообщения и активность — без входа в аккаунт.</p>
+        </div>
+        <div class="dash-hero-actions">
+          <button id="overview-refresh" class="btn ghost" type="button">Обновить</button>
+        </div>
+      </div>
+
+      <p id="overview-source" class="dash-source"></p>
+
+      <div id="overview-loading" class="dash-loading">
+        <div class="dash-spinner" aria-hidden="true"></div>
+        <p>Загружаем публичную статистику…</p>
+      </div>
+
+      <div id="overview-content" class="hidden">
+        <div id="overview-cards" class="dash-metrics"></div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Сообщения по дням</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="overview-chart-messages" class="dash-chart"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Новые пользователи</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="overview-chart-users" class="dash-chart"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Крупнейшие каналы</h2>
+              <p>По числу подписчиков</p>
+            </header>
+            <div id="overview-top-channels"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Что ещё внутри</h2>
+              <p>Просмотры, реакции и опросы</p>
+            </header>
+            <div id="overview-extra"></div>
+          </section>
+        </div>
+      </div>
+
+      <p id="overview-error" class="dash-error hidden"></p>
+    </section>
+
+    <!-- ============================================================
+         Личная статистика
+         ============================================================ -->
+    <section id="tab-me" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="tab-me">
+      <div class="dash-hero">
+        <div>
+          <h1>Моя статистика</h1>
+          <p id="me-subtitle">Чаты, сообщения, каналы и активность аккаунта.</p>
+        </div>
+        <div class="dash-hero-actions">
+          <button id="me-refresh" class="btn ghost" type="button">Обновить</button>
+        </div>
+      </div>
+
+      <div id="me-gate" class="dash-gate hidden">
+        <h2>Нужен вход</h2>
+        <p>Личная статистика доступна после входа в аккаунт Beacon.</p>
+        <a class="btn primary" href="../">Войти</a>
+      </div>
+
+      <div id="me-loading" class="dash-loading hidden">
+        <div class="dash-progress"><span id="me-progress-bar"></span></div>
+        <p id="me-progress-text">Считаем…</p>
+      </div>
+
+      <div id="me-content" class="hidden">
+        <div id="me-profile" class="dash-profile"></div>
+        <div id="me-cards" class="dash-metrics"></div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Мои сообщения по дням</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="me-chart" class="dash-chart"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Где я общаюсь</h2>
+              <p>Мои сообщения по типам чатов</p>
+            </header>
+            <div id="me-breakdown"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Самые активные чаты</h2>
+              <p>По моим сообщениям</p>
+            </header>
+            <div id="me-top-chats"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Мой след</h2>
+              <p>Реакции, комментарии и просмотры</p>
+            </header>
+            <div id="me-engagement"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Мои каналы</h2>
+              <p>Где я владелец или администратор</p>
+            </header>
+            <div id="me-channels"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Аккаунт</h2>
+              <p>Профиль, сессии и настройки</p>
+            </header>
+            <div id="me-account"></div>
+          </section>
+        </div>
+      </div>
+
+      <p id="me-error" class="dash-error hidden"></p>
+    </section>
+
+    <!-- ============================================================
+         Каналы
+         ============================================================ -->
+    <section id="tab-channels" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="tab-channels">
+      <div class="dash-hero">
+        <div>
+          <h1>Каналы</h1>
+          <p>Подробная статистика канала: аудитория, просмотры, комментарии и опросы.</p>
+        </div>
+        <div class="dash-hero-actions">
+          <button id="channels-refresh" class="btn ghost" type="button">Обновить</button>
+        </div>
+      </div>
+
+      <div id="channels-gate" class="dash-gate hidden">
+        <h2>Нужен вход</h2>
+        <p>Статистика каналов доступна после входа в аккаунт Beacon.</p>
+        <a class="btn primary" href="../">Войти</a>
+      </div>
+
+      <div id="channels-tools" class="dash-channel-tools">
+        <label class="dash-field">
+          <span>Мой канал</span>
+          <select id="channel-select" class="input"></select>
+        </label>
+
+        <form id="channel-find-form" class="dash-find-form">
+          <label class="dash-field">
+            <span>Или найдите по @username</span>
+            <input id="channel-find-input" class="input" type="text" placeholder="@signaly_mayaka"
+                   autocomplete="off" spellcheck="false" />
+          </label>
+          <button class="btn ghost" type="submit">Найти</button>
+        </form>
+      </div>
+
+      <div id="channels-empty" class="dash-empty hidden">
+        <h2>Каналов пока нет</h2>
+        <p>Подпишитесь на канал в мессенджере или найдите его по @username выше.</p>
+      </div>
+
+      <div id="channels-loading" class="dash-loading hidden">
+        <div class="dash-progress"><span id="channels-progress-bar"></span></div>
+        <p id="channels-progress-text">Читаем канал…</p>
+      </div>
+
+      <div id="channel-content" class="hidden">
+        <div id="channel-header" class="dash-channel-head"></div>
+        <div id="channel-restricted" class="dash-gate hidden"></div>
+        <div id="channel-cards" class="dash-metrics"></div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Просмотры по дням</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="channel-chart-views" class="dash-chart"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Посты по месяцам</h2>
+              <p>Последние 12 месяцев</p>
+            </header>
+            <div id="channel-chart-posts" class="dash-chart"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Лучшие посты по просмотрам</h2>
+              <p>Топ-8 за всё время</p>
+            </header>
+            <div id="channel-top-views"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Лучшие посты по комментариям</h2>
+              <p>Топ-8 за всё время</p>
+            </header>
+            <div id="channel-top-comments"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Когда публикуем</h2>
+              <p>Посты по дням недели и часам</p>
+            </header>
+            <div id="channel-schedule"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Реакции и опросы</h2>
+              <p>Эмодзи и результаты голосований</p>
+            </header>
+            <div id="channel-reactions"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Аудитория</h2>
+              <p>Самые активные зрители и комментаторы</p>
+            </header>
+            <div id="channel-audience"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Сводка по каналу</h2>
+              <p>Метаданные и средние значения</p>
+            </header>
+            <div id="channel-summary"></div>
+          </section>
+        </div>
+
+        <p id="channel-error" class="dash-error hidden"></p>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Весь Beacon (только супер-администратор)
+         ============================================================ -->
+    <section id="tab-global" class="dash-tab-panel hidden" role="tabpanel" aria-labelledby="tab-global">
+      <div class="dash-hero">
+        <div>
+          <h1>Весь Beacon</h1>
+          <p>Полная статистика мессенджера. Раздел виден только супер-администраторам.</p>
+        </div>
+        <div class="dash-hero-actions">
+          <button id="global-recalc" class="btn ghost" type="button">Пересчитать</button>
+          <button id="global-publish" class="btn primary" type="button">Опубликовать снимок</button>
+        </div>
+      </div>
+
+      <div id="global-gate" class="dash-gate hidden">
+        <h2>Только для супер-администраторов</h2>
+        <p>Эта вкладка открыта владельцам Beacon.</p>
+      </div>
+
+      <p id="global-note" class="dash-note hidden">
+        Публичный снимок ещё не опубликован. После публикации правил базы нажмите «Опубликовать снимок» —
+        цифры на вкладке «Обзор» начнут обновляться без входа.
+      </p>
+
+      <p id="global-status" class="dash-success hidden"></p>
+
+      <div id="global-loading" class="dash-loading hidden">
+        <div class="dash-progress"><span id="global-progress-bar"></span></div>
+        <p id="global-progress-text">Сканируем мессенджер…</p>
+      </div>
+
+      <div id="global-content" class="hidden">
+        <div id="global-cards" class="dash-metrics"></div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Сообщения по дням</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="global-chart-messages" class="dash-chart"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Регистрации по дням</h2>
+              <p>Последние 30 дней</p>
+            </header>
+            <div id="global-chart-users" class="dash-chart"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Структура чатов</h2>
+              <p>Сколько чего в мессенджере</p>
+            </header>
+            <div id="global-chats"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Вовлечённость</h2>
+              <p>Просмотры, реакции, опросы</p>
+            </header>
+            <div id="global-engagement"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Крупнейшие каналы</h2>
+              <p>Подписчики, посты, просмотры</p>
+            </header>
+            <div id="global-top-channels"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Самые активные пользователи</h2>
+              <p>По отправленным сообщениям</p>
+            </header>
+            <div id="global-top-users"></div>
+          </section>
+        </div>
+
+        <div class="dash-grid-2">
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Активность по часам</h2>
+              <p>Когда в Beacon пишут чаще</p>
+            </header>
+            <div id="global-hours"></div>
+          </section>
+
+          <section class="dash-panel">
+            <header class="dash-panel-head">
+              <h2>Пользователи и приглашения</h2>
+              <p>Профили, присутствие и инвайты</p>
+            </header>
+            <div id="global-users"></div>
+          </section>
+        </div>
+      </div>
+
+      <p id="global-error" class="dash-error hidden"></p>
+    </section>
+  </main>
+
+  <footer class="dash-footer">
+    <span>Beacon · статистика из Realtime Database</span>
+    <a href="../">Вернуться в мессенджер</a>
+  </footer>
+
+  <script type="module" src="dashboard.js?v=39"></script>
+</body>
+</html>

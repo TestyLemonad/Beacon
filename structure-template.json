@@ -418,5 +418,46 @@
 
   "deleted_users": {
     "user4_id": true
+  },
+
+  "public_stats": {
+    "version": 1,
+    "updatedAt": 1728724600,
+    "summary": {
+      "users": 3,
+      "channels": 1,
+      "groups": 2,
+      "privateChats": 1,
+      "messages": 7,
+      "messagesToday": 2,
+      "messagesWeek": 7,
+      "messagesMonth": 7,
+      "online": 1,
+      "activeWeek": 2,
+      "activeMonth": 2,
+      "views": 3,
+      "comments": 2,
+      "reactions": 4,
+      "polls": 1,
+      "pollVotes": 2,
+      "subscribers": 2,
+      "usersRegisteredWeek": 0,
+      "usersRegisteredMonth": 0
+    },
+    "dailyMessages": [
+      { "key": "2024-10-12", "label": "12.10", "count": 7 }
+    ],
+    "dailyUsers": [
+      { "key": "2024-10-12", "label": "12.10", "count": 0 }
+    ],
+    "topChannels": [
+      {
+        "title": "Сигналы из тумана",
+        "username": "signaly_mayaka",
+        "subscribers": 2,
+        "messages": 2,
+        "views": 3
+      }
+    ]
   }
 }

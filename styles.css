@@ -125,6 +125,7 @@ img {
   border: 1px solid transparent;
   font-weight: 600;
   font-size: 14px;
+  text-decoration: none;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
 }
 .btn:active:not(:disabled) {
@@ -319,6 +320,7 @@ textarea:-webkit-autofill {
   padding: 4px;
   color: var(--text-muted);
   font-size: 13px;
+  text-decoration: none;
   transition: color 0.15s ease;
 }
 .link-btn:hover {

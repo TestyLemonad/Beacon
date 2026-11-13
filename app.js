@@ -10,10 +10,10 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=36';
-import * as Chat from './services/chat.js?v=36';
-import * as Sessions from './services/sessions.js?v=36';
-import * as Invites from './services/invites.js?v=36';
+import * as Auth from './services/auth.js?v=39';
+import * as Chat from './services/chat.js?v=39';
+import * as Sessions from './services/sessions.js?v=39';
+import * as Invites from './services/invites.js?v=39';
 
 /* ============================================================
  *  DOM

@@ -118,6 +118,11 @@
       }
     },
 
+    "public_stats": {
+      ".read": true,
+      ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true"
+    },
+
     "invite_codes": {
       ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       ".write": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
@@ -253,6 +258,7 @@
     },
 
     "chats": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       "$chatId": {
         ".read": "auth != null && (!data.exists() || data.child('type').val() === 'channel' || (data.child('type').val() === 'group' && data.child('groupType').val() === 'public') || data.child('users').child(auth.uid).val() === true || data.child('admins').child(auth.uid).val() === true || data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)",
         ".write": "auth != null && ((!data.exists() && newData.exists() && (newData.child('owner').val() === auth.uid || newData.child('users').child(auth.uid).val() === true)) || (data.exists() && !newData.exists() && (data.child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true)) || (data.exists() && newData.exists() && root.child('root_admins').child(auth.uid).val() === true))",
@@ -315,6 +321,7 @@
     },
 
     "messages": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       "$chatId": {
         ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
@@ -334,6 +341,7 @@
     },
 
     "comments": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       "$chatId": {
         ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
@@ -348,6 +356,7 @@
     },
 
     "poll_votes": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       "$chatId": {
         ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
@@ -361,6 +370,7 @@
     },
 
     "views": {
+      ".read": "auth != null && root.child('root_admins').child(auth.uid).val() === true",
       "$chatId": {
         ".read": "auth != null && (root.child('chats').child($chatId).child('users').child(auth.uid).val() === true || root.child('chats').child($chatId).child('admins').child(auth.uid).val() === true || root.child('chats').child($chatId).child('subscribers').child(auth.uid).val() === true || root.child('chats').child($chatId).child('owner').val() === auth.uid || root.child('root_admins').child(auth.uid).val() === true || (root.child('chats').child($chatId).child('type').val() === 'channel' && root.child('chats').child($chatId).child('requiresSubscription').val() === false))",
         ".write": "auth != null && ((!newData.exists() && (!data.exists() || root.child('chats').child($chatId).child('owner').val() === auth.uid)) || root.child('root_admins').child(auth.uid).val() === true)",
