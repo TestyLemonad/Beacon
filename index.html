@@ -13,13 +13,28 @@
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://testy-beacon.firebaseapp.com" />
   <link rel="preconnect" href="https://testy-beacon-default-rtdb.firebaseio.com" />
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
+  <link rel="preconnect" href="https://securetoken.googleapis.com" />
   <!-- Картинки эмодзи приходят с домена форка Twemoji -->
   <link rel="preconnect" href="https://emoji.beacon.testylemonad.ru" />
   <meta name="theme-color" content="#121212" />
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=59" />
+  <link rel="stylesheet" href="styles.css?v=60" />
+
+  <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
+       Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
+  <link rel="modulepreload" href="app.js?v=60" />
+  <link rel="modulepreload" href="services/auth.js?v=60" />
+  <link rel="modulepreload" href="services/chat.js?v=60" />
+  <link rel="modulepreload" href="services/sessions.js?v=60" />
+  <link rel="modulepreload" href="services/invites.js?v=60" />
+  <link rel="modulepreload" href="emoji.js?v=60" />
+  <link rel="modulepreload" href="firebase-config.js?v=60" />
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -1355,9 +1370,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=59" defer></script>
+  <script src="vendor/twemoji.min.js?v=60" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=59"></script>
+  <script type="module" src="app.js?v=60"></script>
 </body>
 </html>

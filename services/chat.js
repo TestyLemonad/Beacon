@@ -62,7 +62,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=59';
+import { auth, db } from '../firebase-config.js?v=60';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -1932,6 +1932,22 @@ export async function deleteChat(chatId, requesterUid) {
 /* ============================================================
  *  Подписки RTDB
  * ============================================================ */
+
+/**
+ * Заранее открыть соединение с Realtime Database.
+ *
+ * Пока Firebase Auth восстанавливает сессию (чтение IndexedDB + проверка
+ * токена), успевают пройти DNS, TLS и WebSocket-рукопожатие. Первый же
+ * запрос после входа идёт по уже открытому сокету. Данные не читаются:
+ * .info/connected — локальный узел SDK.
+ */
+export function warmUpConnection() {
+  try {
+    onValue(ref(db, '.info/connected'), () => {}, () => {});
+  } catch (error) {
+    console.warn('Не удалось заранее открыть соединение с базой:', error);
+  }
+}
 
 /**
  * Подписка на список чатов пользователя /user_chats/$uid.

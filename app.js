@@ -10,11 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=59';
-import * as Chat from './services/chat.js?v=59';
-import * as Sessions from './services/sessions.js?v=59';
-import * as Invites from './services/invites.js?v=59';
-import * as Emoji from './emoji.js?v=59';
+import * as Auth from './services/auth.js?v=60';
+import * as Chat from './services/chat.js?v=60';
+import * as Sessions from './services/sessions.js?v=60';
+import * as Invites from './services/invites.js?v=60';
+import * as Emoji from './emoji.js?v=60';
 
 /* ============================================================
  *  DOM
@@ -519,8 +519,10 @@ let messagesObserverChatId = null;  // чат, для которого созд�
 const viewsPending = new Map();     // msgId -> таймер «пост пробыл на виду»
 let chatListSignature = null;       // подпись состояния списка чатов (пропуск лишних перерисовок)
 let chatListRenderHandle = 0;       // запланированная перерисовка списка (batch подписок RTDB)
+let chatListRenderFallback = 0;     // таймер-страховка, если requestAnimationFrame не сработал
 let composerMeasure = { value: null, width: -1 }; // кэш замеров поля ввода
 let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
+let subscriptionsStarted = false;   // полный набор подписок после входа уже поднят
 let accountDeletionInProgress = false; // удаляем аккаунт: не реагируем на отзыв сессии
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
 let profileRefreshTimer = null;     // отложенная перерисовка после изменения профилей
@@ -1293,11 +1295,21 @@ function renderChatList(force = false) {
  * пересобирался десятки раз подряд.
  */
 function scheduleChatListRender() {
-  if (chatListRenderHandle) return;
-  chatListRenderHandle = requestAnimationFrame(() => {
+  if (chatListRenderHandle || chatListRenderFallback) return;
+
+  const run = () => {
     chatListRenderHandle = 0;
+    if (chatListRenderFallback) {
+      window.clearTimeout(chatListRenderFallback);
+      chatListRenderFallback = 0;
+    }
     renderChatList();
-  });
+  };
+
+  chatListRenderHandle = requestAnimationFrame(run);
+  // requestAnimationFrame не срабатывает в скрытом или перекрытом окне.
+  // Тогда список дорисовываем таймером, чтобы данные не ждали фокуса.
+  chatListRenderFallback = window.setTimeout(run, 250);
 }
 
 /** Полоса папок под поиском: «Все чаты» + пользовательские папки. */
@@ -3006,23 +3018,62 @@ function handleUserChatsUpdate(chatIds) {
     );
   }
 
-  renderChatList();
+  scheduleChatListRender();
   if (state.channelPreview) renderMainPanel(); // могли подписаться из другого клиента
 }
 
-/** Запустить подписки после входа. */
-function startSubscriptions() {
+/**
+ * Подписки, без которых не построить список чатов. Запускаются сразу после
+ * проверки аккаунта, ещё до чтения профиля: пока идёт запрос /users/$uid,
+ * список чатов уже наполняется. Так вход экономит один круг сети.
+ */
+function startChatListSubscriptions(uid) {
   if (!state.user || state.subscriptions.userChats) return;
-  const uid = state.user.uid;
-
-  // Свой профиль тоже живой: имя и аватарка меняются с другого устройства.
-  watchUserProfiles([uid]);
 
   state.subscriptions.userChats = Chat.subscribeToUserChats(
     uid,
     handleUserChatsUpdate,
     () => toast('Не удалось загрузить список чатов', 'error'),
   );
+
+  // Архив, закреп и папки — личные настройки списка чатов.
+  state.subscriptions.userMeta = Chat.subscribeToUserChatMeta(uid, (map) => {
+    state.chatMeta = new Map(Object.entries(map || {}));
+    scheduleChatListRender();
+    if (!dom.archiveOverlay.classList.contains('hidden')) renderArchiveList();
+    if (!dom.chatCtxOverlay.classList.contains('hidden')) {
+      // Если открыто подменю папок — остаёмся в нём (обновляем галочки).
+      if (!dom.chatCtxFolders.classList.contains('hidden')) renderChatCtxFolders();
+      else renderChatCtxMenu();
+    }
+    dom.prefsArchiveCount.textContent = String(archivedChats().length);
+  });
+
+  state.subscriptions.userFolders = Chat.subscribeToUserFolders(uid, (map) => {
+    state.folders = new Map(Object.entries(map || {}));
+    if (!state.folders.has(state.activeFolder)) state.activeFolder = 'all';
+    scheduleChatListRender();
+    if (!dom.chatCtxOverlay.classList.contains('hidden')) renderChatCtxFolders();
+  });
+
+  // Мои прочтения — точки непрочитанного в списке чатов.
+  state.subscriptions.userReads = Chat.subscribeToUserReads(uid, (map) => {
+    state.reads = new Map(Object.entries(map || {}).map(([chatId, ts]) => [chatId, Number(ts) || 0]));
+    scheduleChatListRender();
+  });
+}
+
+/** Запустить подписки после входа. */
+function startSubscriptions() {
+  if (!state.user || subscriptionsStarted) return;
+  subscriptionsStarted = true;
+  const uid = state.user.uid;
+
+  // Свой профиль тоже живой: имя и аватарка меняются с другого устройства.
+  watchUserProfiles([uid]);
+
+  startChatListSubscriptions(uid);
+
   state.subscriptions.messageDeletes = Chat.subscribeToUserMessageDeletes(
     uid,
     (map) => {
@@ -3037,40 +3088,14 @@ function startSubscriptions() {
   // Промо-канал @dev: данные для верхней строки списка (пока не подписан).
   state.subscriptions.devPromo = Chat.subscribeToChat(DEV_CHANNEL_ID, (chat) => {
     state.devPromoChat = chat || null;
-    renderChatList();
-  });
-
-  // Архив, закреп и папки — личные настройки списка чатов.
-  state.subscriptions.userMeta = Chat.subscribeToUserChatMeta(uid, (map) => {
-    state.chatMeta = new Map(Object.entries(map || {}));
-    renderChatList();
-    if (!dom.archiveOverlay.classList.contains('hidden')) renderArchiveList();
-    if (!dom.chatCtxOverlay.classList.contains('hidden')) {
-      // Если открыто подменю папок — остаёмся в нём (обновляем галочки).
-      if (!dom.chatCtxFolders.classList.contains('hidden')) renderChatCtxFolders();
-      else renderChatCtxMenu();
-    }
-    dom.prefsArchiveCount.textContent = String(archivedChats().length);
-  });
-
-  state.subscriptions.userFolders = Chat.subscribeToUserFolders(uid, (map) => {
-    state.folders = new Map(Object.entries(map || {}));
-    if (!state.folders.has(state.activeFolder)) state.activeFolder = 'all';
-    renderChatList();
-    if (!dom.chatCtxOverlay.classList.contains('hidden')) renderChatCtxFolders();
-  });
-
-  // Мои прочтения — точки непрочитанного в списке чатов.
-  state.subscriptions.userReads = Chat.subscribeToUserReads(uid, (map) => {
-    state.reads = new Map(Object.entries(map || {}).map(([chatId, ts]) => [chatId, Number(ts) || 0]));
-    renderChatList();
+    scheduleChatListRender();
   });
 
   // Мои настройки (приватность последнего визита) и присутствие.
   state.subscriptions.userSettings = Chat.subscribeToUserSettings(uid, (settings) => {
     state.settings = { lastSeenPrivacy: 'all', ...(settings || {}) };
     renderPrefsModal();
-    renderChatList(); // скрытие промо-канала @dev могло измениться с другого устройства
+    scheduleChatListRender(); // скрытие промо-канала @dev могло измениться с другого устройства
   });
   state.subscriptions.presence = Chat.startPresence(uid);
 
@@ -3100,6 +3125,7 @@ function startSubscriptions() {
 function teardownSubscriptions() {
   const uid = state.user?.uid || null;
   sessionStartedForUid = null;
+  subscriptionsStarted = false;
   stopProfileWatch();
 
   state.subscriptions.userChats?.();
@@ -3146,6 +3172,8 @@ function teardownSubscriptions() {
   chatListSignature = null;
   cancelAnimationFrame(chatListRenderHandle);
   chatListRenderHandle = 0;
+  window.clearTimeout(chatListRenderFallback);
+  chatListRenderFallback = 0;
   state.stickToBottom = true;
   state.channelPreview = null;
   state.devPromoChat = null;
@@ -7701,6 +7729,10 @@ dom.privateUnblockBtn.addEventListener('click', () => {
 
 // --- Роутинг по состоянию авторизации ---
 
+// Соединение с базой поднимаем сразу: пока Auth восстанавливает сессию,
+// успевает открыться WebSocket, и первый запрос не ждёт рукопожатия.
+Chat.warmUpConnection();
+
 /**
  * Применить код из формы после входа. Возвращает true, если аккаунт получил
  * подтверждение инвайта и профиль можно создавать.
@@ -7762,7 +7794,8 @@ async function handleAuthChange(user) {
 async function routeSignedInUser(user) {
   state.user = user;
 
-  // Удаление и бан — независимые узлы: читаем их параллельно, не теряя RTT.
+  // Удаление, бан и профиль — независимые узлы: читаем их параллельно,
+  // иначе восстановление сессии тратит по кругу сети на каждый.
   const deletedPromise = Chat.getDeletedAccount(user.uid).catch((error) => {
     console.warn('Не удалось проверить удаление аккаунта:', error);
     return false;
@@ -7771,6 +7804,12 @@ async function routeSignedInUser(user) {
     console.warn('Не удалось проверить бан:', error);
     return null;
   });
+  // ensureUserRecord читает /users/$uid и создаёт базовый узел только тем,
+  // у кого есть подтверждение инвайта (/user_invites/$uid).
+  const profilePromise = Auth.ensureUserRecord(user).then(
+    (profile) => ({ profile }),
+    (error) => ({ error }),
+  );
 
   // Реестр активных сессий: записываем это устройство и слушаем отзыв.
   if (sessionStartedForUid !== user.uid) {
@@ -7796,13 +7835,15 @@ async function routeSignedInUser(user) {
   }
   state.myDeleted = false;
 
-  // ensureUserRecord читает /users/$uid и создаёт базовый узел только тем,
-  // у кого есть подтверждение инвайта (/user_invites/$uid).
+  // Список чатов начинает грузиться, пока читается профиль: к моменту показа
+  // мессенджера он обычно уже наполнен. Остальные подписки — в enterMessenger.
+  startChatListSubscriptions(user.uid);
+
   let profile = null;
   let inviteRequired = false;
-  try {
-    profile = await Auth.ensureUserRecord(user);
-  } catch (error) {
+  const profileResult = await profilePromise;
+  if (profileResult.error) {
+    const error = profileResult.error;
     if (error?.code === 'beacon/invite-required') {
       const claimed = await claimPendingInvite(user);
       if (claimed) {
@@ -7816,6 +7857,8 @@ async function routeSignedInUser(user) {
     } else {
       console.error('Не удалось загрузить профиль пользователя:', error);
     }
+  } else {
+    profile = profileResult.profile;
   }
 
   // Если метку deleted_users прочитать не удалось (например, правила ещё не
