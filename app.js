@@ -10,10 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=47';
-import * as Chat from './services/chat.js?v=47';
-import * as Sessions from './services/sessions.js?v=47';
-import * as Invites from './services/invites.js?v=47';
+import * as Auth from './services/auth.js?v=55';
+import * as Chat from './services/chat.js?v=55';
+import * as Sessions from './services/sessions.js?v=55';
+import * as Invites from './services/invites.js?v=55';
+import * as Emoji from './emoji.js?v=55';
 
 /* ============================================================
  *  DOM
@@ -86,6 +87,7 @@ const dom = {
   channelLocked: $('channel-locked'),
   messageForm: $('message-form'),
   messageInput: $('message-input'),
+  emojiBtn: $('emoji-btn'),
   sendBtn: $('send-btn'),
 
   // Модальное окно «Новый чат»
@@ -148,7 +150,6 @@ const dom = {
   msgMenu: $('msg-menu'),
   msgMenuReactions: $('msg-menu-reactions'),
   msgMenuMore: $('msg-menu-more'),
-  msgMenuAll: $('msg-menu-all'),
   msgMenuActions: $('msg-menu-actions'),
   deleteChoiceOverlay: $('delete-choice-overlay'),
   deleteChoiceClose: $('delete-choice-close'),
@@ -421,7 +422,6 @@ const state = {
   composerMode: null,       // { type: 'edit'|'reply', message } — плашка над полем ввода
   msgMenuMessage: null,     // сообщение, открытое в контекстном меню
   msgMenuPos: null,         // { x, y } — точка открытия меню
-  msgMenuExpanded: false,   // раскрыт ли полный набор реакций
   pendingDeleteMessage: null, // сообщение, ждущее выбора «у всех / только у меня»
   forwardMessage: null,     // сообщение, которое пересылаем
   pinIndex: 0,              // какой по счёту закреп показан в плашке
@@ -526,12 +526,6 @@ const AVATAR_COLORS = ['#f0a24a', '#e06c75', '#61afef', '#98c379', '#c678dd', '#
 
 /** Шесть быстрых реакций в меню сообщения. */
 const REACTIONS_TOP = ['👍', '❤️', '🔥', '😂', '😮', '😢'];
-
-/** Полный набор реакций (раскрывается стрелочкой). */
-const REACTIONS_ALL = [
-  ...REACTIONS_TOP,
-  '🎉', '🥰', '👎', '😡', '🤔', '💯', '🙏', '👀', '⚡', '🌊', '⚓', '💡',
-];
 
 /** Стабильный цвет аватарки по произвольному seed (uid или id чата). */
 function avatarColor(seed) {
@@ -1233,6 +1227,7 @@ function renderChatList() {
     if (chat.type !== 'saved' && chat.lastMessage?.sender) uidsToHydrate.push(chat.lastMessage.sender);
   }
 
+  Emoji.parse(dom.chatList);
   renderFoldersBar();
   hydrateUsers(uidsToHydrate);
 }
@@ -2191,6 +2186,7 @@ function renderMainPanel() {
   const chat = state.chats.get(state.activeChatId) || null;
 
   dom.chatTitle.textContent = getChatTitle(chat);
+  Emoji.parse(dom.chatTitle);
   applyChatAvatar(dom.chatHeaderAvatar, state.activeChatId, chat);
   updateChatStatus();
 
@@ -2198,6 +2194,7 @@ function renderMainPanel() {
   const canPost = Chat.canPostToChat(chat, state.user?.uid);
   dom.messageInput.disabled = !canPost;
   dom.sendBtn.disabled = !canPost;
+  dom.emojiBtn.disabled = !canPost;
   dom.pollBtn.disabled = !canPost;
   dom.messageInput.placeholder = canPost ? 'Сообщение...' : 'Просмотр';
   dom.channelLocked.classList.toggle('hidden', !(chat?.type === 'channel' && !canPost));
@@ -2244,6 +2241,8 @@ function renderChannelPreview() {
 
   dom.previewDescription.replaceChildren(...buildMessageText(chat?.description || '').childNodes);
   dom.previewDescription.classList.toggle('hidden', !chat?.description);
+  Emoji.parse(dom.previewTitle);
+  Emoji.parse(dom.previewDescription);
 
   if (member) dom.previewSubscribe.textContent = isGroup ? 'Открыть группу' : 'Открыть канал';
   else if (isOpenChannel) dom.previewSubscribe.textContent = 'Читать канал';
@@ -2273,6 +2272,7 @@ function renderMessages() {
     container.append(createEl('p', 'messages-empty', state.messages.length
       ? 'Сообщения скрыты'
       : 'В этом чате пока нет сообщений'));
+    Emoji.parse(container);
     renderPinBar();
     return;
   }
@@ -2317,6 +2317,7 @@ function renderMessages() {
     container.scrollTop = prevScrollTop;
   }
 
+  Emoji.parse(container);
   setupViewsObserver(chat, visible);
   renderPinBar();
   hydrateUsers(senderUids);
@@ -2665,6 +2666,18 @@ function buildMessageElement(message, showSender) {
       });
       row.append(pill);
     }
+
+    // Та же кнопка, что и в меню: открывает общий пикер в режиме реакции.
+    const add = createEl('button', 'reaction-pill reaction-add');
+    add.type = 'button';
+    add.title = 'Добавить реакцию';
+    add.setAttribute('aria-label', 'Добавить реакцию');
+    add.append(createIcon('plus', 'reaction-add-icon'));
+    add.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openReactionPicker(message, add);
+    });
+    row.append(add);
     bubble.append(row);
   }
 
@@ -2744,6 +2757,7 @@ function renderPinBar() {
   dom.pinBarTitle.textContent = pin.sender ? getSenderName(pin.sender) : 'Закреплённое сообщение';
   dom.pinBarText.textContent = pin.text || 'Без текста';
   dom.pinBarCount.textContent = `${state.pinIndex + 1}/${pins.length}`;
+  Emoji.parse(dom.pinBar);
 
   hydrateUsers(pins.map((item) => item.sender).filter(Boolean));
 }
@@ -3712,6 +3726,32 @@ async function handleSendMessage(event) {
   dom.messageInput.focus();
 }
 
+/** Вставить эмодзи в поле ввода в позицию курсора. */
+function insertEmojiIntoComposer(emoji) {
+  const input = dom.messageInput;
+  if (!input || input.disabled || !state.activeChatId) return;
+
+  const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+  const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+  input.setRangeText(emoji, start, end, 'end');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // На мобильных не возвращаем фокус: иначе сразу выедет клавиатура
+  // и закроет панель эмодзи. На ПК — наоборот, продолжаем печатать.
+  if (!window.matchMedia?.('(max-width: 768px)').matches) {
+    input.focus({ preventScroll: true });
+  }
+}
+
+/** Выбор из общего пикера: вставка в сообщение или реакция. */
+function handleEmojiSelect(emoji, context) {
+  if (context.mode === 'reaction') {
+    if (context.message) toggleReaction(context.message, emoji);
+    return;
+  }
+  insertEmojiIntoComposer(emoji);
+}
+
 /* ============================================================
  *  Меню сообщения: реакции, ответ, правка, пересылка, закреп
  * ============================================================ */
@@ -3744,15 +3784,13 @@ function openMsgMenu(message, x, y) {
   stopTextSelection();
   state.msgMenuMessage = message;
   state.msgMenuPos = { x, y };
-  state.msgMenuExpanded = false;
 
   renderMsgMenuReactions(message);
   renderMsgMenuActions(message);
 
-  dom.msgMenuAll.classList.add('hidden');
-  dom.msgMenuMore.classList.remove('expanded');
   dom.msgMenuOverlay.classList.remove('hidden');
   positionMsgMenu();
+  Emoji.parse(dom.msgMenu);
 }
 
 /** Закрыть меню сообщения. */
@@ -3773,13 +3811,21 @@ function buildReactionButton(message, emoji) {
   return btn;
 }
 
-/** Ряд из шести быстрых реакций + полный набор под стрелочкой. */
+/** Ряд из шести быстрых реакций; полный набор открывает общий пикер. */
 function renderMsgMenuReactions(message) {
   dom.msgMenuReactions.innerHTML = '';
   REACTIONS_TOP.forEach((emoji) => dom.msgMenuReactions.append(buildReactionButton(message, emoji)));
+}
 
-  dom.msgMenuAll.innerHTML = '';
-  REACTIONS_ALL.forEach((emoji) => dom.msgMenuAll.append(buildReactionButton(message, emoji)));
+/** Открыть общий пикер эмодзи в режиме выбора реакции. */
+function openReactionPicker(message, anchor) {
+  if (!message) return;
+  Emoji.openPicker({
+    mode: 'reaction',
+    anchor,
+    message,
+    selected: Object.keys(message.reactions || {}),
+  });
 }
 
 /** Действия в меню сообщения: ответ, правка, копия, выделение, пересылка, закреп, удаление. */
@@ -6228,6 +6274,7 @@ function openCommentsModal(message) {
   dom.commentsPost.append(createEl('span', 'comments-post-author', getSenderName(message.sender)));
   dom.commentsPost.append(createEl('span', 'comments-post-text',
     message.poll ? '📊 ' + (message.poll.question || '') : (message.text || '')));
+  Emoji.parse(dom.commentsPost);
 
   dom.commentsInput.value = '';
   dom.commentsList.innerHTML = '';
@@ -6302,6 +6349,7 @@ function renderComments(map) {
     senderUids.push(comment.sender);
   }
 
+  Emoji.parse(dom.commentsList);
   hydrateUsers(senderUids);
   dom.commentsList.scrollTop = dom.commentsList.scrollHeight;
 }
@@ -7214,6 +7262,17 @@ document.addEventListener('keydown', (event) => {
 });
 
 // --- Панель чата ---
+Emoji.init({ onSelect: handleEmojiSelect });
+
+dom.emojiBtn.addEventListener('click', () => {
+  Emoji.openPicker({
+    mode: 'insert',
+    anchor: dom.emojiBtn,
+    trigger: dom.emojiBtn,
+    focusSource: dom.messageInput,
+  });
+});
+
 dom.messageForm.addEventListener('submit', handleSendMessage);
 
 // Поле ввода: Enter отправляет (на тач-устройствах — перенос строки), Shift+Enter — перенос.
@@ -7295,10 +7354,11 @@ dom.msgMenuOverlay.addEventListener('click', (event) => {
 });
 dom.msgMenu.addEventListener('contextmenu', (event) => event.preventDefault());
 dom.msgMenuMore.addEventListener('click', () => {
-  state.msgMenuExpanded = !state.msgMenuExpanded;
-  dom.msgMenuAll.classList.toggle('hidden', !state.msgMenuExpanded);
-  dom.msgMenuMore.classList.toggle('expanded', state.msgMenuExpanded);
-  positionMsgMenu();
+  const message = state.msgMenuMessage;
+  if (!message) return;
+  const anchor = dom.msgMenuMore.getBoundingClientRect();
+  closeMsgMenu();
+  openReactionPicker(message, anchor);
 });
 
 // Режим выделения текста: клик вне выбранного сообщения выключает его.

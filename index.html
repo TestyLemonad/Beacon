@@ -17,7 +17,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=47" />
+  <link rel="stylesheet" href="styles.css?v=55" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -325,6 +325,16 @@
             </svg>
           </button>
           <textarea id="message-input" rows="1" placeholder="Сообщение..." autocomplete="off"></textarea>
+          <button id="emoji-btn" class="composer-icon-btn" type="button" title="Эмодзи" aria-label="Эмодзи"
+                  aria-expanded="false" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8.2 14.1a4.6 4.6 0 0 0 7.6 0" />
+              <line x1="9" y1="9.2" x2="9.01" y2="9.2" />
+              <line x1="15" y1="9.2" x2="15.01" y2="9.2" />
+            </svg>
+          </button>
           <button id="send-btn" class="send-btn" type="submit" title="Отправить" aria-label="Отправить">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
               <path fill="currentColor" d="M22 2 2 9 10.5 12.8z" />
@@ -667,7 +677,6 @@
           </svg>
         </button>
       </div>
-      <div id="msg-menu-all" class="msg-menu-all hidden"></div>
       <div id="msg-menu-actions" class="msg-menu-actions"></div>
     </div>
   </div>
@@ -1169,10 +1178,37 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       Пикер эмодзи: общий для поля ввода и для реакций.
+       На ПК открывается поповером, на мобильных — панелью снизу.
+       ============================================================ -->
+  <div id="emoji-picker-overlay" class="emoji-picker-overlay hidden"></div>
+  <div id="emoji-picker" class="emoji-picker hidden" role="dialog" aria-label="Выбор эмодзи">
+    <div class="emoji-picker-handle" aria-hidden="true"></div>
+    <div class="emoji-picker-head">
+      <span id="emoji-picker-caption" class="emoji-picker-caption hidden"></span>
+      <div class="emoji-picker-search-wrap">
+        <input id="emoji-picker-search" class="emoji-picker-search" type="search"
+               placeholder="Поиск эмодзи" autocomplete="off" spellcheck="false" />
+        <button id="emoji-picker-clear" class="emoji-picker-clear hidden" type="button"
+                title="Очистить" aria-label="Очистить">×</button>
+      </div>
+      <button id="emoji-picker-close" class="emoji-picker-close" type="button"
+              title="Закрыть" aria-label="Закрыть">×</button>
+    </div>
+    <div id="emoji-picker-cats" class="emoji-picker-cats" role="tablist" aria-label="Категории эмодзи"></div>
+    <div id="emoji-picker-body" class="emoji-picker-body"></div>
+    <p id="emoji-picker-empty" class="emoji-picker-empty hidden"></p>
+  </div>
+
   <!-- Всплывающие уведомления -->
   <div id="toast" class="toast hidden"></div>
 
+  <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
+       чтобы window.twemoji был готов к первому рендеру. -->
+  <script src="vendor/twemoji.min.js?v=55" defer></script>
+
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=47"></script>
+  <script type="module" src="app.js?v=55"></script>
 </body>
 </html>
