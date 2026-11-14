@@ -10,11 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=57';
-import * as Chat from './services/chat.js?v=57';
-import * as Sessions from './services/sessions.js?v=57';
-import * as Invites from './services/invites.js?v=57';
-import * as Emoji from './emoji.js?v=57';
+import * as Auth from './services/auth.js?v=59';
+import * as Chat from './services/chat.js?v=59';
+import * as Sessions from './services/sessions.js?v=59';
+import * as Invites from './services/invites.js?v=59';
+import * as Emoji from './emoji.js?v=59';
 
 /* ============================================================
  *  DOM
@@ -23,6 +23,11 @@ import * as Emoji from './emoji.js?v=57';
 const $ = (id) => document.getElementById(id);
 
 const dom = {
+  // Экран загрузки: виден, пока Firebase восстанавливает сессию
+  bootScreen: $('boot-screen'),
+  bootStatus: $('boot-status'),
+  bootLogoutBtn: $('boot-logout-btn'),
+
   // Экран авторизации
   authScreen: $('auth-screen'),
   authForm: $('auth-form'),
@@ -3192,6 +3197,47 @@ function showAuthScreen() {
   dom.authPassword.value = '';
   hideAuthError();
 }
+
+/**
+ * Убрать экран загрузки: нужный экран (вход, онбординг или мессенджер)
+ * уже показан. Повторные вызовы безопасны.
+ */
+function hideBootScreen() {
+  if (!dom.bootScreen || dom.bootScreen.classList.contains('hidden')) return;
+  dom.bootScreen.classList.add('hidden');
+}
+
+/**
+ * Выход прямо с экрана загрузки: не ждём восстановления сессии, если вход
+ * завис или нужно войти под другим аккаунтом. Пока модуль не загрузился,
+ * кнопка работает по запасному пути из index.html (чистит сохранённый вход).
+ */
+window.beaconBootLogout = async () => {
+  if (!dom.bootLogoutBtn) return;
+  const prevStatus = dom.bootStatus ? dom.bootStatus.textContent : '';
+  dom.bootLogoutBtn.disabled = true;
+  if (dom.bootStatus) dom.bootStatus.textContent = 'Выходим…';
+
+  try {
+    await logoutCurrentUser();
+  } catch (error) {
+    console.error('Не удалось выйти из аккаунта:', error);
+  }
+
+  // При успешном выходе экран загрузки закроет маршрут авторизации.
+  if (dom.bootScreen && !dom.bootScreen.classList.contains('hidden')) {
+    // Входа могло уже не быть (устаревший ключ в хранилище) — тогда просто
+    // открываем форму входа, иначе она так и останется за экраном загрузки.
+    if (!state.user) {
+      showAuthScreen();
+      hideBootScreen();
+      return;
+    }
+    dom.bootLogoutBtn.disabled = false;
+    if (dom.bootStatus) dom.bootStatus.textContent = prevStatus;
+    toast('Не удалось выйти из аккаунта', 'error');
+  }
+};
 
 /** Экран требования инвайт-кода: аккаунт создан, но профиль ещё не разрешён. */
 function showInviteGateScreen(user) {
@@ -7684,7 +7730,12 @@ function enqueueRoute(user) {
   // параллельных разбора профиля могут дважды применить инвайт-код.
   routeQueue = routeQueue
     .then(() => handleAuthChange(user))
-    .catch((error) => console.error('Ошибка маршрута экранов:', error));
+    .catch((error) => {
+      console.error('Ошибка маршрута экранов:', error);
+      // Не оставляем пустой экран: показываем вход, как было до экрана загрузки.
+      showAuthScreen();
+    })
+    .then(() => hideBootScreen());
   return routeQueue;
 }
 
@@ -7711,20 +7762,15 @@ async function handleAuthChange(user) {
 async function routeSignedInUser(user) {
   state.user = user;
 
-  // Удалённый аккаунт: не создаём сессию, не восстанавливаем email и не
-  // запускаем онбординг. Вход закрыт, показываем экран удаления.
-  const deleted = await Chat.getDeletedAccount(user.uid).catch((error) => {
+  // Удаление и бан — независимые узлы: читаем их параллельно, не теряя RTT.
+  const deletedPromise = Chat.getDeletedAccount(user.uid).catch((error) => {
     console.warn('Не удалось проверить удаление аккаунта:', error);
     return false;
   });
-  if (state.user !== user) return;
-  if (deleted) {
-    state.myDeleted = true;
-    state.myBan = await Chat.getBan(user.uid).catch(() => null);
-    showDeletedScreen();
-    return;
-  }
-  state.myDeleted = false;
+  const banPromise = Chat.getBan(user.uid).catch((error) => {
+    console.warn('Не удалось проверить бан:', error);
+    return null;
+  });
 
   // Реестр активных сессий: записываем это устройство и слушаем отзыв.
   if (sessionStartedForUid !== user.uid) {
@@ -7738,11 +7784,17 @@ async function routeSignedInUser(user) {
     });
   }
 
-  // Бан проверяем параллельно с профилем.
-  const banPromise = Chat.getBan(user.uid).catch((error) => {
-    console.warn('Не удалось проверить бан:', error);
-    return null;
-  });
+  // Удалённый аккаунт: не создаём сессию, не восстанавливаем email и не
+  // запускаем онбординг. Вход закрыт, показываем экран удаления.
+  const deleted = await deletedPromise;
+  if (state.user !== user) return;
+  if (deleted) {
+    state.myDeleted = true;
+    state.myBan = await banPromise;
+    showDeletedScreen();
+    return;
+  }
+  state.myDeleted = false;
 
   // ensureUserRecord читает /users/$uid и создаёт базовый узел только тем,
   // у кого есть подтверждение инвайта (/user_invites/$uid).

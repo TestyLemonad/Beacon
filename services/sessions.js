@@ -7,13 +7,15 @@
  * отзыв токенов возможен только через Admin SDK / Cloud Functions.
  */
 import { ref, get, set, update, remove, onValue } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=57';
+import { db } from '../firebase-config.js?v=59';
 
 const SESSION_KEY = 'beacon-session-id';
 const HEARTBEAT_MS = 60_000;
 
 /** Текущая зарегистрированная сессия. */
 let active = null;
+/** Сессия, запись которой ещё не подтверждена (выход мог прийти в этот момент). */
+let pending = null;
 /** Поколение реестра: отменяет незавершённый startSession после выхода. */
 let generation = 0;
 
@@ -97,6 +99,9 @@ export async function startSession(uid, onRevoked = null) {
 
   const sessionId = readStoredSessionId() || makeSessionId();
   storeSessionId(sessionId);
+  // Если пользователь выйдет, пока идёт запись, stopSession удалит узел
+  // по этому указателю: active ещё не заполнен.
+  pending = { uid, sessionId };
 
   const sessionRef = ref(db, `sessions/${uid}/${sessionId}`);
   let existing = null;
@@ -104,13 +109,18 @@ export async function startSession(uid, onRevoked = null) {
     existing = (await get(sessionRef)).val();
   } catch (error) {
     console.warn('Не удалось прочитать запись сессии:', error);
+    pending = null;
     throw error;
   }
-  if (token !== generation) return null;
+  if (token !== generation) {
+    pending = null;
+    return null;
+  }
 
   if (existing?.revokedAt) {
     // Сессию завершили, пока это устройство было офлайн. Не воскрешаем её:
     // приложение выйдет из аккаунта, а запись удалится при выходе.
+    pending = null;
     active = {
       uid,
       sessionId,
@@ -137,9 +147,11 @@ export async function startSession(uid, onRevoked = null) {
   if (token !== generation) {
     // Пользователь вышел или начал новую сессию, пока шла запись.
     // Не трогаем узел: более новая сессия могла уже записать свои данные.
+    pending = null;
     return null;
   }
 
+  pending = null;
   active = {
     uid,
     sessionId,
@@ -186,8 +198,20 @@ export async function startSession(uid, onRevoked = null) {
 export async function stopSession({ removeRecord = true } = {}) {
   generation += 1;
   const session = active;
+  const pendingSession = pending;
   active = null;
-  if (!session) return;
+  pending = null;
+
+  if (!session) {
+    // Выход пришёл, пока startSession ещё писал узел: убираем запись сами,
+    // иначе в списке сессий останется «мёртвое» устройство.
+    if (removeRecord && pendingSession?.uid && pendingSession.sessionId) {
+      remove(ref(db, `sessions/${pendingSession.uid}/${pendingSession.sessionId}`)).catch((error) => {
+        console.warn('Не удалось удалить запись сессии:', error);
+      });
+    }
+    return;
+  }
 
   if (session.heartbeat) window.clearInterval(session.heartbeat);
   if (session.onVisible) document.removeEventListener('visibilitychange', session.onVisible);

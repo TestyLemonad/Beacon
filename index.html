@@ -19,7 +19,7 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=57" />
+  <link rel="stylesheet" href="styles.css?v=59" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -32,11 +32,158 @@
 </head>
 <body>
   <!-- ============================================================
+       Экран загрузки: пока Firebase восстанавливает сессию, форма
+       входа не мелькает. Скрывается из app.js, когда экран выбран.
+       ============================================================ -->
+  <div id="boot-screen" class="boot-screen">
+    <img src="icon.png" alt="Beacon" class="auth-logo" />
+    <h1 class="auth-title">Beacon</h1>
+    <p id="boot-status" class="boot-status" role="status" aria-live="polite">Загружаем…</p>
+    <div class="boot-spinner" aria-hidden="true"></div>
+    <button id="boot-logout-btn" type="button" class="link-btn hidden">Выйти из аккаунта</button>
+  </div>
+  <script>
+    // Если вход сохранён, сразу говорим, что восстанавливаем сессию, а не «входите заново».
+    // Старые версии Firebase хранят вход в localStorage, текущие — в IndexedDB.
+    (function () {
+      var bootScreen = document.getElementById('boot-screen');
+      var bootStatus = document.getElementById('boot-status');
+      var bootLogoutBtn = document.getElementById('boot-logout-btn');
+      var restoring = false;
+
+      function markRestoring() {
+        if (restoring) return;
+        restoring = true;
+        bootStatus.textContent = 'Восстанавливаем сессию…';
+        // Выход доступен, только если есть что восстанавливать.
+        bootLogoutBtn.classList.remove('hidden');
+      }
+
+      // Запасной выход, если модули так и не загрузились: стираем сохранённый
+      // вход так же, как это делает signOut, и перезагружаем страницу.
+      function clearSavedAuthAndReload() {
+        bootStatus.textContent = 'Выходим…';
+        bootLogoutBtn.disabled = true;
+
+        function finish() { window.location.reload(); }
+
+        var done = false;
+        function once() { if (!done) { done = true; finish(); } }
+
+        try {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var key = String(localStorage.key(i));
+            if (key.indexOf('firebase:authUser:') === 0) localStorage.removeItem(key);
+          }
+        } catch (e) { /* приватный режим */ }
+
+        if (!window.indexedDB || !indexedDB.databases) { once(); return; }
+        indexedDB.databases().then(function (databases) {
+          var exists = (databases || []).some(function (db) {
+            return db && db.name === 'firebaseLocalStorageDb';
+          });
+          if (!exists) { once(); return; }
+
+          var request = indexedDB.open('firebaseLocalStorageDb');
+          request.onerror = once;
+          request.onupgradeneeded = function () { request.transaction.abort(); once(); };
+          request.onsuccess = function () {
+            var db = request.result;
+            if (!db.objectStoreNames.contains('firebaseLocalStorage')) {
+              db.close();
+              once();
+              return;
+            }
+            var store = db.transaction('firebaseLocalStorage', 'readwrite')
+              .objectStore('firebaseLocalStorage');
+            var keys = store.getAllKeys();
+            keys.onsuccess = function () {
+              var removed = 0;
+              keys.result.forEach(function (key) {
+                if (String(key).indexOf('firebase:authUser:') === 0) {
+                  store.delete(key);
+                  removed++;
+                }
+              });
+              db.close();
+              // Даём транзакции завершиться, затем перезагружаем.
+              window.setTimeout(once, removed ? 150 : 0);
+            };
+            keys.onerror = function () { db.close(); once(); };
+          };
+        }).catch(once);
+
+        // Не застреваем на экране выхода, даже если IndexedDB не отвечает.
+        window.setTimeout(once, 3000);
+      }
+
+      bootLogoutBtn.addEventListener('click', function () {
+        // app.js подменяет это на настоящий signOut, как только загрузится.
+        if (typeof window.beaconBootLogout === 'function') {
+          window.beaconBootLogout();
+          return;
+        }
+        clearSavedAuthAndReload();
+      });
+
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          if (String(localStorage.key(i)).indexOf('firebase:authUser:') === 0) {
+            markRestoring();
+            break;
+          }
+        }
+      } catch (e) { /* приватный режим — останется «Загружаем…» */ }
+
+      // IndexedDB открываем только если база уже существует: создавать её
+      // раньше Firebase нельзя, иначе SDK не создаст своё хранилище.
+      if (!restoring && window.indexedDB && indexedDB.databases) {
+        indexedDB.databases().then(function (databases) {
+          var exists = (databases || []).some(function (db) {
+            return db && db.name === 'firebaseLocalStorageDb';
+          });
+          if (!exists) return;
+
+          var request = indexedDB.open('firebaseLocalStorageDb');
+          request.onerror = function () {};
+          request.onupgradeneeded = function () { request.transaction.abort(); };
+          request.onsuccess = function () {
+            var db = request.result;
+            if (!db.objectStoreNames.contains('firebaseLocalStorage')) {
+              db.close();
+              return;
+            }
+            var keys = db.transaction('firebaseLocalStorage', 'readonly')
+              .objectStore('firebaseLocalStorage').getAllKeys();
+            keys.onsuccess = function () {
+              db.close();
+              for (var j = 0; j < keys.result.length; j++) {
+                if (String(keys.result[j]).indexOf('firebase:authUser:') === 0) {
+                  markRestoring();
+                  return;
+                }
+              }
+            };
+            keys.onerror = function () { db.close(); };
+          };
+        }).catch(function () {});
+      }
+
+      // Страховка: если модули так и не загрузились, не держим пустой экран вечно.
+      window.setTimeout(function () {
+        if (bootScreen && !bootScreen.classList.contains('hidden')) {
+          bootStatus.textContent = 'Загрузка затянулась. Проверьте соединение и обновите страницу.';
+        }
+      }, 20000);
+    })();
+  </script>
+
+  <!-- ============================================================
        Экран авторизации
        Google используется только для почты и вместо пароля:
        все данные профиля юзер заполняет после входа.
        ============================================================ -->
-  <div id="auth-screen" class="screen auth-screen">
+  <div id="auth-screen" class="screen auth-screen hidden">
     <div class="auth-card">
       <img src="icon.png" alt="Beacon" class="auth-logo" />
       <h1 class="auth-title">Beacon</h1>
@@ -1208,9 +1355,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=57" defer></script>
+  <script src="vendor/twemoji.min.js?v=59" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=57"></script>
+  <script type="module" src="app.js?v=59"></script>
 </body>
 </html>
