@@ -10,11 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=55';
-import * as Chat from './services/chat.js?v=55';
-import * as Sessions from './services/sessions.js?v=55';
-import * as Invites from './services/invites.js?v=55';
-import * as Emoji from './emoji.js?v=55';
+import * as Auth from './services/auth.js?v=57';
+import * as Chat from './services/chat.js?v=57';
+import * as Sessions from './services/sessions.js?v=57';
+import * as Invites from './services/invites.js?v=57';
+import * as Emoji from './emoji.js?v=57';
 
 /* ============================================================
  *  DOM
@@ -411,6 +411,8 @@ const state = {
   myChatIds: new Set(),     // id чатов из /user_chats/$uid (подписки)
   activeChatId: null,       // id открытого чата
   messages: [],             // сообщения активного чата (отсортированы)
+  messageNodes: new Map(),  // ключ узла ленты -> { el, sig }: переиспользование DOM
+  messageNodesChatId: null, // чат, для которого построены узлы ленты
   stickToBottom: true,      // держать ли скролл внизу
   unreadDivider: null,      // { chatId, ts } — граница «новых сообщений» при входе в чат
   dividerScrollPending: false, // прокрутить к разделителю после первой отрисовки
@@ -508,6 +510,11 @@ let typingTimer = null;             // таймер «печатает…» (с�
 let typingLastSent = 0;             // когда последний раз писали «печатает…» (unix-секунды)
 let typingTick = null;              // интервал пересчёта строки «печатает…»
 let messagesObserver = null;        // IntersectionObserver просмотров постов
+let messagesObserverChatId = null;  // чат, для которого создан этот наблюдатель
+const viewsPending = new Map();     // msgId -> таймер «пост пробыл на виду»
+let chatListSignature = null;       // подпись состояния списка чатов (пропуск лишних перерисовок)
+let chatListRenderHandle = 0;       // запланированная перерисовка списка (batch подписок RTDB)
+let composerMeasure = { value: null, width: -1 }; // кэш замеров поля ввода
 let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
 let accountDeletionInProgress = false; // удаляем аккаунт: не реагируем на отзыв сессии
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
@@ -1006,9 +1013,10 @@ async function hydrateUsers(uids) {
   await Promise.allSettled(missing.map((uid) => Chat.getUserProfile(uid)));
   if (!state.user) return; // пользователь успел выйти, пока грузили
 
-  renderChatList();
-  if (state.search.query) renderSearchResults();
-  renderMainPanel();
+  // Живые подписки на профили уже прислали новые данные и запросили
+  // отложенную перерисовку. Второй полный рендер здесь не нужен: раньше он
+  // дублировал список чатов и ленту сообщений на каждую догрузку профилей.
+  scheduleProfileRefresh();
 }
 
 /* ============================================================
@@ -1205,10 +1213,52 @@ function buildChatListItem(tag, chatId, chat) {
   return item;
 }
 
+/**
+ * Подпись состояния списка чатов. Пока она не меняется, перерисовка не нужна:
+ * onValue приходит на каждое новое сообщение в любом чате и раньше заставлял
+ * заново строить весь список вместе с обработчиками и аватарками.
+ */
+function buildChatListSignature(chats, showPromo) {
+  const parts = [
+    state.activeChatId || '',
+    state.activeFolder,
+    showPromo ? '1' : '0',
+    showPromo ? `${state.devPromoChat?.title || ''}\u0003${state.devPromoChat?.description || ''}` : '',
+    chats.length ? '' : String(state.myChatIds.size),
+  ];
+
+  for (const [chatId, chat] of chats) {
+    const peerUid = chat?.type === 'private' ? getPrivatePeerUid(chat) : null;
+    const peerAvatar = peerUid ? Chat.getCachedUserProfile(peerUid)?.avatar : null;
+    parts.push([
+      chatId,
+      chat?.type || '',
+      getChatTitle(chat),
+      getChatPreview(chat),
+      chat?.lastMessage?.timestamp || 0,
+      isChatUnread(chatId, chat) ? 1 : 0,
+      getChatMeta(chatId).pinnedAt ? 1 : 0,
+      chat?.avatar ? JSON.stringify(chat.avatar) : '',
+      peerAvatar ? JSON.stringify(peerAvatar) : '',
+    ].join('\u0002'));
+  }
+
+  parts.push([...state.folders.entries()]
+    .sort((a, b) => (Number(a[1]?.createdAt) || 0) - (Number(b[1]?.createdAt) || 0))
+    .map(([folderId, folder]) => `${folderId}:${folder?.name || ''}`)
+    .join(','));
+
+  return parts.join('\u0004');
+}
+
 /** Отрисовать список диалогов (архив в него не попадает). */
-function renderChatList() {
+function renderChatList(force = false) {
   const chats = visibleChats();
   const showPromo = isDevPromoVisible();
+  const signature = buildChatListSignature(chats, showPromo);
+  if (!force && signature === chatListSignature) return;
+  chatListSignature = signature;
+
   dom.chatList.innerHTML = '';
   dom.chatListEmpty.classList.toggle('hidden', chats.length > 0 || showPromo);
   dom.chatListEmpty.innerHTML = state.activeFolder !== 'all' && state.myChatIds.size
@@ -1230,6 +1280,19 @@ function renderChatList() {
   Emoji.parse(dom.chatList);
   renderFoldersBar();
   hydrateUsers(uidsToHydrate);
+}
+
+/**
+ * Отложенная перерисовка списка чатов. RTDB присылает обновления по каждому
+ * чату отдельными событиями (особенно при входе) — без склейки список
+ * пересобирался десятки раз подряд.
+ */
+function scheduleChatListRender() {
+  if (chatListRenderHandle) return;
+  chatListRenderHandle = requestAnimationFrame(() => {
+    chatListRenderHandle = 0;
+    renderChatList();
+  });
 }
 
 /** Полоса папок под поиском: «Все чаты» + пользовательские папки. */
@@ -1899,6 +1962,12 @@ function clearChatScoped() {
   state.subscriptions.chatScopedId = null;
   state.subscriptions.messages?.();
   state.subscriptions.messages = null;
+  state.messageNodes = new Map();
+  state.messageNodesChatId = null;
+  messagesObserver?.disconnect();
+  messagesObserver = null;
+  messagesObserverChatId = null;
+  viewsPending.clear();
   state.typingMap = new Map();
   state.peerReadTs = 0;
   state.pollVotes = new Map();
@@ -2250,6 +2319,59 @@ function renderChannelPreview() {
   dom.previewSubscribe.disabled = !chat;
 }
 
+/**
+ * Подпись сообщения для ленты. Пока подпись не меняется, DOM-узел
+ * переиспользуется: реакции, просмотры или чужое прочтение больше не
+ * пересобирают всю историю чата.
+ */
+function messageRenderSignature(message, chat, showSender) {
+  const parts = [
+    message.id,
+    Number(message.timestamp) || 0,
+    message.sender || '',
+    message.text || '',
+    message.editedAt || '',
+    showSender ? getSenderName(message.sender) : '',
+    chat?.pinned?.[message.id] ? '1' : '0',
+    message.reactions ? JSON.stringify(message.reactions) : '',
+    message.replyTo ? JSON.stringify(message.replyTo) + getSenderName(message.replyTo.sender) : '',
+    message.savedFrom ? JSON.stringify(message.savedFrom) : '',
+    message.forwardedFrom ? JSON.stringify(message.forwardedFrom) : '',
+    message.poll ? JSON.stringify(message.poll) : '',
+  ];
+  if (message.poll) {
+    // У опроса от результата зависят проценты, а от членства — доступность кнопок.
+    parts.push(JSON.stringify(state.pollVotes.get(message.id) || null));
+    parts.push(Chat.canVoteInChat(chat, state.user?.uid, state.myChatIds.has(state.activeChatId)) ? '1' : '0');
+  }
+  if (chat?.type === 'private') {
+    parts.push(Number(message.timestamp) <= state.peerReadTs ? 'read' : 'sent');
+  }
+  if (chat?.type === 'channel') {
+    parts.push(String(Object.keys(state.chatViews.get(message.id) || {}).length));
+    parts.push(String(Object.keys(state.chatComments.get(message.id) || {}).length));
+  }
+  return parts.join('\u0001');
+}
+
+/** Привести узлы ленты к нужному порядку, лишние убрать из DOM. */
+function syncMessageList(container, ordered) {
+  const wanted = new Set(ordered);
+  for (let index = container.childNodes.length - 1; index >= 0; index -= 1) {
+    const child = container.childNodes[index];
+    if (!wanted.has(child)) child.remove();
+  }
+
+  let ref = container.firstChild;
+  for (const el of ordered) {
+    if (ref === el) {
+      ref = el.nextSibling;
+      continue;
+    }
+    container.insertBefore(el, ref);
+  }
+}
+
 /** Перерисовать область сообщений активного чата. */
 function renderMessages() {
   const chat = state.chats.get(state.activeChatId) || null;
@@ -2261,40 +2383,69 @@ function renderMessages() {
     ? state.unreadDivider
     : null;
 
-  container.innerHTML = '';
+  // Узлы другого чата переиспользовать нельзя — это другая лента.
+  if (state.messageNodesChatId !== state.activeChatId) {
+    state.messageNodes = new Map();
+    state.messageNodesChatId = state.activeChatId;
+  }
+
+  const previousNodes = state.messageNodes;
+  const nextNodes = new Map();
+  const ordered = [];
+  const created = [];
 
   // Не показываем сообщения из чёрного списка и «удалённые у меня».
   const visible = state.messages.filter((message) => (
     !state.blocked.has(message.sender)
     && !state.localDeleted.has(`${state.activeChatId}/${message.id}`)
   ));
-  if (!visible.length) {
-    container.append(createEl('p', 'messages-empty', state.messages.length
-      ? 'Сообщения скрыты'
-      : 'В этом чате пока нет сообщений'));
-    Emoji.parse(container);
-    renderPinBar();
-    return;
-  }
 
-  let lastDay = null;
-  const senderUids = [];
+  /** Взять готовый узел по ключу либо собрать новый. */
+  const pushNode = (key, signature, build) => {
+    const previous = previousNodes.get(key);
+    if (previous && previous.sig === signature) {
+      nextNodes.set(key, previous);
+      ordered.push(previous.el);
+      return previous.el;
+    }
+    const el = build();
+    nextNodes.set(key, { el, sig: signature });
+    ordered.push(el);
+    created.push(el);
+    return el;
+  };
+
   let dividerEl = null;
 
-  for (const message of visible) {
-    const dayKey = new Date(message.timestamp * 1000).toDateString();
-    if (dayKey !== lastDay) {
-      container.append(createEl('div', 'message-day', formatDayLabel(message.timestamp)));
-      lastDay = dayKey;
+  if (!visible.length) {
+    const text = state.messages.length
+      ? 'Сообщения скрыты'
+      : 'В этом чате пока нет сообщений';
+    pushNode('empty', text, () => createEl('p', 'messages-empty', text));
+  } else {
+    let lastDay = null;
+
+    for (const message of visible) {
+      const dayKey = new Date(message.timestamp * 1000).toDateString();
+      if (dayKey !== lastDay) {
+        lastDay = dayKey;
+        const label = formatDayLabel(message.timestamp);
+        pushNode(`d:${dayKey}`, label, () => createEl('div', 'message-day', label));
+      }
+      // Линия «Новые сообщения» — перед первым сообщением после моего прочтения.
+      if (!dividerEl && divider && message.timestamp > divider.ts) {
+        dividerEl = pushNode('u', String(divider.ts), buildUnreadDivider);
+      }
+      pushNode(
+        `m:${message.id}`,
+        messageRenderSignature(message, chat, showSender),
+        () => buildMessageElement(message, showSender),
+      );
     }
-    // Линия «Новые сообщения» — перед первым сообщением после моего прочтения.
-    if (!dividerEl && divider && message.timestamp > divider.ts) {
-      dividerEl = buildUnreadDivider();
-      container.append(dividerEl);
-    }
-    container.append(buildMessageElement(message, showSender));
-    senderUids.push(message.sender);
   }
+
+  syncMessageList(container, ordered);
+  state.messageNodes = nextNodes;
 
   // При входе в чат с непрочитанными — прокручиваем к разделителю, а не вниз.
   // Синхронно: rAF в фоновой вкладке может не сработать.
@@ -2317,75 +2468,100 @@ function renderMessages() {
     container.scrollTop = prevScrollTop;
   }
 
-  Emoji.parse(container);
-  setupViewsObserver(chat, visible);
+  // Эмодзи разбираем только в новых узлах, а не во всей истории заново.
+  for (const el of created) Emoji.parse(el);
+
+  setupViewsObserver(chat, visible, created);
   renderPinBar();
-  hydrateUsers(senderUids);
+  hydrateUsers(visible.map((message) => message.sender));
 }
 
 /**
  * Просмотры постов канала: пост считается просмотренным,
  * если пробыл в зоне видимости ~700 мс (и это не моё сообщение).
+ * Наблюдатель живёт, пока открыт канал: обновление счётчиков просмотров
+ * не пересоздаёт его и не переподписывает всю ленту.
  */
-function setupViewsObserver(chat, visible) {
-  messagesObserver?.disconnect();
-  messagesObserver = null;
-  if (chat?.type !== 'channel') return;
+function setupViewsObserver(chat, visible, created = []) {
+  if (chat?.type !== 'channel') {
+    messagesObserver?.disconnect();
+    messagesObserver = null;
+    messagesObserverChatId = null;
+    viewsPending.clear();
+    return;
+  }
 
-  const pendingTimers = new Map();
-  messagesObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      const msgId = entry.target.dataset.msgId;
-      if (!msgId) continue;
+  const observePost = (message) => {
+    if (message.sender === state.user?.uid) return; // свои посты в статистику не идут
+    const node = state.messageNodes.get(`m:${message.id}`);
+    if (node?.el) messagesObserver.observe(node.el);
+  };
 
-      if (entry.isIntersecting) {
-        if (pendingTimers.has(msgId)) continue;
-        pendingTimers.set(msgId, window.setTimeout(() => {
-          pendingTimers.delete(msgId);
-          recordMessageView(msgId);
-        }, 700));
-      } else {
-        clearTimeout(pendingTimers.get(msgId));
-        pendingTimers.delete(msgId);
+  if (!messagesObserver || messagesObserverChatId !== state.activeChatId) {
+    messagesObserver?.disconnect();
+    viewsPending.clear();
+    messagesObserverChatId = state.activeChatId;
+    // Наблюдатель живёт дольше одного рендера: запоминаем канал, чтобы
+    // просмотр не улетел в чат, открытый уже после переключения.
+    const observerChatId = messagesObserverChatId;
+    messagesObserver = new IntersectionObserver((entries) => {
+      if (state.activeChatId !== observerChatId) return;
+      for (const entry of entries) {
+        const msgId = entry.target.dataset.msgId;
+        if (!msgId) continue;
+
+        if (entry.isIntersecting) {
+          if (viewsPending.has(msgId)) continue;
+          viewsPending.set(msgId, window.setTimeout(() => {
+            viewsPending.delete(msgId);
+            recordMessageView(msgId, observerChatId);
+          }, 700));
+        } else {
+          clearTimeout(viewsPending.get(msgId));
+          viewsPending.delete(msgId);
+        }
       }
-    }
-  }, { threshold: 0.6 });
+    }, { threshold: 0.6 });
 
-  for (const message of visible) {
-    if (message.sender === state.user?.uid) continue; // свои посты в статистику не идут
-    const el = findMessageElement(message.id);
-    if (el) messagesObserver.observe(el);
+    for (const message of visible) observePost(message);
+  } else {
+    // Тот же канал: подписываем только новые посты.
+    for (const el of created) {
+      if (el.dataset?.msgId && !el.classList.contains('own')) messagesObserver.observe(el);
+    }
   }
 
   // Страховка: если IntersectionObserver не доставил событие (фоновая вкладка,
-  // ленивый рендер), учитываем посты, которые уже попали в видимую зону ленты.
+  // ленивый рендер), учитываем только что добавленные посты в видимой зоне.
+  if (!created.length) return;
+  const fallbackChatId = state.activeChatId;
   const containerRect = dom.messages.getBoundingClientRect();
-  for (const message of visible) {
-    if (message.sender === state.user?.uid) continue;
-    if (pendingTimers.has(message.id)) continue;
-    const el = findMessageElement(message.id);
-    if (!el) continue;
+  for (const el of created) {
+    const msgId = el.dataset?.msgId;
+    if (!msgId || el.classList.contains('own') || viewsPending.has(msgId)) continue;
     const rect = el.getBoundingClientRect();
     if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) continue;
 
-    pendingTimers.set(message.id, window.setTimeout(() => {
-      pendingTimers.delete(message.id);
-      const nowEl = findMessageElement(message.id);
+    viewsPending.set(msgId, window.setTimeout(() => {
+      viewsPending.delete(msgId);
+      if (state.activeChatId !== fallbackChatId) return; // чат уже переключили
+      const nowEl = findMessageElement(msgId);
       if (!nowEl) return;
       const nowRect = nowEl.getBoundingClientRect();
       const nowContainer = dom.messages.getBoundingClientRect();
       // Пост всё ещё в ленте на виду — засчитываем просмотр.
       if (nowRect.bottom > nowContainer.top && nowRect.top < nowContainer.bottom) {
-        recordMessageView(message.id);
+        recordMessageView(msgId, fallbackChatId);
       }
     }, 700));
   }
 }
 
 /** Учесть уникальный просмотр поста (один раз за сессию). */
-function recordMessageView(msgId) {
-  const chatId = state.activeChatId;
-  if (!chatId || !state.user) return;
+function recordMessageView(msgId, chatId = state.activeChatId) {
+  // Просмотр засчитываем только для открытого сейчас канала: таймер мог
+  // сработать уже после переключения ленты.
+  if (!chatId || chatId !== state.activeChatId || !state.user) return;
   const key = `${chatId}/${msgId}`;
   if (state.viewedMessages.has(key)) return;
   state.viewedMessages.add(key);
@@ -2394,6 +2570,8 @@ function recordMessageView(msgId) {
 
 /** Найти DOM-элемент сообщения в ленте по id. */
 function findMessageElement(msgId) {
+  const node = state.messageNodes.get(`m:${msgId}`);
+  if (node?.el) return node.el;
   return dom.messages.querySelector(`[data-msg-id="${CSS.escape(String(msgId))}"]`);
 }
 
@@ -2781,10 +2959,11 @@ function cyclePin() {
 /** Подписка на /user_chats/$uid и diff-подписки на каждый /chats/$chat_id. */
 function handleUserChatsUpdate(chatIds) {
   state.myChatIds = new Set(chatIds);
+  const chatIdSet = new Set(chatIds);
 
   // Отписываемся от чатов, которых больше нет у пользователя.
   for (const [chatId, unsubscribe] of state.subscriptions.chatMeta) {
-    if (!chatIds.includes(chatId)) {
+    if (!chatIdSet.has(chatId)) {
       unsubscribe();
       state.subscriptions.chatMeta.delete(chatId);
       state.chats.delete(chatId);
@@ -2807,7 +2986,9 @@ function handleUserChatsUpdate(chatIds) {
           setupChatScoped(chatId, chat);
         }
 
-        renderChatList();
+        // Перерисовку списка склеиваем: при входе данные по десяткам чатов
+        // приходят подряд, и каждый рендер строил весь список заново.
+        scheduleChatListRender();
         if (chatId === state.activeChatId) renderMainPanel();
         // Открыты настройки чата — обновляем списки администраторов/участников.
         if (chatId === settingsChatId && !dom.settingsOverlay.classList.contains('hidden')) {
@@ -2955,6 +3136,11 @@ function teardownSubscriptions() {
   state.myChatIds = new Set();
   state.activeChatId = null;
   state.messages = [];
+  state.messageNodes = new Map();
+  state.messageNodesChatId = null;
+  chatListSignature = null;
+  cancelAnimationFrame(chatListRenderHandle);
+  chatListRenderHandle = 0;
   state.stickToBottom = true;
   state.channelPreview = null;
   state.devPromoChat = null;
@@ -3644,6 +3830,12 @@ function cancelComposerMode() {
 /** Авторастягивание поля ввода: от одной строки до 148 px. */
 function autoGrowComposer() {
   const el = dom.messageInput;
+  // Замер высоты заставляет браузер пересчитывать вёрстку. Пока текст и ширина
+  // поля не менялись (например, пришло новое сообщение), повторять его незачем.
+  const width = el.clientWidth;
+  if (composerMeasure.value === el.value && composerMeasure.width === width) return;
+  composerMeasure = { value: el.value, width };
+
   el.style.height = 'auto';
   const height = el.scrollHeight;
   if (!height) {
@@ -7293,15 +7485,22 @@ dom.messageInput.addEventListener('paste', () => {
 
 dom.backBtn.addEventListener('click', () => document.body.classList.remove('chat-open'));
 dom.previewBackBtn.addEventListener('click', closeChannelPreview);
+let messagesScrollFrame = 0;
 dom.messages.addEventListener('scroll', () => {
-  const el = dom.messages;
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-  // Пользователь дочитал до конца — снимаем непрочитанное.
-  if (atBottom && !state.stickToBottom && state.activeChatId) {
-    markActiveChatRead();
-    renderChatList();
-  }
-  state.stickToBottom = atBottom;
+  // Скролл приходит десятками событий в секунду: измерения и перерисовку
+  // делаем не чаще одного раза за кадр.
+  if (messagesScrollFrame) return;
+  messagesScrollFrame = requestAnimationFrame(() => {
+    messagesScrollFrame = 0;
+    const el = dom.messages;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    // Пользователь дочитал до конца — снимаем непрочитанное.
+    if (atBottom && !state.stickToBottom && state.activeChatId) {
+      markActiveChatRead();
+      renderChatList();
+    }
+    state.stickToBottom = atBottom;
+  });
 });
 
 // Подписка на канал / вступление в публичную группу из предпросмотра.

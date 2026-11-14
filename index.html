@@ -13,11 +13,13 @@
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://testy-beacon.firebaseapp.com" />
   <link rel="preconnect" href="https://testy-beacon-default-rtdb.firebaseio.com" />
+  <!-- Картинки эмодзи приходят с домена форка Twemoji -->
+  <link rel="preconnect" href="https://emoji.beacon.testylemonad.ru" />
   <meta name="theme-color" content="#121212" />
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=55" />
+  <link rel="stylesheet" href="styles.css?v=57" />
 
   <!-- Тема до первой отрисовки: тёмная по умолчанию, светлая — из localStorage -->
   <script>
@@ -1206,9 +1208,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=55" defer></script>
+  <script src="vendor/twemoji.min.js?v=57" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=55"></script>
+  <script type="module" src="app.js?v=57"></script>
 </body>
 </html>

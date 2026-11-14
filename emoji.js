@@ -21,8 +21,8 @@ const EMOJI_ASSET_BASE = `${CDN_ORIGIN}/assets/svg/`;
  * Подключается в index.html обычным <script defer>, поэтому к моменту
  * первого рендера window.twemoji уже есть; здесь — запасная загрузка.
  */
-const TWEMOJI_SRC = './vendor/twemoji.min.js?v=55';
-const CATALOG_URL = './data/emoji.json?v=55';
+const TWEMOJI_SRC = './vendor/twemoji.min.js?v=57';
+const CATALOG_URL = './data/emoji.json?v=57';
 
 /**
  * Контейнеры, где эмодзи заменяются на Twemoji. Специально не включаем
