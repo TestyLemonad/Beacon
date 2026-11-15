@@ -10,11 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=66';
-import * as Chat from './services/chat.js?v=66';
-import * as Sessions from './services/sessions.js?v=66';
-import * as Invites from './services/invites.js?v=66';
-import * as Emoji from './emoji.js?v=66';
+import * as Auth from './services/auth.js?v=69';
+import * as Chat from './services/chat.js?v=69';
+import * as Sessions from './services/sessions.js?v=69';
+import * as Invites from './services/invites.js?v=69';
+import * as Emoji from './emoji.js?v=69';
 
 /* ============================================================
  *  DOM
@@ -183,12 +183,26 @@ const dom = {
   // Настройки пользователя (по клику на логотип)
   prefsOverlay: $('prefs-overlay'),
   prefsClose: $('prefs-close'),
+  prefsProfileBtn: $('prefs-profile-btn'),
+  prefsProfileHint: $('prefs-profile-hint'),
+  prefsAppearanceBtn: $('prefs-appearance-btn'),
+  prefsAppearanceHint: $('prefs-appearance-hint'),
+  prefsPrivacyBtn: $('prefs-privacy-btn'),
+  prefsPrivacyHint: $('prefs-privacy-hint'),
+  prefsSecurityBtn: $('prefs-security-btn'),
+  prefsSecurityHint: $('prefs-security-hint'),
+  prefsDataBtn: $('prefs-data-btn'),
+  prefsDataHint: $('prefs-data-hint'),
+  prefsAccountBtn: $('prefs-account-btn'),
+  prefsAccountHint: $('prefs-account-hint'),
   prefsThemeToggle: $('prefs-theme-toggle'),
   prefsPrivacyToggle: $('prefs-privacy-toggle'),
   prefsArchiveBtn: $('prefs-archive-btn'),
   prefsArchiveCount: $('prefs-archive-count'),
   prefsAdminField: $('prefs-admin-field'),
   prefsAdminToggle: $('prefs-admin-toggle'),
+  prefsAdminSection: $('prefs-admin-section'),
+  prefsAdminBtn: $('prefs-admin-btn'),
   prefsInvitesField: $('prefs-invites-field'),
   prefsInvitesBtn: $('prefs-invites-btn'),
   prefsBlockedBtn: $('prefs-blocked-btn'),
@@ -203,6 +217,46 @@ const dom = {
   prefsDeleteUserInput: $('prefs-delete-user-input'),
   prefsDeleteUserBtn: $('prefs-delete-user-btn'),
   prefsDeleteUserError: $('prefs-delete-user-error'),
+
+  // Подокна настроек: оформление, приватность, безопасность, аккаунт, данные, админка
+  appearanceOverlay: $('appearance-overlay'),
+  appearanceClose: $('appearance-close'),
+  privacyOverlay: $('privacy-overlay'),
+  privacyClose: $('privacy-close'),
+  securityOverlay: $('security-overlay'),
+  securityClose: $('security-close'),
+  accountOverlay: $('account-overlay'),
+  accountClose: $('account-close'),
+  dataOverlay: $('data-overlay'),
+  dataClose: $('data-close'),
+  adminOverlay: $('admin-overlay'),
+  adminClose: $('admin-close'),
+
+  // Карточка цели: юзернеймы, резерв, статус, удаление аккаунта
+  targetAdminOverlay: $('target-admin-overlay'),
+  targetAdminClose: $('target-admin-close'),
+  targetAdminAvatar: $('target-admin-avatar'),
+  targetAdminTitle: $('target-admin-title'),
+  targetAdminMeta: $('target-admin-meta'),
+  targetAdminAliasField: $('target-admin-alias-field'),
+  targetAdminAliasList: $('target-admin-alias-list'),
+  targetAdminAliasInput: $('target-admin-alias-input'),
+  targetAdminAliasAdd: $('target-admin-alias-add'),
+  targetAdminReserveField: $('target-admin-reserve-field'),
+  targetAdminReserve: $('target-admin-reserve'),
+  targetAdminStatusKind: $('target-admin-status-kind'),
+  targetAdminStatusValue: $('target-admin-status-value'),
+  targetAdminStatusEmoji: $('target-admin-status-emoji'),
+  targetAdminStatusColorField: $('target-admin-status-color-field'),
+  targetAdminStatusColor: $('target-admin-status-color'),
+  targetAdminStatusPreview: $('target-admin-status-preview'),
+  targetAdminStatusCurrent: $('target-admin-status-current'),
+  targetAdminStatusSave: $('target-admin-status-save'),
+  targetAdminStatusClear: $('target-admin-status-clear'),
+  targetAdminStatusError: $('target-admin-status-error'),
+  targetAdminDeleteField: $('target-admin-delete-field'),
+  targetAdminDelete: $('target-admin-delete'),
+  targetAdminDeleteError: $('target-admin-delete-error'),
 
   // Смена пароля (отдельное окно)
   passwordOverlay: $('password-overlay'),
@@ -343,6 +397,9 @@ const dom = {
 
   // Профиль: аватарка и чёрный список
   profileAliases: $('profile-aliases'),
+  profileAdminField: $('profile-admin-field'),
+  profileAdminOpen: $('profile-admin-open'),
+  profileAdminHint: $('profile-admin-hint'),
   avatarPreview: $('avatar-preview'),
   avatarValue: $('avatar-value'),
   avatarKindBtns: Array.from(document.querySelectorAll('[data-avatar-kind]')),
@@ -389,6 +446,15 @@ const dom = {
   settingsMemberAddRow: $('settings-member-add-row'),
   settingsMemberInput: $('settings-member-input'),
   settingsMemberAdd: $('settings-member-add'),
+  settingsParticipantsBlock: $('settings-participants-block'),
+  settingsMembersBtn: $('settings-members-btn'),
+  settingsMembersHint: $('settings-members-hint'),
+  settingsMembersOverlay: $('settings-members-overlay'),
+  settingsMembersClose: $('settings-members-close'),
+  settingsAdminsBtn: $('settings-admins-btn'),
+  settingsAdminsHint: $('settings-admins-hint'),
+  settingsAdminsOverlay: $('settings-admins-overlay'),
+  settingsAdminsClose: $('settings-admins-close'),
   settingsAvatarBlock: $('settings-avatar-block'),
   settingsAvatarPreview: $('settings-avatar-preview'),
   settingsAvatarKindBtns: Array.from(document.querySelectorAll('[data-sa-kind]')),
@@ -752,6 +818,426 @@ function applyAliasHint(element, type, target) {
   }
   element.textContent = 'А также ' + aliases.map((alias) => '@' + alias.name).join(', ');
   element.classList.remove('hidden');
+}
+
+/* ============================================================
+ *  Юзернеймы в профилях: быстрые операции супер-админа
+ *  (дублируют разделы настроек для конкретного пользователя/чата)
+ * ============================================================ */
+
+/** Имена из /reserved_usernames для подписи «зарезервирован» в профиле. */
+const reservedNameCache = { names: new Set(), loadedAt: 0, loading: null };
+
+/** Обновить кэш зарезервированных имён и перерисовать открытые профили. */
+async function refreshReservedNameCache(force = false) {
+  if (!adminRightsOn()) {
+    reservedNameCache.names = new Set();
+    reservedNameCache.loadedAt = Date.now();
+    refreshUsernameAdminBlocks();
+    return;
+  }
+  if (!force && Date.now() - reservedNameCache.loadedAt < 30000) return;
+  if (reservedNameCache.loading) return reservedNameCache.loading;
+
+  reservedNameCache.loading = Chat.listReservedUsernames()
+    .then((items) => {
+      reservedNameCache.names = new Set(items.map((item) => item.name));
+      reservedNameCache.loadedAt = Date.now();
+    })
+    .catch((error) => {
+      console.error('Не удалось загрузить зарезервированные юзернеймы:', error);
+      reservedNameCache.loadedAt = Date.now();
+    })
+    .finally(() => {
+      reservedNameCache.loading = null;
+      refreshUsernameAdminBlocks();
+    });
+
+  return reservedNameCache.loading;
+}
+
+/** Перерисовать админ-блоки в открытых профиле, меню чата и карточке цели. */
+function refreshUsernameAdminBlocks() {
+  if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+  if (!dom.profileOverlay.classList.contains('hidden')) renderProfileAliases();
+  if (!dom.targetAdminOverlay.classList.contains('hidden')) {
+    if (!adminRightsOn()) closeTargetAdmin();
+    else renderTargetAdmin();
+  }
+}
+
+/**
+ * Карточка цели для супер-админа: дополнительные имена, резерв основного,
+ * статус и удаление аккаунта. Открывается из профиля, меню чата и раздела
+ * «Администрирование» — сам профиль остаётся компактным.
+ */
+const targetAdminUi = {
+  type: 'user',        // 'user' | 'chat' — как в API статусов
+  aliasType: 'user',   // 'user' | 'channel' | 'group' — как в /username_aliases
+  id: '',
+  username: '',
+  statusKind: 'emoji',
+};
+
+/** Статус цели карточки (null, если статуса нет). */
+function targetAdminStatus() {
+  if (!targetAdminUi.id) return null;
+  return targetAdminUi.type === 'chat'
+    ? chatStatusFor(targetAdminUi.id)
+    : userStatusFor(targetAdminUi.id);
+}
+
+/** Открыть карточку юзернеймов и статуса для пользователя или чата. */
+function openTargetAdmin(target) {
+  if (!target?.id || !adminRightsOn()) return;
+
+  targetAdminUi.type = target.type === 'user' ? 'user' : 'chat';
+  targetAdminUi.aliasType = target.type === 'channel'
+    ? 'channel'
+    : target.type === 'group' ? 'group' : 'user';
+  targetAdminUi.id = target.id;
+  targetAdminUi.username = target.username || '';
+  targetAdminUi.statusKind = 'emoji';
+
+  dom.targetAdminAliasInput.value = '';
+  dom.targetAdminStatusValue.value = '';
+  dom.targetAdminStatusColor.value = Chat.STATUS_DEFAULT_COLOR;
+  dom.targetAdminStatusError.classList.add('hidden');
+  dom.targetAdminDeleteError.classList.add('hidden');
+  renderTargetAdmin();
+  dom.targetAdminOverlay.classList.remove('hidden');
+  refreshReservedNameCache();
+}
+
+function closeTargetAdmin() {
+  dom.targetAdminOverlay.classList.add('hidden');
+}
+
+/** Перерисовать карточку цели целиком. */
+function renderTargetAdmin() {
+  if (!targetAdminUi.id) return;
+  renderTargetAdminHead();
+  renderTargetAliases();
+  renderTargetReserve();
+  syncTargetStatusKind();
+  renderTargetStatusPreview();
+  renderTargetStatusCurrent();
+
+  // Удалять можно только чужой обычный аккаунт.
+  const profile = targetAdminUi.type === 'user'
+    ? Chat.getCachedUserProfile(targetAdminUi.id)
+    : null;
+  const canDelete = targetAdminUi.type === 'user'
+    && targetAdminUi.id !== state.user?.uid
+    && !state.rootAdmins.has(targetAdminUi.id)
+    && !profile?.deleted;
+  dom.targetAdminDeleteField.classList.toggle('hidden', !canDelete);
+}
+
+/** Перерисовать карточку цели, если она открыта. */
+function refreshTargetAdminCard() {
+  if (!dom.targetAdminOverlay.classList.contains('hidden')) renderTargetAdmin();
+  if (!dom.profileOverlay.classList.contains('hidden')) renderProfileAdminRow();
+}
+
+/** Шапка карточки: аватар, название и тип цели. */
+function renderTargetAdminHead() {
+  let title = '';
+  let kind = 'Пользователь';
+
+  if (targetAdminUi.type === 'chat') {
+    const chat = state.chats.get(targetAdminUi.id);
+    if (chat) {
+      applyChatAvatar(dom.targetAdminAvatar, targetAdminUi.id, chat);
+      title = getChatTitle(chat);
+    } else {
+      applyAvatar(dom.targetAdminAvatar, targetAdminUi.id, '?');
+    }
+    kind = chat?.type === 'channel' ? 'Канал' : 'Группа';
+  } else {
+    const profile = Chat.getCachedUserProfile(targetAdminUi.id);
+    applyProfileAvatar(dom.targetAdminAvatar, profile, targetAdminUi.id);
+    title = getProfileName(profile) || 'Пользователь';
+  }
+
+  dom.targetAdminTitle.textContent = title || 'Без названия';
+  dom.targetAdminMeta.textContent = [targetAdminUi.username ? '@' + targetAdminUi.username : '', kind]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Список дополнительных имён с кнопкой «Забрать». */
+function renderTargetAliases() {
+  const list = dom.targetAdminAliasList;
+  list.innerHTML = '';
+
+  const aliases = aliasesForTarget(targetAdminUi.aliasType, targetAdminUi.id);
+  if (!aliases.length) {
+    list.append(createEl('div', 'admin-empty', 'Дополнительных имён пока нет.'));
+    return;
+  }
+
+  aliases.forEach((alias) => {
+    const row = createEl('div', 'username-admin-row');
+    row.append(createEl('span', 'reserved-name', '@' + alias.name));
+    const remove = createEl('button', 'btn ghost reserved-remove', 'Забрать');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm(`Забрать @${alias.name}? Оно перестанет вести на этот профиль.`)) return;
+      remove.disabled = true;
+      try {
+        await Chat.removeUsernameAliases([alias.name]);
+        toast(`@${alias.name} больше не дополнительный`, 'success');
+        renderTargetAliases();
+      } catch (error) {
+        console.error(error);
+        toast(error?.message || 'Не удалось забрать юзернейм', 'error');
+      } finally {
+        remove.disabled = false;
+      }
+    });
+    row.append(remove);
+    list.append(row);
+  });
+}
+
+/** Кнопка резерва основного имени. */
+function renderTargetReserve() {
+  const username = targetAdminUi.username;
+  dom.targetAdminReserveField.classList.toggle('hidden', !username);
+  if (!username) return;
+  const reserved = reservedNameCache.names.has(username);
+  dom.targetAdminReserve.textContent = reserved
+    ? `Снять резерв с @${username}`
+    : `Зарезервировать @${username}`;
+}
+
+/** Показать/скрыть поля, которые зависят от типа статуса. */
+function syncTargetStatusKind() {
+  const isText = targetAdminUi.statusKind === 'text';
+  dom.targetAdminStatusKind.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.statusKind === (isText ? 'text' : 'emoji'));
+  });
+  dom.targetAdminStatusColorField.classList.toggle('hidden', !isText);
+  dom.targetAdminStatusEmoji.classList.toggle('hidden', isText);
+  dom.targetAdminStatusValue.maxLength = isText ? Chat.STATUS_TEXT_MAX : 24;
+  dom.targetAdminStatusValue.placeholder = isText
+    ? `Текст до ${Chat.STATUS_TEXT_MAX} символов`
+    : 'Любой эмодзи';
+  dom.targetAdminStatusSave.textContent = isText ? 'Выдать текст' : 'Выдать эмодзи';
+  dom.targetAdminStatusClear.textContent = targetAdminUi.type === 'chat' ? 'Снять у чата' : 'Снять';
+}
+
+/** Строка «Сейчас: …» с текущим статусом цели. */
+function renderTargetStatusCurrent() {
+  const node = dom.targetAdminStatusCurrent;
+  node.textContent = '';
+  const status = targetAdminStatus();
+  if (!status) {
+    node.classList.add('hidden');
+    return;
+  }
+  node.classList.remove('hidden');
+  node.append(createEl('span', 'status-editor-label', 'Сейчас:'));
+  node.append(buildStatusBadge(status));
+  Emoji.parse(node);
+}
+
+/** Живой предпросмотр статуса из полей карточки. */
+function renderTargetStatusPreview() {
+  const node = dom.targetAdminStatusPreview;
+  node.innerHTML = '';
+
+  const value = String(dom.targetAdminStatusValue.value || '').trim();
+  if (!value) {
+    node.append(createEl('span', 'status-preview-hint', 'Предпросмотр статуса'));
+    return;
+  }
+
+  const kind = targetAdminUi.statusKind;
+  const badge = createEl('span', `user-status user-status-${kind}`);
+  badge.textContent = kind === 'text'
+    ? [...value].slice(0, Chat.STATUS_TEXT_MAX).join('')
+    : value;
+  if (kind === 'text') {
+    const color = dom.targetAdminStatusColor.value || Chat.STATUS_DEFAULT_COLOR;
+    badge.style.background = color;
+    badge.style.color = readableStatusTextColor(color);
+  }
+  node.append(badge);
+  Emoji.parse(badge);
+}
+
+function showTargetStatusError(message) {
+  dom.targetAdminStatusError.textContent = message;
+  dom.targetAdminStatusError.classList.remove('hidden');
+}
+
+/** Выдать или заменить статус цели. */
+async function saveTargetStatus() {
+  if (!adminRightsOn() || !targetAdminUi.id) return;
+
+  const kind = targetAdminUi.statusKind;
+  const value = String(dom.targetAdminStatusValue.value || '').trim();
+  if (!value) {
+    showTargetStatusError(kind === 'text' ? 'Введите текст статуса' : 'Выберите эмодзи');
+    dom.targetAdminStatusValue.focus();
+    return;
+  }
+  if (kind === 'emoji' && !/\p{Extended_Pictographic}/u.test(value)) {
+    showTargetStatusError('В режиме «Эмодзи» нужен эмодзи — или переключитесь на «Текст»');
+    dom.targetAdminStatusValue.focus();
+    return;
+  }
+
+  dom.targetAdminStatusError.classList.add('hidden');
+  dom.targetAdminStatusSave.disabled = true;
+  try {
+    const hadStatus = Boolean(targetAdminStatus());
+    await writeStatusToTarget(
+      { type: targetAdminUi.type, id: targetAdminUi.id },
+      { kind, value, color: dom.targetAdminStatusColor.value },
+    );
+    toast(hadStatus ? 'Статус обновлён' : 'Статус выдан', 'success');
+    dom.targetAdminStatusValue.value = '';
+    renderTargetStatusPreview();
+    renderTargetStatusCurrent();
+  } catch (error) {
+    console.error(error);
+    showTargetStatusError(statusWriteError(error));
+  } finally {
+    dom.targetAdminStatusSave.disabled = false;
+    syncTargetStatusKind();
+  }
+}
+
+/** Снять статус цели. */
+async function clearTargetStatus() {
+  if (!adminRightsOn() || !targetAdminUi.id) return;
+
+  dom.targetAdminStatusError.classList.add('hidden');
+  if (!targetAdminStatus()) {
+    showTargetStatusError(targetAdminUi.type === 'chat'
+      ? 'У этого чата нет статуса'
+      : 'У этого пользователя нет статуса');
+    return;
+  }
+
+  const what = targetAdminUi.type === 'chat' ? 'чата' : 'пользователя';
+  const label = targetAdminUi.username ? ' @' + targetAdminUi.username : '';
+  if (!window.confirm(`Снять статус ${what}${label}?`)) return;
+
+  dom.targetAdminStatusClear.disabled = true;
+  try {
+    await clearStatusOfTarget({ type: targetAdminUi.type, id: targetAdminUi.id });
+    toast('Статус снят', 'success');
+    dom.targetAdminStatusValue.value = '';
+    renderTargetStatusPreview();
+    renderTargetStatusCurrent();
+  } catch (error) {
+    console.error(error);
+    showTargetStatusError(statusWriteError(error));
+  } finally {
+    dom.targetAdminStatusClear.disabled = false;
+  }
+}
+
+/** Выдать дополнительное имя цели. */
+async function submitTargetAlias() {
+  if (!adminRightsOn() || !targetAdminUi.id) return;
+
+  const names = dom.targetAdminAliasInput.value.trim();
+  if (!names) {
+    dom.targetAdminAliasInput.focus();
+    return;
+  }
+
+  dom.targetAdminAliasAdd.disabled = true;
+  try {
+    const result = await Chat.assignUsernameAliases({
+      names,
+      type: targetAdminUi.aliasType,
+      target: targetAdminUi.id,
+      uid: state.user.uid,
+    });
+    dom.targetAdminAliasInput.value = '';
+    if (result.added.length) {
+      toast(`Выдано имён: ${result.added.length}`, 'success');
+      renderTargetAliases();
+    } else {
+      const skipped = result.skipped || [];
+      const reason = skipped[0] ? ALIAS_SKIP_REASONS[skipped[0].reason] : '';
+      toast(reason ? `Не выдано: ${reason}` : 'Новые имена не выданы: все пропущены');
+    }
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Не удалось выдать юзернеймы', 'error');
+  } finally {
+    dom.targetAdminAliasAdd.disabled = false;
+  }
+}
+
+/** Поставить или снять резерв основного имени цели. */
+async function toggleTargetReserve() {
+  const username = targetAdminUi.username;
+  if (!adminRightsOn() || !username) return;
+
+  dom.targetAdminReserve.disabled = true;
+  try {
+    if (reservedNameCache.names.has(username)) {
+      await Chat.releaseReservedUsernames([username]);
+      toast(`@${username} снят с резерва`, 'success');
+    } else {
+      const result = await Chat.reserveUsernameForTarget({
+        type: targetAdminUi.aliasType,
+        target: targetAdminUi.id,
+        uid: state.user.uid,
+      });
+      toast(result.added
+        ? `@${result.name} зарезервирован`
+        : `@${result.name} уже был зарезервирован`, 'success');
+    }
+    await refreshReservedNameCache(true);
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Не удалось изменить резерв', 'error');
+  } finally {
+    dom.targetAdminReserve.disabled = false;
+  }
+}
+
+/** Удалить аккаунт цели (только чужой обычный пользователь). */
+async function deleteTargetAccount() {
+  if (!adminRightsOn() || targetAdminUi.type !== 'user' || accountDeletionInProgress) return;
+
+  const uid = targetAdminUi.id;
+  if (!uid || uid === state.user?.uid || state.rootAdmins.has(uid)) return;
+
+  const profile = Chat.getCachedUserProfile(uid);
+  const name = getProfileName(profile) || '@' + targetAdminUi.username;
+  const confirmed = window.confirm(
+    `Удалить аккаунт «${name}» (@${targetAdminUi.username})?\n\n` +
+    'Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся, ' +
+    'а имя изменится на «Удалённый аккаунт». Пользователь потеряет доступ к мессенджеру.',
+  );
+  if (!confirmed) return;
+
+  dom.targetAdminDelete.disabled = true;
+  dom.targetAdminDeleteError.classList.add('hidden');
+  try {
+    await Chat.deleteUserAccount(uid, { deletedBy: state.user.uid, ban: true });
+    toast(`Аккаунт ${name} удалён`, 'success');
+    closeTargetAdmin();
+    renderChatList();
+    renderMainPanel();
+    if (state.search.query) renderSearchResults();
+  } catch (error) {
+    console.error(error);
+    dom.targetAdminDeleteError.textContent = 'Не удалось удалить аккаунт';
+    dom.targetAdminDeleteError.classList.remove('hidden');
+  } finally {
+    dom.targetAdminDelete.disabled = false;
+  }
 }
 
 /**
@@ -3347,7 +3833,7 @@ function startSubscriptions() {
   state.subscriptions.rootAdmins = Chat.subscribeToRootAdmins((map) => {
     state.rootAdmins = new Set(Object.keys(map || {}).filter((key) => map[key]));
     renderPrefsModal();
-    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+    refreshUsernameAdminBlocks();
   });
   state.subscriptions.usernameAliases = Chat.subscribeToUsernameAliases((map) => {
     state.usernameAliases = new Map(Object.entries(map || {}));
@@ -3355,6 +3841,7 @@ function startSubscriptions() {
     if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
     if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsAliases();
     if (!dom.aliasesOverlay.classList.contains('hidden')) loadUsernameAliases();
+    refreshTargetAdminCard();
   });
   // Статусы пользователей, каналов и групп видны всем; меняет их только супер-админ.
   state.subscriptions.userStatuses = Chat.subscribeToUserStatuses(() => {
@@ -3365,6 +3852,7 @@ function startSubscriptions() {
       renderStatusPreview();
       renderCurrentStatus();
     }
+    refreshTargetAdminCard();
   });
   state.subscriptions.chatStatuses = Chat.subscribeToChatStatuses(() => {
     scheduleProfileRefresh();
@@ -3372,6 +3860,7 @@ function startSubscriptions() {
       renderStatusPreview();
       renderCurrentStatus();
     }
+    refreshTargetAdminCard();
   });
   state.subscriptions.bans = Chat.subscribeToBans((map) => {
     state.bannedUsers = new Set(Object.keys(map || {}).filter((key) => map[key]));
@@ -3728,6 +4217,7 @@ function openProfileModal() {
   dom.pfLastname.value = state.profile?.lastName || '';
   dom.pfBio.value = state.profile?.bio || '';
   renderProfileAliases();
+  refreshReservedNameCache();
   initAvatarEditor();
   dom.profileError.classList.add('hidden');
   dom.pfUsername.focus();
@@ -3740,6 +4230,23 @@ function closeProfileModal() {
 /** Строка «А также …» в профиле: дополнительные имена ведут на основной. */
 function renderProfileAliases() {
   applyAliasHint(dom.profileAliases, 'user', state.user?.uid);
+  renderProfileAdminRow();
+}
+
+/** Компактная строка «Юзернеймы и статус» в своём профиле. */
+function renderProfileAdminRow() {
+  if (!dom.profileAdminField) return;
+  const username = state.profile?.username || '';
+  const visible = Boolean(adminRightsOn() && state.user && username);
+  dom.profileAdminField.classList.toggle('hidden', !visible);
+  if (!visible) return;
+
+  const aliases = aliasesForTarget('user', state.user.uid).length;
+  const hint = [
+    aliases ? `доп. имён: ${aliases}` : '',
+    userStatusFor(state.user.uid) ? 'есть статус' : '',
+  ].filter(Boolean).join(' · ');
+  dom.profileAdminHint.textContent = hint || 'Доп. имена, резерв, статус';
 }
 
 /* ============================================================
@@ -4859,7 +5366,7 @@ function openSettingsModal() {
   );
   dom.settingsUsername.value = chat.username || '';
 
-  // Участники группы: список + добавление по @username или ID.
+  // Участники группы: список и добавление живут в отдельном окне.
   dom.settingsMembersBlock.classList.toggle('hidden', !isGroup);
   dom.settingsMemberAddRow.classList.toggle('hidden', !canManageMembers);
   dom.settingsMemberInput.value = '';
@@ -4870,10 +5377,18 @@ function openSettingsModal() {
   dom.settingsChannelBlock.classList.toggle('hidden', !isChannel);
   dom.settingsRequiresSubscription.checked = chat.requiresSubscription !== false;
 
-  // Администраторы канала: блок виден только для каналов.
-  dom.settingsAdminsBlock.classList.toggle('hidden', !isChannel);
+  // Администраторы канала: список и добавление живут в отдельном окне.
   dom.settingsAdminInput.value = '';
   if (isChannel) renderSettingsAdmins(chat);
+
+  // Строки «Участники» и «Администраторы» в основных настройках.
+  dom.settingsParticipantsBlock.classList.toggle('hidden', !isGroup && !isChannel);
+  dom.settingsMembersBtn.classList.toggle('hidden', !isGroup);
+  dom.settingsAdminsBtn.classList.toggle('hidden', !isChannel);
+  dom.settingsMembersHint.textContent = `Участники · ${Object.keys(chat.users || {}).length}`;
+  dom.settingsAdminsHint.textContent = `Администраторы · ${Object.keys(chat.admins || {}).length}`;
+  dom.settingsMembersOverlay.classList.add('hidden');
+  dom.settingsAdminsOverlay.classList.add('hidden');
 
   // Аватар группы / логотип канала — у обоих типов.
   const hasAvatarEditor = isGroup || isChannel;
@@ -4901,6 +5416,8 @@ function setSettingsTypeChoice(type) {
 }
 
 function closeSettingsModal() {
+  dom.settingsMembersOverlay.classList.add('hidden');
+  dom.settingsAdminsOverlay.classList.add('hidden');
   dom.settingsOverlay.classList.add('hidden');
 }
 
@@ -5326,6 +5843,7 @@ bindChatAvatarHexInput(dom.settingsAvatarHex2, 'bg2');
 function openChatMenu() {
   if (!state.activeChatId) return;
   renderChatMenu();
+  refreshReservedNameCache();
   dom.chatMenuOverlay.classList.remove('hidden');
 }
 
@@ -5429,6 +5947,15 @@ function renderChatMenu() {
     }, 'chart');
   }
 
+  // Супер-админ: карточка юзернеймов и статуса текущей цели.
+  const adminTarget = chatAdminTarget(chat, peerUid);
+  if (adminTarget) {
+    addChatMenuAction('Юзернеймы и статус', () => {
+      closeChatMenu();
+      openTargetAdmin(adminTarget);
+    }, 'key');
+  }
+
   // Участники группы либо администраторы канала.
   const uids = chat.type === 'group'
     ? Object.keys(chat.users || {})
@@ -5470,6 +5997,21 @@ function renderChatMenu() {
       if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
     });
   }
+}
+
+/** Цель для карточки админа в меню чата: {type, id, username} или null. */
+function chatAdminTarget(chat, peerUid) {
+  if (!adminRightsOn()) return null;
+
+  if (chat.type === 'private' && peerUid && peerUid !== state.user?.uid) {
+    const username = Chat.getCachedUserProfile(peerUid)?.username || '';
+    return username ? { type: 'user', id: peerUid, username } : null;
+  }
+  if (chat.type === 'channel' || chat.type === 'group') {
+    const username = chat.username || '';
+    return username ? { type: chat.type, id: state.activeChatId, username } : null;
+  }
+  return null;
 }
 
 /** Подписаться на канал из режима чтения без подписки. */
@@ -5760,12 +6302,45 @@ function openPrefsModal() {
   dom.prefsOverlay.classList.remove('hidden');
 }
 
+/** Все подокна настроек: закрываются вместе с главным окном. */
+function prefsSubOverlays() {
+  return [
+    dom.appearanceOverlay,
+    dom.privacyOverlay,
+    dom.securityOverlay,
+    dom.accountOverlay,
+    dom.dataOverlay,
+    dom.adminOverlay,
+  ];
+}
+
+/** Открыть подокно настроек (оформление, приватность и т.п.). */
+function openPrefsPage(overlay) {
+  if (!overlay) return;
+  renderPrefsModal();
+  overlay.classList.remove('hidden');
+}
+
+function closePrefsPages() {
+  prefsSubOverlays().forEach((overlay) => overlay?.classList.add('hidden'));
+}
+
+/** Закрыть верхнее подокно настроек; true — если что-то закрыли. */
+function closeTopPrefsPage() {
+  const opened = prefsSubOverlays().filter((overlay) => overlay && !overlay.classList.contains('hidden'));
+  if (!opened.length) return false;
+  opened[opened.length - 1].classList.add('hidden');
+  return true;
+}
+
 function closePrefsModal() {
   closeSessionsModal();
   closePasswordModal();
   closeInvitesModal();
   closeReservedModal();
   closeAliasesModal();
+  closeTargetAdmin();
+  closePrefsPages();
   dom.prefsOverlay.classList.add('hidden');
 }
 
@@ -5781,21 +6356,38 @@ function renderPrefsModal() {
     btn.classList.toggle('active', btn.dataset.privacyChoice === privacy);
   });
 
-  dom.prefsArchiveCount.textContent = String(archivedChats().length);
+  const archived = archivedChats().length;
+  dom.prefsArchiveCount.textContent = String(archived);
   dom.prefsBlockedCount.textContent = String(state.blocked.size);
   renderPrefsProviders();
 
-  // Админ-права: поле видно только супер-администраторам.
+  // Подсказки в компактном списке категорий.
+  const providers = Auth.getLinkedProviders();
+  const ownName = getProfileName(state.profile);
+  const ownHandle = state.profile?.username ? '@' + state.profile.username : '';
+  dom.prefsProfileHint.textContent = [ownName, ownHandle].filter(Boolean).join(' · ')
+    || 'Имя, юзернейм и аватарка';
+  dom.prefsAppearanceHint.textContent = theme === 'light' ? 'Светлая тема' : 'Тёмная тема';
+  dom.prefsPrivacyHint.textContent = privacy === 'nobody'
+    ? 'Последний визит скрыт'
+    : 'Последний визит виден всем';
+  dom.prefsSecurityHint.textContent = providers.includes('password')
+    ? 'Пароль и активные сессии'
+    : 'Активные сессии';
+  dom.prefsAccountHint.textContent = providers.includes('google.com')
+    ? 'Пароль и Google'
+    : 'Пароль (email)';
+  dom.prefsDataHint.textContent = `Архив (${archived}) и статистика`;
+
+  // Админ-права: поле видно только супер-администраторам, а раздел
+  // «Администрирование» и всё админское — только при включённых правах.
   const isRoot = Boolean(state.user && state.rootAdmins.has(state.user.uid));
   const adminOn = isRoot && state.settings?.adminMode !== false;
   dom.prefsAdminField.classList.toggle('hidden', !isRoot);
-  dom.prefsInvitesField.classList.toggle('hidden', !isRoot);
-  dom.prefsReservedField.classList.toggle('hidden', !isRoot);
-  dom.prefsAliasesField.classList.toggle('hidden', !isRoot);
-  dom.prefsStatusField.classList.toggle('hidden', !isRoot);
+  dom.prefsAdminSection.classList.toggle('hidden', !adminOn);
   dom.prefsAdminToggle.checked = adminOn;
-  dom.prefsDeleteUserField.classList.toggle('hidden', !adminOn);
   dom.prefsDeleteUserError.classList.add('hidden');
+  if (!adminOn) dom.adminOverlay.classList.add('hidden');
 
   dom.prefsDeleteAccountBtn.disabled = false;
   dom.prefsDeleteAccountHint.textContent = isRoot
@@ -5984,7 +6576,7 @@ const INVITE_STATUS_LABELS = {
 };
 
 function openInvitesModal() {
-  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+  if (!state.user || !adminRightsOn()) return;
   dom.invitesError.classList.add('hidden');
   dom.invitesLoadError.classList.add('hidden');
   dom.invitesCreated.classList.add('hidden');
@@ -6142,7 +6734,7 @@ const reservedUi = {
 };
 
 function openReservedModal() {
-  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+  if (!state.user || !adminRightsOn()) return;
 
   reservedUi.items = [];
   reservedUi.status = 'all';
@@ -6375,7 +6967,7 @@ const aliasesUi = {
 };
 
 function openAliasesModal() {
-  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+  if (!state.user || !adminRightsOn()) return;
 
   aliasesUi.items = [];
   aliasesUi.type = 'all';
@@ -7544,6 +8136,24 @@ function statusWriteError(error) {
   return message || 'Не удалось сохранить статус';
 }
 
+/** Записать статус цели ({type: 'user'|'chat', id}) — общий путь админки. */
+async function writeStatusToTarget(target, { kind, value, color = '' }) {
+  const payload = {
+    kind,
+    value,
+    color: kind === 'text' ? color : '',
+    by: state.user.uid,
+  };
+  if (target.type === 'chat') await Chat.setChatStatus({ chatId: target.id, ...payload });
+  else await Chat.setUserStatus({ uid: target.id, ...payload });
+}
+
+/** Снять статус цели ({type: 'user'|'chat', id}). */
+async function clearStatusOfTarget(target) {
+  if (target.type === 'chat') await Chat.removeChatStatus(target.id);
+  else await Chat.removeUserStatus(target.id);
+}
+
 /** Выдать или заменить статус по @username (только супер-админ). */
 async function saveUserStatusClick() {
   if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
@@ -7576,14 +8186,11 @@ async function saveUserStatusClick() {
     statusFormResolved = target;
 
     const hadStatus = Boolean(statusOfTarget(target));
-    const payload = {
+    await writeStatusToTarget(target, {
       kind,
       value,
-      color: kind === 'text' ? dom.prefsStatusColor.value : '',
-      by: state.user.uid,
-    };
-    if (target.type === 'chat') await Chat.setChatStatus({ chatId: target.id, ...payload });
-    else await Chat.setUserStatus({ uid: target.id, ...payload });
+      color: dom.prefsStatusColor.value,
+    });
 
     toast(hadStatus ? 'Статус обновлён' : 'Статус выдан', 'success');
     dom.prefsStatusValue.value = '';
@@ -7624,8 +8231,7 @@ async function clearUserStatusClick() {
     const what = target.type === 'chat' ? 'чата' : 'пользователя';
     if (!window.confirm(`Снять статус ${what} ${target.label}?`)) return;
 
-    if (target.type === 'chat') await Chat.removeChatStatus(target.id);
-    else await Chat.removeUserStatus(target.id);
+    await clearStatusOfTarget(target);
 
     toast('Статус снят', 'success');
     dom.prefsStatusValue.value = '';
@@ -7713,6 +8319,82 @@ dom.settingsBtn.addEventListener('click', openPrefsModal);
 dom.prefsClose.addEventListener('click', closePrefsModal);
 dom.prefsOverlay.addEventListener('click', (event) => {
   if (event.target === dom.prefsOverlay) closePrefsModal();
+});
+
+// --- Категории настроек: каждая открывает своё окно ---
+dom.prefsProfileBtn.addEventListener('click', () => {
+  closePrefsModal();
+  openProfileModal();
+});
+dom.prefsAppearanceBtn.addEventListener('click', () => openPrefsPage(dom.appearanceOverlay));
+dom.prefsPrivacyBtn.addEventListener('click', () => openPrefsPage(dom.privacyOverlay));
+dom.prefsSecurityBtn.addEventListener('click', () => openPrefsPage(dom.securityOverlay));
+dom.prefsAccountBtn.addEventListener('click', () => openPrefsPage(dom.accountOverlay));
+dom.prefsDataBtn.addEventListener('click', () => openPrefsPage(dom.dataOverlay));
+dom.prefsAdminBtn.addEventListener('click', () => {
+  if (!adminRightsOn()) return;
+  resetStatusForm();
+  openPrefsPage(dom.adminOverlay);
+});
+
+// --- Карточка цели: юзернеймы, статус и удаление аккаунта ---
+dom.targetAdminClose.addEventListener('click', closeTargetAdmin);
+dom.targetAdminOverlay.addEventListener('click', (event) => {
+  if (event.target === dom.targetAdminOverlay) closeTargetAdmin();
+});
+dom.targetAdminAliasAdd.addEventListener('click', submitTargetAlias);
+dom.targetAdminAliasInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    submitTargetAlias();
+  }
+});
+dom.targetAdminReserve.addEventListener('click', toggleTargetReserve);
+dom.targetAdminStatusKind.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-status-kind]');
+  if (!btn) return;
+  targetAdminUi.statusKind = btn.dataset.statusKind === 'text' ? 'text' : 'emoji';
+  syncTargetStatusKind();
+  renderTargetStatusPreview();
+});
+dom.targetAdminStatusValue.addEventListener('input', renderTargetStatusPreview);
+dom.targetAdminStatusColor.addEventListener('input', renderTargetStatusPreview);
+dom.targetAdminStatusSave.addEventListener('click', saveTargetStatus);
+dom.targetAdminStatusClear.addEventListener('click', clearTargetStatus);
+dom.targetAdminStatusEmoji.addEventListener('click', () => {
+  Emoji.openPicker({
+    mode: 'insert',
+    anchor: dom.targetAdminStatusEmoji,
+    trigger: dom.targetAdminStatusEmoji,
+    onSelect: (emoji) => {
+      dom.targetAdminStatusValue.value = emoji;
+      renderTargetStatusPreview();
+      Emoji.closePicker();
+    },
+  });
+});
+dom.targetAdminDelete.addEventListener('click', deleteTargetAccount);
+dom.profileAdminOpen.addEventListener('click', () => {
+  if (!state.user || !adminRightsOn()) return;
+  openTargetAdmin({
+    type: 'user',
+    id: state.user.uid,
+    username: state.profile?.username || '',
+  });
+});
+
+[
+  [dom.appearanceOverlay, dom.appearanceClose],
+  [dom.privacyOverlay, dom.privacyClose],
+  [dom.securityOverlay, dom.securityClose],
+  [dom.accountOverlay, dom.accountClose],
+  [dom.dataOverlay, dom.dataClose],
+  [dom.adminOverlay, dom.adminClose],
+].forEach(([overlay, closeBtn]) => {
+  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) overlay.classList.add('hidden');
+  });
 });
 dom.prefsLogoutBtn.addEventListener('click', () => {
   closePrefsModal();
@@ -7848,6 +8530,9 @@ dom.prefsAdminToggle.addEventListener('change', async () => {
     await Chat.setAdminMode(state.user.uid, enabled);
     state.settings.adminMode = enabled;
     renderPrefsModal();
+    // Админ-действия в открытых меню чата и профиле тоже скрываем сразу.
+    refreshUsernameAdminBlocks();
+    await refreshReservedNameCache(true);
     toast(enabled ? 'Админ-права включены' : 'Админ-права выключены');
   } catch (error) {
     console.error(error);
@@ -7996,6 +8681,25 @@ dom.settingsCancel.addEventListener('click', closeSettingsModal);
 dom.settingsOverlay.addEventListener('click', (event) => {
   if (event.target === dom.settingsOverlay) closeSettingsModal();
 });
+dom.settingsMembersBtn.addEventListener('click', () => {
+  if (!state.chats.get(settingsChatId)) return;
+  dom.settingsMembersOverlay.classList.remove('hidden');
+  dom.settingsMemberInput.focus();
+});
+dom.settingsAdminsBtn.addEventListener('click', () => {
+  if (!state.chats.get(settingsChatId)) return;
+  dom.settingsAdminsOverlay.classList.remove('hidden');
+  dom.settingsAdminInput.focus();
+});
+[
+  [dom.settingsMembersOverlay, dom.settingsMembersClose],
+  [dom.settingsAdminsOverlay, dom.settingsAdminsClose],
+].forEach(([overlay, closeBtn]) => {
+  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) overlay.classList.add('hidden');
+  });
+});
 dom.settingsTypeBtns.forEach((btn) => {
   btn.addEventListener('click', () => setSettingsTypeChoice(btn.dataset.settingsType));
 });
@@ -8107,10 +8811,19 @@ document.addEventListener('keydown', (event) => {
     closeInvitesModal();
     return;
   }
+  if (!dom.reservedOverlay.classList.contains('hidden')) {
+    closeReservedModal();
+    return;
+  }
   if (!dom.aliasesOverlay.classList.contains('hidden')) {
     closeAliasesModal();
     return;
   }
+  if (!dom.targetAdminOverlay.classList.contains('hidden')) {
+    closeTargetAdmin();
+    return;
+  }
+  if (closeTopPrefsPage()) return;
   if (!dom.prefsOverlay.classList.contains('hidden')) {
     closePrefsModal();
     return;
@@ -8129,6 +8842,14 @@ document.addEventListener('keydown', (event) => {
   }
   if (!dom.chatMenuOverlay.classList.contains('hidden')) {
     closeChatMenu();
+    return;
+  }
+  if (!dom.settingsAdminsOverlay.classList.contains('hidden')) {
+    dom.settingsAdminsOverlay.classList.add('hidden');
+    return;
+  }
+  if (!dom.settingsMembersOverlay.classList.contains('hidden')) {
+    dom.settingsMembersOverlay.classList.add('hidden');
     return;
   }
   if (!dom.settingsOverlay.classList.contains('hidden')) {

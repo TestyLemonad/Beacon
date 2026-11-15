@@ -68,7 +68,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=66';
+import { auth, db } from '../firebase-config.js?v=69';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -447,6 +447,59 @@ export async function releaseReservedUsernames(names = []) {
   }
 
   return { removed, skipped };
+}
+
+/**
+ * Зарезервировать основной @username цели, даже если имя уже занято этой
+ * целью. Обычный reserveUsernames пропускает занятые имена, а в профиле
+ * нужно закрепить именно текущее имя, чтобы после смены оно не досталось
+ * другому пользователю.
+ *
+ * @param {{ type?: 'user'|'channel'|'group', target: string, uid: string }} options
+ * @returns {Promise<{name: string, added: boolean}>}
+ */
+export async function reserveUsernameForTarget({ type = 'user', target = '', uid } = {}) {
+  if (!uid) throw new Error('Сначала войдите в аккаунт');
+
+  const resolved = await resolveAliasTarget(type, target);
+  const name = normalizeUsername(resolved.username);
+  if (!name || !isValidUsername(name)) throw new Error('У цели нет юзернейма');
+
+  const indexNode = resolved.type === 'user'
+    ? 'usernames'
+    : resolved.type === 'channel' ? 'channel_usernames' : 'group_usernames';
+
+  let snapshots;
+  try {
+    snapshots = await Promise.all([
+      get(ref(db, indexNode)),
+      get(ref(db, `reserved_usernames/${name}`)),
+    ]);
+  } catch (error) {
+    console.error('Не удалось проверить юзернейм для резерва:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось проверить юзернейм');
+  }
+
+  const index = snapshots[0].val() || {};
+  if (String(index[name] || '') !== String(resolved.target)) {
+    throw new Error('Юзернейм уже не принадлежит этой цели');
+  }
+  if (snapshots[1].exists()) return { name, added: false };
+
+  try {
+    await set(ref(db, `reserved_usernames/${name}`), { at: nowSeconds(), by: uid });
+  } catch (error) {
+    console.error('Не удалось зарезервировать юзернейм:', error);
+    if (isPermissionDenied(error)) {
+      throw new Error('Нет доступа. Проверьте, что обновлённые правила базы опубликованы.');
+    }
+    throw new Error('Не удалось зарезервировать юзернейм');
+  }
+
+  return { name, added: true };
 }
 
 /* ============================================================

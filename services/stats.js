@@ -6,13 +6,13 @@
  * сырые данные в services/stats-core.js.
  */
 import { ref, get, set, onValue } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { db } from '../firebase-config.js?v=66';
+import { db } from '../firebase-config.js?v=69';
 import {
   buildGlobalStats,
   buildPersonalStats,
   buildChannelStats,
   toPublicSnapshot,
-} from './stats-core.js?v=66';
+} from './stats-core.js?v=69';
 
 /** Ошибка «нет прав» (правила RTDB ещё не опубликованы). */
 export function isPermissionDenied(error) {

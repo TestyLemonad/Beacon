@@ -21,17 +21,17 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=66" />
+  <link rel="stylesheet" href="styles.css?v=69" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=66" />
-  <link rel="modulepreload" href="services/auth.js?v=66" />
-  <link rel="modulepreload" href="services/chat.js?v=66" />
-  <link rel="modulepreload" href="services/sessions.js?v=66" />
-  <link rel="modulepreload" href="services/invites.js?v=66" />
-  <link rel="modulepreload" href="emoji.js?v=66" />
-  <link rel="modulepreload" href="firebase-config.js?v=66" />
+  <link rel="modulepreload" href="app.js?v=69" />
+  <link rel="modulepreload" href="services/auth.js?v=69" />
+  <link rel="modulepreload" href="services/chat.js?v=69" />
+  <link rel="modulepreload" href="services/sessions.js?v=69" />
+  <link rel="modulepreload" href="services/invites.js?v=69" />
+  <link rel="modulepreload" href="emoji.js?v=69" />
+  <link rel="modulepreload" href="firebase-config.js?v=69" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -610,6 +610,18 @@
           <p class="field-hint">3–32 символа (a–z, 0–9, «_»). По нему вас находят другие.</p>
           <p id="profile-aliases" class="field-hint hidden"></p>
         </div>
+        <div class="field hidden" id="profile-admin-field">
+          <button id="profile-admin-open" class="settings-row" type="button">
+            <span class="settings-row-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            </span>
+            <span class="settings-row-body">
+              <span class="settings-row-title">Юзернеймы и статус</span>
+              <span id="profile-admin-hint" class="settings-row-hint">Доп. имена, резерв, статус</span>
+            </span>
+            <span class="settings-row-chevron" aria-hidden="true">›</span>
+          </button>
+        </div>
         <div class="field">
           <label for="pf-firstname">Имя</label>
           <input id="pf-firstname" class="input" type="text" placeholder="Семён" autocomplete="given-name" />
@@ -769,28 +781,32 @@
           <p class="field-hint">Если выключено, канал можно читать без подписки. Писать по-прежнему смогут только администраторы.</p>
         </div>
 
-        <!-- Участники группы: добавление людей и назначение администраторов -->
-        <div class="field hidden" id="settings-members-block">
-          <label>Участники группы</label>
-          <div id="settings-members-list" class="blocked-list"></div>
-          <div class="admin-add-row" id="settings-member-add-row">
-            <input id="settings-member-input" class="input" type="text" placeholder="@username или ID"
-                   autocomplete="off" spellcheck="false" />
-            <button id="settings-member-add" class="btn ghost" type="button">Добавить</button>
-          </div>
-          <p class="field-hint">Добавлять участников могут владелец и администраторы группы. Администраторов назначает владелец.</p>
-        </div>
+        <!-- Участники и администраторы: отдельные окна, чтобы настройки не разрастались -->
+        <div class="field hidden" id="settings-participants-block">
+          <label>Управление</label>
+          <div class="settings-list">
+            <button id="settings-members-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Участники группы</span>
+                <span id="settings-members-hint" class="settings-row-hint">Список и добавление</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
 
-        <!-- Администраторы канала: только для каналов -->
-        <div class="field hidden" id="settings-admins-block">
-          <label>Администраторы канала</label>
-          <div id="settings-admins-list" class="blocked-list"></div>
-          <div class="admin-add-row">
-            <input id="settings-admin-input" class="input" type="text" placeholder="@username или ID"
-                   autocomplete="off" spellcheck="false" />
-            <button id="settings-admin-add" class="btn ghost" type="button">Добавить</button>
+            <button id="settings-admins-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Администраторы канала</span>
+                <span id="settings-admins-hint" class="settings-row-hint">Список и добавление</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
           </div>
-          <p class="field-hint">Администраторы могут писать в канал и смотреть статистику. Новый админ автоматически подписывается на канал.</p>
         </div>
 
         <p id="settings-error" class="form-error hidden"></p>
@@ -801,6 +817,46 @@
           <button id="settings-submit" class="btn primary" type="submit">Сохранить</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Участники группы: отдельное окно из настроек группы -->
+  <div id="settings-members-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Участники группы</h3>
+        <button id="settings-members-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="field" id="settings-members-block">
+        <div id="settings-members-list" class="blocked-list"></div>
+        <div class="admin-add-row" id="settings-member-add-row">
+          <input id="settings-member-input" class="input" type="text" placeholder="@username или ID"
+                 autocomplete="off" spellcheck="false" />
+          <button id="settings-member-add" class="btn ghost" type="button">Добавить</button>
+        </div>
+        <p class="field-hint">Добавлять участников могут владелец и администраторы группы. Администраторов назначает владелец.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Администраторы канала: отдельное окно из настроек канала -->
+  <div id="settings-admins-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Администраторы канала</h3>
+        <button id="settings-admins-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="field" id="settings-admins-block">
+        <div id="settings-admins-list" class="blocked-list"></div>
+        <div class="admin-add-row">
+          <input id="settings-admin-input" class="input" type="text" placeholder="@username или ID"
+                 autocomplete="off" spellcheck="false" />
+          <button id="settings-admin-add" class="btn ghost" type="button">Добавить</button>
+        </div>
+        <p class="field-hint">Администраторы могут писать в канал и смотреть статистику. Новый админ автоматически подписывается на канал.</p>
+      </div>
     </div>
   </div>
 
@@ -905,7 +961,7 @@
     </div>
   </div>
 
-  <!-- Настройки пользователя: открываются по нажатию на логотип -->
+  <!-- Настройки пользователя: компактный список категорий, подробности — в отдельных окнах -->
   <div id="prefs-overlay" class="overlay hidden">
     <div class="modal modal-sm">
       <div class="modal-header">
@@ -914,21 +970,80 @@
       </div>
 
       <div class="create-form">
-        <div class="field">
-          <label>Тема оформления</label>
-          <div class="segmented" id="prefs-theme-toggle">
-            <button class="seg-btn" type="button" data-theme-choice="dark">Тёмная</button>
-            <button class="seg-btn" type="button" data-theme-choice="light">Светлая</button>
+        <button id="prefs-profile-btn" class="settings-row settings-row-profile" type="button">
+          <span class="settings-row-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </span>
+          <span class="settings-row-body">
+            <span class="settings-row-title">Профиль</span>
+            <span id="prefs-profile-hint" class="settings-row-hint">Имя, юзернейм и аватарка</span>
+          </span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </button>
+
+        <div class="settings-section">
+          <p class="settings-section-title">Приложение</p>
+          <div class="settings-list">
+            <button id="prefs-appearance-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Оформление</span>
+                <span id="prefs-appearance-hint" class="settings-row-hint">Тёмная тема</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button id="prefs-privacy-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Приватность</span>
+                <span id="prefs-privacy-hint" class="settings-row-hint">Последний визит и чёрный список</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button id="prefs-security-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Безопасность</span>
+                <span id="prefs-security-hint" class="settings-row-hint">Пароль и активные сессии</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button id="prefs-data-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v11h16V9"/><line x1="10" y1="13" x2="14" y2="13"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Данные</span>
+                <span id="prefs-data-hint" class="settings-row-hint">Архив и статистика</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
           </div>
         </div>
 
-        <div class="field">
-          <label>Последний визит</label>
-          <div class="segmented" id="prefs-privacy-toggle">
-            <button class="seg-btn" type="button" data-privacy-choice="all">Виден всем</button>
-            <button class="seg-btn" type="button" data-privacy-choice="nobody">Скрыт</button>
+        <div class="settings-section">
+          <p class="settings-section-title">Аккаунт</p>
+          <div class="settings-list">
+            <button id="prefs-account-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Вход и аккаунт</span>
+                <span id="prefs-account-hint" class="settings-row-hint">Способы входа и удаление</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
           </div>
-          <p class="field-hint">Если скрыт, собеседники не увидят, когда вы были в сети.</p>
         </div>
 
         <!-- Админ-права: видны только супер-администраторам -->
@@ -938,32 +1053,191 @@
             <input type="checkbox" id="prefs-admin-toggle" />
             <span>Включены (режим тестирования)</span>
           </label>
-          <p class="field-hint">Позволяют банить пользователей, удалять чужие аккаунты, чаты, сообщения и комментарии. Выключите переключатель, чтобы проверить мессенджер как обычный пользователь.</p>
+          <p class="field-hint">Позволяют банить пользователей, удалять чужие аккаунты, чаты, сообщения и комментарии. Выключите переключатель, чтобы проверить мессенджер как обычный пользователь: админ-разделы и действия скроются.</p>
         </div>
 
-        <!-- Инвайт-коды: видны только супер-администраторам -->
-        <div class="field hidden" id="prefs-invites-field">
+        <div class="settings-section hidden" id="prefs-admin-section">
+          <p class="settings-section-title">Администрирование</p>
+          <div class="settings-list">
+            <button id="prefs-admin-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Администрирование</span>
+                <span class="settings-row-hint">Инвайты, юзернеймы и статусы</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Оформление: тема -->
+  <div id="appearance-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Оформление</h3>
+        <button id="appearance-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Тема оформления</label>
+          <div class="segmented" id="prefs-theme-toggle">
+            <button class="seg-btn" type="button" data-theme-choice="dark">Тёмная</button>
+            <button class="seg-btn" type="button" data-theme-choice="light">Светлая</button>
+          </div>
+          <p class="field-hint">Тёмная тема включена по умолчанию. Выбор сохраняется на этом устройстве.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Приватность: последний визит и чёрный список -->
+  <div id="privacy-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Приватность</h3>
+        <button id="privacy-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Последний визит</label>
+          <div class="segmented" id="prefs-privacy-toggle">
+            <button class="seg-btn" type="button" data-privacy-choice="all">Виден всем</button>
+            <button class="seg-btn" type="button" data-privacy-choice="nobody">Скрыт</button>
+          </div>
+          <p class="field-hint">Если скрыт, собеседники не увидят, когда вы были в сети.</p>
+        </div>
+
+        <div class="field">
+          <label>Чёрный список</label>
+          <button id="prefs-blocked-btn" class="btn ghost full" type="button">
+            Открыть чёрный список (<span id="prefs-blocked-count">0</span>)
+          </button>
+          <p class="field-hint">Заблокированные пользователи не могут писать вам и открывать личный чат.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Безопасность: пароль и активные сессии -->
+  <div id="security-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Безопасность</h3>
+        <button id="security-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field hidden" id="prefs-password-field">
+          <label>Пароль</label>
+          <button id="prefs-password-btn" class="btn ghost full" type="button">Сменить пароль</button>
+          <p class="field-hint">Откроется отдельное окно смены пароля.</p>
+        </div>
+
+        <div class="field">
+          <label>Активные сессии</label>
+          <button id="prefs-sessions-btn" class="btn ghost full" type="button">Активные сессии</button>
+          <p class="field-hint">Устройства, где выполнен вход. Лишние сессии можно завершить.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Вход и аккаунт: способы входа, выход, удаление -->
+  <div id="account-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Вход и аккаунт</h3>
+        <button id="account-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Способы входа</label>
+          <div id="prefs-providers" class="providers-list"></div>
+          <p class="field-hint">Один аккаунт — два способа: можно входить и по паролю, и через Google. Привяжите или отвяжите способ входа здесь.</p>
+        </div>
+
+        <div class="field">
+          <label>Сеанс</label>
+          <button id="prefs-logout-btn" class="btn ghost full" type="button">Выйти из аккаунта</button>
+          <p class="field-hint">Завершит сеанс на этом устройстве.</p>
+        </div>
+
+        <div class="field">
+          <label>Удаление аккаунта</label>
+          <button id="prefs-delete-account-btn" class="btn danger full" type="button">Удалить аккаунт</button>
+          <p id="prefs-delete-account-hint" class="field-hint">
+            Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся,
+            а имя изменится на «Удалённый аккаунт». Восстановить аккаунт нельзя.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Данные: архив и статистика -->
+  <div id="data-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Данные</h3>
+        <button id="data-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Архив</label>
+          <button id="prefs-archive-btn" class="btn ghost full" type="button">
+            Открыть архив (<span id="prefs-archive-count">0</span>)
+          </button>
+          <p class="field-hint">Чаты, убранные из основного списка. Архив доступен только вам.</p>
+        </div>
+
+        <div class="field">
+          <label>Статистика</label>
+          <a class="btn ghost full" href="dashboard/">Открыть статистику Beacon</a>
+          <p class="field-hint">Публичные цифры мессенджера, личная статистика и подробные отчёты по каналам.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Администрирование: только супер-администраторы с включёнными админ-правами -->
+  <div id="admin-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Администрирование</h3>
+        <button id="admin-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="field-hint">Инструменты супер-администратора. Выключите «Админ-права» в настройках, чтобы скрыть этот раздел и все админ-действия.</p>
+
+      <div class="create-form">
+        <div class="field" id="prefs-invites-field">
           <label>Приглашения</label>
           <button id="prefs-invites-btn" class="btn ghost full" type="button">Инвайт-коды</button>
           <p class="field-hint">Регистрация в Beacon закрыта: новые аккаунты создаются только по приглашению.</p>
         </div>
 
-        <!-- Резерв юзернеймов: виден только супер-администраторам -->
-        <div class="field hidden" id="prefs-reserved-field">
-          <label>Юзернеймы</label>
+        <div class="field" id="prefs-reserved-field">
+          <label>Зарезервированные юзернеймы</label>
           <button id="prefs-reserved-btn" class="btn ghost full" type="button">Зарезервированные юзернеймы</button>
           <p class="field-hint">Зарезервированные имена нельзя занять: они недоступны для смены юзернейма и создания каналов или публичных групп.</p>
         </div>
 
-        <!-- Дополнительные юзернеймы: видны только супер-администраторам -->
-        <div class="field hidden" id="prefs-aliases-field">
+        <div class="field" id="prefs-aliases-field">
           <label>Дополнительные юзернеймы</label>
           <button id="prefs-aliases-btn" class="btn ghost full" type="button">Выдать доп. юзернеймы</button>
           <p class="field-hint">Дополнительные имена для пользователей, каналов и публичных групп. Показываются в профиле под основным и ведут на него.</p>
         </div>
 
-        <!-- Статусы пользователей, каналов и групп: видны только супер-администраторам -->
-        <div class="field hidden" id="prefs-status-field">
+        <div class="field" id="prefs-status-field">
           <label>Статус рядом с названием</label>
           <div class="status-editor">
             <div class="segmented" id="prefs-status-target">
@@ -997,61 +1271,7 @@
           <p id="prefs-status-error" class="form-error hidden"></p>
         </div>
 
-        <div class="field">
-          <label>Архив</label>
-          <button id="prefs-archive-btn" class="btn ghost full" type="button">
-            Открыть архив (<span id="prefs-archive-count">0</span>)
-          </button>
-        </div>
-
-        <div class="field">
-          <label>Статистика</label>
-          <a class="btn ghost full" href="dashboard/">Открыть статистику Beacon</a>
-          <p class="field-hint">Публичные цифры мессенджера, личная статистика и подробные отчёты по каналам.</p>
-        </div>
-
-        <div class="field">
-          <label>Способы входа</label>
-          <div id="prefs-providers" class="providers-list"></div>
-          <p class="field-hint">Один аккаунт — два способа: можно входить и по паролю, и через Google. Привяжите или отвяжите способ входа здесь.</p>
-        </div>
-
-        <div class="field hidden" id="prefs-password-field">
-          <label>Пароль</label>
-          <button id="prefs-password-btn" class="btn ghost full" type="button">Сменить пароль</button>
-          <p class="field-hint">Откроется отдельное окно смены пароля.</p>
-        </div>
-
-        <div class="field">
-          <label>Безопасность</label>
-          <button id="prefs-sessions-btn" class="btn ghost full" type="button">Активные сессии</button>
-          <p class="field-hint">Устройства, где выполнен вход. Лишние сессии можно завершить.</p>
-        </div>
-
-        <div class="field">
-          <label>Чёрный список</label>
-          <button id="prefs-blocked-btn" class="btn ghost full" type="button">
-            Открыть чёрный список (<span id="prefs-blocked-count">0</span>)
-          </button>
-        </div>
-
-        <div class="field">
-          <label>Аккаунт</label>
-          <button id="prefs-logout-btn" class="btn ghost full" type="button">Выйти из аккаунта</button>
-          <p class="field-hint">Завершит сеанс на этом устройстве.</p>
-        </div>
-
-        <div class="field">
-          <label>Удаление аккаунта</label>
-          <button id="prefs-delete-account-btn" class="btn danger full" type="button">Удалить аккаунт</button>
-          <p id="prefs-delete-account-hint" class="field-hint">
-            Профиль, настройки, чаты и подписки будут удалены. Сообщения останутся,
-            а имя изменится на «Удалённый аккаунт». Восстановить аккаунт нельзя.
-          </p>
-        </div>
-
-        <!-- Удаление чужого аккаунта: только супер-администраторам -->
-        <div class="field hidden" id="prefs-delete-user-field">
+        <div class="field" id="prefs-delete-user-field">
           <label>Удалить аккаунт по юзернейму</label>
           <div class="admin-add-row">
             <input id="prefs-delete-user-input" class="input" type="text" placeholder="@username"
@@ -1060,6 +1280,76 @@
           </div>
           <p class="field-hint">Только для супер-администраторов. Другого супер-администратора удалить нельзя.</p>
           <p id="prefs-delete-user-error" class="form-error hidden"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Карточка цели: юзернеймы, резерв, статус и удаление аккаунта.
+       Открывается из профиля, меню чата и раздела «Администрирование». -->
+  <div id="target-admin-overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Юзернеймы и статус</h3>
+        <button id="target-admin-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="target-admin-head">
+        <div id="target-admin-avatar" class="avatar"></div>
+        <div class="target-admin-head-text">
+          <p id="target-admin-title" class="target-admin-title"></p>
+          <p id="target-admin-meta" class="target-admin-meta"></p>
+        </div>
+      </div>
+
+      <div class="create-form">
+        <div class="field" id="target-admin-alias-field">
+          <label>Дополнительные юзернеймы</label>
+          <div id="target-admin-alias-list" class="username-admin-list"></div>
+          <div class="admin-add-row">
+            <input id="target-admin-alias-input" class="input" type="text" placeholder="@доп_юзернейм"
+                   autocomplete="off" spellcheck="false" />
+            <button id="target-admin-alias-add" class="btn ghost" type="button">Выдать</button>
+          </div>
+          <p class="field-hint">Дополнительные имена ведут на основной профиль.</p>
+        </div>
+
+        <div class="field" id="target-admin-reserve-field">
+          <label>Основной юзернейм</label>
+          <button id="target-admin-reserve" class="btn ghost full" type="button">Зарезервировать</button>
+          <p class="field-hint">Резерв не даёт занять имя после смены.</p>
+        </div>
+
+        <div class="field" id="target-admin-status-field">
+          <label>Статус рядом с названием</label>
+          <div class="segmented" id="target-admin-status-kind">
+            <button class="seg-btn active" type="button" data-status-kind="emoji">Эмодзи</button>
+            <button class="seg-btn" type="button" data-status-kind="text">Текст</button>
+          </div>
+          <div class="status-editor-row">
+            <input id="target-admin-status-value" class="input" type="text" placeholder="Любой эмодзи"
+                   maxlength="24" autocomplete="off" />
+            <button id="target-admin-status-emoji" class="btn ghost status-emoji-btn" type="button"
+                    title="Выбрать эмодзи" aria-label="Выбрать эмодзи">🙂</button>
+          </div>
+          <div class="status-editor-row hidden" id="target-admin-status-color-field">
+            <span class="status-editor-label">Цвет фона</span>
+            <input id="target-admin-status-color" class="status-color-input" type="color" value="#ffb84d" />
+          </div>
+          <div class="status-preview" id="target-admin-status-preview"></div>
+          <p class="status-editor-current hidden" id="target-admin-status-current"></p>
+          <div class="admin-add-row">
+            <button id="target-admin-status-save" class="btn primary" type="button">Выдать эмодзи</button>
+            <button id="target-admin-status-clear" class="btn ghost" type="button">Снять</button>
+          </div>
+          <p id="target-admin-status-error" class="form-error hidden"></p>
+        </div>
+
+        <div class="field hidden" id="target-admin-delete-field">
+          <label>Удаление аккаунта</label>
+          <button id="target-admin-delete" class="btn danger full" type="button">Удалить аккаунт</button>
+          <p class="field-hint">Профиль, настройки, чаты и подписки будут удалены, сообщения останутся. Действие необратимо.</p>
+          <p id="target-admin-delete-error" class="form-error hidden"></p>
         </div>
       </div>
     </div>
@@ -1405,9 +1695,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=66" defer></script>
+  <script src="vendor/twemoji.min.js?v=69" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=66"></script>
+  <script type="module" src="app.js?v=69"></script>
 </body>
 </html>

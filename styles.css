@@ -1022,6 +1022,119 @@ textarea:-webkit-autofill {
   gap: 10px;
 }
 
+/* ---------- Настройки: компактный список категорий ---------- */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-section-title {
+  margin: 4px 2px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.settings-row:hover {
+  background: var(--bg-hover);
+  border-color: rgba(255, 184, 77, 0.35);
+}
+.settings-row-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  color: var(--accent);
+}
+.settings-row-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.settings-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-row-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-row-chevron {
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+/* ---------- Карточка цели: юзернеймы и статус ---------- */
+.target-admin-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 4px;
+}
+.target-admin-head-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.target-admin-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.target-admin-meta {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.username-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.username-admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
 /* ---------- Поиск в сайдбаре ---------- */
 .search-box {
   display: flex;
