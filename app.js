@@ -10,11 +10,12 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=69';
-import * as Chat from './services/chat.js?v=69';
-import * as Sessions from './services/sessions.js?v=69';
-import * as Invites from './services/invites.js?v=69';
-import * as Emoji from './emoji.js?v=69';
+import * as Auth from './services/auth.js?v=70';
+import * as Chat from './services/chat.js?v=70';
+import * as Sessions from './services/sessions.js?v=70';
+import * as Invites from './services/invites.js?v=70';
+import * as Emoji from './emoji.js?v=70';
+import * as ColorPicker from './color-picker.js?v=70';
 
 /* ============================================================
  *  DOM
@@ -249,6 +250,7 @@ const dom = {
   targetAdminStatusEmoji: $('target-admin-status-emoji'),
   targetAdminStatusColorField: $('target-admin-status-color-field'),
   targetAdminStatusColor: $('target-admin-status-color'),
+  targetAdminStatusColorPick: $('target-admin-status-color-pick'),
   targetAdminStatusPreview: $('target-admin-status-preview'),
   targetAdminStatusCurrent: $('target-admin-status-current'),
   targetAdminStatusSave: $('target-admin-status-save'),
@@ -344,6 +346,7 @@ const dom = {
   prefsStatusValue: $('prefs-status-value'),
   prefsStatusColorField: $('prefs-status-color-field'),
   prefsStatusColor: $('prefs-status-color'),
+  prefsStatusColorPick: $('prefs-status-color-pick'),
   prefsStatusEmojiBtn: $('prefs-status-emoji-btn'),
   prefsStatusPreview: $('prefs-status-preview'),
   prefsStatusCurrent: $('prefs-status-current'),
@@ -408,6 +411,8 @@ const dom = {
   avatarPalette2: $('avatar-palette-2'),
   avatarHex1: $('avatar-hex-1'),
   avatarHex2: $('avatar-hex-2'),
+  avatarPick1: $('avatar-pick-1'),
+  avatarPick2: $('avatar-pick-2'),
   avatarColorRow2: $('avatar-color-row-2'),
   avatarSizeMinus: $('avatar-size-minus'),
   avatarSizePlus: $('avatar-size-plus'),
@@ -462,6 +467,8 @@ const dom = {
   settingsAvatarBgBtns: Array.from(document.querySelectorAll('[data-sa-bg]')),
   settingsAvatarHex1: $('settings-avatar-hex1'),
   settingsAvatarHex2: $('settings-avatar-hex2'),
+  settingsAvatarPick1: $('settings-avatar-pick1'),
+  settingsAvatarPick2: $('settings-avatar-pick2'),
   settingsAvatarColorRow2: $('settings-avatar-color-row2'),
   settingsAvatarPalette1: $('settings-avatar-palette1'),
   settingsAvatarPalette2: $('settings-avatar-palette2'),
@@ -902,6 +909,7 @@ function openTargetAdmin(target) {
   dom.targetAdminAliasInput.value = '';
   dom.targetAdminStatusValue.value = '';
   dom.targetAdminStatusColor.value = Chat.STATUS_DEFAULT_COLOR;
+  ColorPicker.syncColorChip(dom.targetAdminStatusColorPick, dom.targetAdminStatusColor);
   dom.targetAdminStatusError.classList.add('hidden');
   dom.targetAdminDeleteError.classList.add('hidden');
   renderTargetAdmin();
@@ -910,6 +918,7 @@ function openTargetAdmin(target) {
 }
 
 function closeTargetAdmin() {
+  ColorPicker.closeColorPicker();
   dom.targetAdminOverlay.classList.add('hidden');
 }
 
@@ -1060,7 +1069,7 @@ function renderTargetStatusPreview() {
     ? [...value].slice(0, Chat.STATUS_TEXT_MAX).join('')
     : value;
   if (kind === 'text') {
-    const color = dom.targetAdminStatusColor.value || Chat.STATUS_DEFAULT_COLOR;
+    const color = normalizeHex(dom.targetAdminStatusColor.value) || Chat.STATUS_DEFAULT_COLOR;
     badge.style.background = color;
     badge.style.color = readableStatusTextColor(color);
   }
@@ -1096,7 +1105,7 @@ async function saveTargetStatus() {
     const hadStatus = Boolean(targetAdminStatus());
     await writeStatusToTarget(
       { type: targetAdminUi.type, id: targetAdminUi.id },
-      { kind, value, color: dom.targetAdminStatusColor.value },
+      { kind, value, color: normalizeHex(dom.targetAdminStatusColor.value) || Chat.STATUS_DEFAULT_COLOR },
     );
     toast(hadStatus ? 'Статус обновлён' : 'Статус выдан', 'success');
     dom.targetAdminStatusValue.value = '';
@@ -4224,6 +4233,7 @@ function openProfileModal() {
 }
 
 function closeProfileModal() {
+  ColorPicker.closeColorPicker();
   dom.profileOverlay.classList.add('hidden');
 }
 
@@ -4343,6 +4353,8 @@ function renderAvatarEditor(syncInput = true) {
   dom.avatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg2);
   });
+  ColorPicker.syncColorChip(dom.avatarPick1, dom.avatarHex1);
+  ColorPicker.syncColorChip(dom.avatarPick2, dom.avatarHex2);
 
   // Превью: своя аватарка (если есть или её начали настраивать), иначе стандартная.
   const showDraft = avatarDraft.custom || Boolean(state.profile?.avatar);
@@ -4431,6 +4443,10 @@ function bindHexInput(inputEl, key) {
 }
 bindHexInput(dom.avatarHex1, 'bg1');
 bindHexInput(dom.avatarHex2, 'bg2');
+
+// Чип рядом с HEX открывает общий пикер цвета: любой оттенок, а не только палитра.
+ColorPicker.bindColorField({ chip: dom.avatarPick1, input: dom.avatarHex1, presets: AVATAR_COLORS });
+ColorPicker.bindColorField({ chip: dom.avatarPick2, input: dom.avatarHex2, presets: AVATAR_COLORS });
 
 /* ============================================================
  *  Модальное окно «Новый чат»
@@ -5416,6 +5432,7 @@ function setSettingsTypeChoice(type) {
 }
 
 function closeSettingsModal() {
+  ColorPicker.closeColorPicker();
   dom.settingsMembersOverlay.classList.add('hidden');
   dom.settingsAdminsOverlay.classList.add('hidden');
   dom.settingsOverlay.classList.add('hidden');
@@ -5757,6 +5774,8 @@ function renderChatAvatarEditor(syncInput = true) {
   dom.settingsAvatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
     swatch.classList.toggle('active', swatch.dataset.color === chatAvatarDraft.bg2);
   });
+  ColorPicker.syncColorChip(dom.settingsAvatarPick1, dom.settingsAvatarHex1);
+  ColorPicker.syncColorChip(dom.settingsAvatarPick2, dom.settingsAvatarHex2);
 
   // Превью: кастомный логотип либо стандартная буква названия.
   const chat = state.chats.get(settingsChatId) || { title: dom.settingsTitle.value };
@@ -5834,6 +5853,9 @@ function bindChatAvatarHexInput(inputEl, key) {
 }
 bindChatAvatarHexInput(dom.settingsAvatarHex1, 'bg1');
 bindChatAvatarHexInput(dom.settingsAvatarHex2, 'bg2');
+
+ColorPicker.bindColorField({ chip: dom.settingsAvatarPick1, input: dom.settingsAvatarHex1, presets: AVATAR_COLORS });
+ColorPicker.bindColorField({ chip: dom.settingsAvatarPick2, input: dom.settingsAvatarHex2, presets: AVATAR_COLORS });
 
 /* ============================================================
  *  Всплывающее меню чата (клик по аватарке в шапке)
@@ -6387,7 +6409,10 @@ function renderPrefsModal() {
   dom.prefsAdminSection.classList.toggle('hidden', !adminOn);
   dom.prefsAdminToggle.checked = adminOn;
   dom.prefsDeleteUserError.classList.add('hidden');
-  if (!adminOn) dom.adminOverlay.classList.add('hidden');
+  if (!adminOn) {
+    ColorPicker.closeColorPicker();
+    dom.adminOverlay.classList.add('hidden');
+  }
 
   dom.prefsDeleteAccountBtn.disabled = false;
   dom.prefsDeleteAccountHint.textContent = isRoot
@@ -8004,6 +8029,7 @@ function resetStatusForm() {
   dom.prefsStatusUser.value = '';
   dom.prefsStatusValue.value = '';
   dom.prefsStatusColor.value = Chat.STATUS_DEFAULT_COLOR;
+  ColorPicker.syncColorChip(dom.prefsStatusColorPick, dom.prefsStatusColor);
   dom.prefsStatusTarget.querySelectorAll('.seg-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.statusTarget === 'user');
   });
@@ -8113,7 +8139,7 @@ function renderStatusPreview() {
     ? [...value].slice(0, Chat.STATUS_TEXT_MAX).join('')
     : value;
   if (kind === 'text') {
-    const color = dom.prefsStatusColor.value || Chat.STATUS_DEFAULT_COLOR;
+    const color = normalizeHex(dom.prefsStatusColor.value) || Chat.STATUS_DEFAULT_COLOR;
     badge.style.background = color;
     badge.style.color = readableStatusTextColor(color);
   }
@@ -8189,7 +8215,7 @@ async function saveUserStatusClick() {
     await writeStatusToTarget(target, {
       kind,
       value,
-      color: dom.prefsStatusColor.value,
+      color: normalizeHex(dom.prefsStatusColor.value) || Chat.STATUS_DEFAULT_COLOR,
     });
 
     toast(hadStatus ? 'Статус обновлён' : 'Статус выдан', 'success');
@@ -8271,6 +8297,8 @@ dom.prefsStatusKind.addEventListener('click', (event) => {
 
 dom.prefsStatusValue.addEventListener('input', renderStatusPreview);
 dom.prefsStatusColor.addEventListener('input', renderStatusPreview);
+// Цвет фона статуса выбирается общим пикером, значение по-прежнему живёт в HEX-поле.
+ColorPicker.bindColorField({ chip: dom.prefsStatusColorPick, input: dom.prefsStatusColor });
 dom.prefsStatusSave.addEventListener('click', saveUserStatusClick);
 dom.prefsStatusClear.addEventListener('click', clearUserStatusClick);
 dom.prefsStatusUser.addEventListener('keydown', (event) => {
@@ -8359,6 +8387,7 @@ dom.targetAdminStatusKind.addEventListener('click', (event) => {
 });
 dom.targetAdminStatusValue.addEventListener('input', renderTargetStatusPreview);
 dom.targetAdminStatusColor.addEventListener('input', renderTargetStatusPreview);
+ColorPicker.bindColorField({ chip: dom.targetAdminStatusColorPick, input: dom.targetAdminStatusColor });
 dom.targetAdminStatusSave.addEventListener('click', saveTargetStatus);
 dom.targetAdminStatusClear.addEventListener('click', clearTargetStatus);
 dom.targetAdminStatusEmoji.addEventListener('click', () => {
@@ -8391,9 +8420,14 @@ dom.profileAdminOpen.addEventListener('click', () => {
   [dom.dataOverlay, dom.dataClose],
   [dom.adminOverlay, dom.adminClose],
 ].forEach(([overlay, closeBtn]) => {
-  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  closeBtn.addEventListener('click', () => {
+    ColorPicker.closeColorPicker();
+    overlay.classList.add('hidden');
+  });
   overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) overlay.classList.add('hidden');
+    if (event.target !== overlay) return;
+    ColorPicker.closeColorPicker();
+    overlay.classList.add('hidden');
   });
 });
 dom.prefsLogoutBtn.addEventListener('click', () => {
