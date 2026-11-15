@@ -334,6 +334,38 @@
     "user2_id": { "lastSeenPrivacy": "nobody" }
   },
 
+  "user_statuses": {
+    "user1_id": {
+      "kind": "text",
+      "value": "На вахте",
+      "color": "#61afef",
+      "at": 1728724500,
+      "by": "user1_id"
+    },
+    "user2_id": {
+      "kind": "emoji",
+      "value": "🔥",
+      "at": 1728724560,
+      "by": "user1_id"
+    }
+  },
+
+  "chat_statuses": {
+    "channel_1": {
+      "kind": "text",
+      "value": "Обновления",
+      "color": "#56b6c2",
+      "at": 1728724620,
+      "by": "user1_id"
+    },
+    "group_1": {
+      "kind": "emoji",
+      "value": "💬",
+      "at": 1728724680,
+      "by": "user1_id"
+    }
+  },
+
   "user_reads": {
     "user1_id": {
       "chat_private_1": 1728723660,

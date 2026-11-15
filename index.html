@@ -21,17 +21,17 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=60" />
+  <link rel="stylesheet" href="styles.css?v=66" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=60" />
-  <link rel="modulepreload" href="services/auth.js?v=60" />
-  <link rel="modulepreload" href="services/chat.js?v=60" />
-  <link rel="modulepreload" href="services/sessions.js?v=60" />
-  <link rel="modulepreload" href="services/invites.js?v=60" />
-  <link rel="modulepreload" href="emoji.js?v=60" />
-  <link rel="modulepreload" href="firebase-config.js?v=60" />
+  <link rel="modulepreload" href="app.js?v=66" />
+  <link rel="modulepreload" href="services/auth.js?v=66" />
+  <link rel="modulepreload" href="services/chat.js?v=66" />
+  <link rel="modulepreload" href="services/sessions.js?v=66" />
+  <link rel="modulepreload" href="services/invites.js?v=66" />
+  <link rel="modulepreload" href="emoji.js?v=66" />
+  <link rel="modulepreload" href="firebase-config.js?v=66" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -962,6 +962,41 @@
           <p class="field-hint">Дополнительные имена для пользователей, каналов и публичных групп. Показываются в профиле под основным и ведут на него.</p>
         </div>
 
+        <!-- Статусы пользователей, каналов и групп: видны только супер-администраторам -->
+        <div class="field hidden" id="prefs-status-field">
+          <label>Статус рядом с названием</label>
+          <div class="status-editor">
+            <div class="segmented" id="prefs-status-target">
+              <button class="seg-btn active" type="button" data-status-target="user">Пользователь</button>
+              <button class="seg-btn" type="button" data-status-target="chat">Канал или группа</button>
+            </div>
+            <input id="prefs-status-user" class="input" type="text" placeholder="@username"
+                   autocomplete="off" spellcheck="false" />
+            <div class="segmented" id="prefs-status-kind">
+              <button class="seg-btn active" type="button" data-status-kind="emoji">Эмодзи</button>
+              <button class="seg-btn" type="button" data-status-kind="text">Текст</button>
+            </div>
+            <div class="status-editor-row">
+              <input id="prefs-status-value" class="input" type="text" placeholder="Любой эмодзи"
+                     maxlength="24" autocomplete="off" />
+              <button id="prefs-status-emoji-btn" class="btn ghost status-emoji-btn" type="button"
+                      title="Выбрать эмодзи" aria-label="Выбрать эмодзи">🙂</button>
+            </div>
+            <div class="status-editor-row hidden" id="prefs-status-color-field">
+              <span class="status-editor-label">Цвет фона</span>
+              <input id="prefs-status-color" class="status-color-input" type="color" value="#ffb84d" />
+            </div>
+            <div class="status-preview" id="prefs-status-preview"></div>
+            <p class="status-editor-current" id="prefs-status-current"></p>
+            <div class="admin-add-row">
+              <button id="prefs-status-save" class="btn primary" type="button">Выдать эмодзи</button>
+              <button id="prefs-status-clear" class="btn ghost" type="button">Снять</button>
+            </div>
+          </div>
+          <p class="field-hint">Один статус на пользователя, канал или группу: новый заменит старый. Эмодзи — любой, текст — до 10 символов на выбранном цвете.</p>
+          <p id="prefs-status-error" class="form-error hidden"></p>
+        </div>
+
         <div class="field">
           <label>Архив</label>
           <button id="prefs-archive-btn" class="btn ghost full" type="button">
@@ -1370,9 +1405,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=60" defer></script>
+  <script src="vendor/twemoji.min.js?v=66" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=60"></script>
+  <script type="module" src="app.js?v=66"></script>
 </body>
 </html>

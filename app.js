@@ -10,11 +10,11 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=60';
-import * as Chat from './services/chat.js?v=60';
-import * as Sessions from './services/sessions.js?v=60';
-import * as Invites from './services/invites.js?v=60';
-import * as Emoji from './emoji.js?v=60';
+import * as Auth from './services/auth.js?v=66';
+import * as Chat from './services/chat.js?v=66';
+import * as Sessions from './services/sessions.js?v=66';
+import * as Invites from './services/invites.js?v=66';
+import * as Emoji from './emoji.js?v=66';
 
 /* ============================================================
  *  DOM
@@ -282,6 +282,21 @@ const dom = {
   aliasesEmpty: $('aliases-empty'),
   aliasesLoadError: $('aliases-load-error'),
 
+  // Статусы пользователей (только root-админы)
+  prefsStatusField: $('prefs-status-field'),
+  prefsStatusTarget: $('prefs-status-target'),
+  prefsStatusUser: $('prefs-status-user'),
+  prefsStatusKind: $('prefs-status-kind'),
+  prefsStatusValue: $('prefs-status-value'),
+  prefsStatusColorField: $('prefs-status-color-field'),
+  prefsStatusColor: $('prefs-status-color'),
+  prefsStatusEmojiBtn: $('prefs-status-emoji-btn'),
+  prefsStatusPreview: $('prefs-status-preview'),
+  prefsStatusCurrent: $('prefs-status-current'),
+  prefsStatusSave: $('prefs-status-save'),
+  prefsStatusClear: $('prefs-status-clear'),
+  prefsStatusError: $('prefs-status-error'),
+
   // Архив чатов
   archiveOverlay: $('archive-overlay'),
   archiveClose: $('archive-close'),
@@ -485,6 +500,8 @@ const state = {
     bans: null,             // /banned_users
     rootAdmins: null,       // /root_admins
     usernameAliases: null,  // /username_aliases
+    userStatuses: null,     // /user_statuses (статусы рядом с именем)
+    chatStatuses: null,     // /chat_statuses (статусы каналов и групп)
     userProfiles: new Map(), // uid -> unsubscribe для живых профилей (/users/$uid)
     chatScoped: [],         // подписки активного чата (typing, голоса, комментарии…)
     chatScopedId: null,     // id чата, для которого настроены подписки chatScoped
@@ -520,8 +537,14 @@ const viewsPending = new Map();     // msgId -> таймер «пост проб
 let chatListSignature = null;       // подпись состояния списка чатов (пропуск лишних перерисовок)
 let chatListRenderHandle = 0;       // запланированная перерисовка списка (batch подписок RTDB)
 let chatListRenderFallback = 0;     // таймер-страховка, если requestAnimationFrame не сработал
+let chatListNodes = new Map();      // ключ элемента списка -> { el, sig }: переиспользование узлов
+let messagesRenderHandle = 0;       // запланированная перерисовка ленты (batch подписок голосов/просмотров)
+let messagesRenderFallback = 0;     // таймер-страховка перерисовки ленты
+let pinBarSignature = null;         // подпись плашки закрепа (пропуск лишних перерисовок)
+let foldersBarSignature = null;     // подпись полосы папок (пропуск лишних перерисовок)
 let composerMeasure = { value: null, width: -1 }; // кэш замеров поля ввода
 let sessionStartedForUid = null;    // uid, для которого уже запущен реестр сессий
+let loginIndexBackfilledFor = null; // uid, для которого индекс входа уже дозаполняли
 let subscriptionsStarted = false;   // полный набор подписок после входа уже поднят
 let accountDeletionInProgress = false; // удаляем аккаунт: не реагируем на отзыв сессии
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
@@ -627,6 +650,86 @@ function getProfileName(profile) {
   if (profile.deleted) return Chat.DELETED_ACCOUNT_NAME || 'Удалённый аккаунт';
   const full = [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim();
   return full || (profile.username ? '@' + profile.username : null);
+}
+
+/** Контрастный цвет текста для фона статуса (#rrggbb). */
+function readableStatusTextColor(color) {
+  const match = /^#([0-9a-f]{6})$/i.exec(String(color || ''));
+  if (!match) return '#ffffff';
+  const value = parseInt(match[1], 16);
+  const luminance = (0.299 * ((value >> 16) & 255)
+    + 0.587 * ((value >> 8) & 255)
+    + 0.114 * (value & 255)) / 255;
+  return luminance > 0.62 ? '#1b1b1b' : '#ffffff';
+}
+
+/** Пилюля статуса: эмодзи или текст на цветном фоне. */
+function buildStatusBadge(status) {
+  if (!status) return null;
+  const badge = createEl('span', `user-status user-status-${status.kind}`);
+  badge.textContent = status.value;
+  if (status.kind === 'text') {
+    badge.style.background = status.color;
+    badge.style.color = readableStatusTextColor(status.color);
+  }
+  badge.title = status.kind === 'text' ? `Статус: ${status.value}` : 'Статус';
+  return badge;
+}
+
+/** Статус пользователя для показа (у удалённых аккаунтов статуса нет). */
+function userStatusFor(uid) {
+  if (!uid) return null;
+  if (Chat.getCachedUserProfile(uid)?.deleted) return null;
+  return Chat.getCachedUserStatus(uid);
+}
+
+/** Статус канала или группы. */
+function chatStatusFor(chatId) {
+  if (!chatId) return null;
+  return Chat.getCachedChatStatus(chatId);
+}
+
+/**
+ * Статус, который показывается рядом с названием чата:
+ * у личных — собеседника, у каналов и групп — самого чата.
+ */
+function chatItemStatus(chatId, chat) {
+  if (!chat) return null;
+  if (chat.type === 'private') return userStatusFor(getPrivatePeerUid(chat));
+  if (chat.type === 'channel' || chat.type === 'group') return chatStatusFor(chatId);
+  return null;
+}
+
+/** Дописать готовую пилюлю статуса к узлу. */
+function applyStatus(node, status) {
+  if (!node || !status) return;
+  const badge = buildStatusBadge(status);
+  if (!badge) return;
+  node.append(badge);
+  Emoji.parse(badge);
+}
+
+/** Дописать статус пользователя справа от уже вставленного имени. */
+function applyUserStatus(node, uid) {
+  applyStatus(node, userStatusFor(uid));
+}
+
+/** Дописать статус канала или группы справа от названия. */
+function applyChatStatus(node, chatId) {
+  applyStatus(node, chatStatusFor(chatId));
+}
+
+/** Название со статусом для строк списков: обёртка, которая не ломает эллипсис. */
+function buildNameWithStatus(name, status, className = 'chat-item-title') {
+  const wrap = createEl('span', 'name-with-status');
+  wrap.append(createEl('span', className, name));
+  applyStatus(wrap, status);
+  return wrap;
+}
+
+/** Имя пользователя со статусом. */
+function buildUserNameWithStatus(name, uid, className = 'chat-item-title') {
+  return buildNameWithStatus(name, userStatusFor(uid), className);
 }
 
 /** Дополнительные юзернеймы цели: [{ name, type, target, at, by }]. */
@@ -906,7 +1009,9 @@ function getOwnDisplayName() {
 
 /** Обновить аватар и имя текущего пользователя в сайдбаре. */
 function updateSidebarUser() {
-  dom.currentUserName.textContent = getOwnDisplayName();
+  dom.currentUserName.textContent = '';
+  dom.currentUserName.append(createEl('span', 'current-user-name', getOwnDisplayName()));
+  applyUserStatus(dom.currentUserName, state.user?.uid);
   applyProfileAvatar(dom.sidebarAvatar, state.profile, state.user?.uid || 'me');
 }
 
@@ -1031,8 +1136,9 @@ async function hydrateUsers(uids) {
  * ============================================================ */
 
 /** Личные настройки чата (архив/закреп/папки) — или пустой объект. */
+const EMPTY_CHAT_META = Object.freeze({});
 function getChatMeta(chatId) {
-  return state.chatMeta.get(chatId) || {};
+  return state.chatMeta.get(chatId) || EMPTY_CHAT_META;
 }
 
 /** Есть ли в чате непрочитанные: последнее сообщение новее моего прочтения. */
@@ -1138,7 +1244,7 @@ function buildDevPromoItem() {
   const body = createEl('div', 'chat-item-body');
 
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
+  top.append(buildNameWithStatus(getChatTitle(chat), chatStatusFor(DEV_CHANNEL_ID)));
   top.append(createEl('span', 'dev-promo-badge', 'Канал'));
 
   const bottom = createEl('div', 'chat-item-bottom');
@@ -1173,7 +1279,7 @@ function buildChatListItem(tag, chatId, chat) {
   const body = createEl('div', 'chat-item-body');
 
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
+  top.append(buildNameWithStatus(getChatTitle(chat), chatItemStatus(chatId, chat)));
   if (pinned) top.append(createIcon('pin', 'chat-pin'));
   if (chat.lastMessage?.timestamp) {
     top.append(createEl('span', 'chat-item-time', formatListTime(chat.lastMessage.timestamp)));
@@ -1221,34 +1327,54 @@ function buildChatListItem(tag, chatId, chat) {
 }
 
 /**
+ * Подпись одного элемента списка чатов: всё, что видно в узле.
+ * Совпала — узел переиспользуется, иначе пересобирается только он.
+ */
+function chatListItemSignature(chatId, chat) {
+  const peerUid = chat?.type === 'private' ? getPrivatePeerUid(chat) : null;
+  const peerAvatar = peerUid ? Chat.getCachedUserProfile(peerUid)?.avatar : null;
+  const status = chatItemStatus(chatId, chat);
+  return [
+    chatId,
+    chatId === state.activeChatId ? 1 : 0,
+    chat?.type || '',
+    getChatTitle(chat),
+    getChatPreview(chat),
+    chat?.lastMessage?.timestamp || 0,
+    isChatUnread(chatId, chat) ? 1 : 0,
+    getChatMeta(chatId).pinnedAt ? 1 : 0,
+    chat?.avatar ? JSON.stringify(chat.avatar) : '',
+    peerAvatar ? JSON.stringify(peerAvatar) : '',
+    status ? JSON.stringify(status) : '',
+  ].join('\u0002');
+}
+
+/** Подпись промо-строки канала @dev. */
+function devPromoSignature() {
+  const status = chatStatusFor(DEV_CHANNEL_ID);
+  return [
+    state.devPromoChat?.title || '',
+    state.devPromoChat?.description || '',
+    state.devPromoChat?.avatar ? JSON.stringify(state.devPromoChat.avatar) : '',
+    status ? JSON.stringify(status) : '',
+  ].join('\u0003');
+}
+
+/**
  * Подпись состояния списка чатов. Пока она не меняется, перерисовка не нужна:
  * onValue приходит на каждое новое сообщение в любом чате и раньше заставлял
  * заново строить весь список вместе с обработчиками и аватарками.
  */
-function buildChatListSignature(chats, showPromo) {
+function buildChatListSignature(items, showPromo, promoSignature) {
   const parts = [
     state.activeChatId || '',
     state.activeFolder,
     showPromo ? '1' : '0',
-    showPromo ? `${state.devPromoChat?.title || ''}\u0003${state.devPromoChat?.description || ''}` : '',
-    chats.length ? '' : String(state.myChatIds.size),
+    showPromo ? promoSignature : '',
+    items.length ? '' : String(state.myChatIds.size),
   ];
 
-  for (const [chatId, chat] of chats) {
-    const peerUid = chat?.type === 'private' ? getPrivatePeerUid(chat) : null;
-    const peerAvatar = peerUid ? Chat.getCachedUserProfile(peerUid)?.avatar : null;
-    parts.push([
-      chatId,
-      chat?.type || '',
-      getChatTitle(chat),
-      getChatPreview(chat),
-      chat?.lastMessage?.timestamp || 0,
-      isChatUnread(chatId, chat) ? 1 : 0,
-      getChatMeta(chatId).pinnedAt ? 1 : 0,
-      chat?.avatar ? JSON.stringify(chat.avatar) : '',
-      peerAvatar ? JSON.stringify(peerAvatar) : '',
-    ].join('\u0002'));
-  }
+  for (const item of items) parts.push(item.sig);
 
   parts.push([...state.folders.entries()]
     .sort((a, b) => (Number(a[1]?.createdAt) || 0) - (Number(b[1]?.createdAt) || 0))
@@ -1262,29 +1388,58 @@ function buildChatListSignature(chats, showPromo) {
 function renderChatList(force = false) {
   const chats = visibleChats();
   const showPromo = isDevPromoVisible();
-  const signature = buildChatListSignature(chats, showPromo);
+  const promoSignature = showPromo ? devPromoSignature() : '';
+
+  // Подписи считаем один раз: они нужны и для сравнения состояния списка,
+  // и для переиспользования узлов.
+  const items = chats.map(([chatId, chat]) => ({ chatId, chat, sig: chatListItemSignature(chatId, chat) }));
+
+  const signature = buildChatListSignature(items, showPromo, promoSignature);
   if (!force && signature === chatListSignature) return;
   chatListSignature = signature;
 
-  dom.chatList.innerHTML = '';
-  dom.chatListEmpty.classList.toggle('hidden', chats.length > 0 || showPromo);
-  dom.chatListEmpty.innerHTML = state.activeFolder !== 'all' && state.myChatIds.size
+  const emptyText = state.activeFolder !== 'all' && state.myChatIds.size
     ? 'В этой папке пока нет чатов.<br />Добавить чат можно правым кликом по нему в «Все чаты».'
     : 'У вас пока нет чатов.<br />Создайте первый или найдите канал через поиск!';
+  dom.chatListEmpty.classList.toggle('hidden', chats.length > 0 || showPromo);
+  if (dom.chatListEmpty.innerHTML !== emptyText) dom.chatListEmpty.innerHTML = emptyText;
+
+  const previousNodes = chatListNodes;
+  const nextNodes = new Map();
+  const ordered = [];
+  const created = [];
+
+  /** Взять готовый узел по ключу либо собрать новый. */
+  const pushItem = (key, itemSignature, build) => {
+    const previous = previousNodes.get(key);
+    if (previous && previous.sig === itemSignature) {
+      nextNodes.set(key, previous);
+      ordered.push(previous.el);
+      return;
+    }
+    const el = build();
+    nextNodes.set(key, { el, sig: itemSignature });
+    ordered.push(el);
+    created.push(el);
+  };
 
   const uidsToHydrate = [];
 
   // Канал @dev — самым верхним, пока пользователь не подписан и не скрыл его.
-  if (showPromo) dom.chatList.append(buildDevPromoItem());
+  if (showPromo) pushItem('promo', promoSignature, buildDevPromoItem);
 
-  for (const [chatId, chat] of chats) {
-    dom.chatList.append(buildChatListItem('li', chatId, chat));
+  for (const { chatId, chat, sig } of items) {
+    pushItem(`c:${chatId}`, sig, () => buildChatListItem('li', chatId, chat));
 
     if (chat.type === 'private') uidsToHydrate.push(getPrivatePeerUid(chat));
     if (chat.type !== 'saved' && chat.lastMessage?.sender) uidsToHydrate.push(chat.lastMessage.sender);
   }
 
-  Emoji.parse(dom.chatList);
+  syncMessageList(dom.chatList, ordered);
+  chatListNodes = nextNodes;
+
+  // Эмодзи разбираем только в новых узлах, а не во всём списке заново.
+  for (const el of created) Emoji.parse(el);
   renderFoldersBar();
   hydrateUsers(uidsToHydrate);
 }
@@ -1298,6 +1453,7 @@ function scheduleChatListRender() {
   if (chatListRenderHandle || chatListRenderFallback) return;
 
   const run = () => {
+    if (chatListRenderHandle) cancelAnimationFrame(chatListRenderHandle);
     chatListRenderHandle = 0;
     if (chatListRenderFallback) {
       window.clearTimeout(chatListRenderFallback);
@@ -1314,8 +1470,6 @@ function scheduleChatListRender() {
 
 /** Полоса папок под поиском: «Все чаты» + пользовательские папки. */
 function renderFoldersBar() {
-  dom.foldersBar.innerHTML = '';
-
   const chips = [{ id: 'all', name: 'Все чаты' }];
   for (const [folderId, folder] of [...state.folders.entries()].sort((a, b) => (
     (Number(a[1]?.createdAt) || 0) - (Number(b[1]?.createdAt) || 0)
@@ -1323,6 +1477,13 @@ function renderFoldersBar() {
     chips.push({ id: folderId, name: folder?.name || 'Папка' });
   }
 
+  // Полоса меняется только вместе с папками и выбранной папкой: на каждое
+  // новое сообщение в списке чатов пересобирать её с обработчиками незачем.
+  const signature = [state.activeFolder, ...chips.map((chip) => `${chip.id}\u0005${chip.name}`)].join('\u0004');
+  if (signature === foldersBarSignature) return;
+  foldersBarSignature = signature;
+
+  dom.foldersBar.innerHTML = '';
   for (const chip of chips) {
     const btn = createEl('button', `folder-chip${state.activeFolder === chip.id ? ' active' : ''}`, chip.name);
     btn.type = 'button';
@@ -1485,7 +1646,7 @@ function buildUserRow(user) {
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', getProfileName(profile) || '@' + profile.username));
+  top.append(buildUserNameWithStatus(getProfileName(profile) || '@' + profile.username, user.uid));
   if (state.blocked.has(user.uid)) top.append(createEl('span', 'search-badge muted', 'в ЧС'));
 
   const bottom = createEl('div', 'chat-item-bottom');
@@ -1509,7 +1670,7 @@ function buildChannelRow(channel) {
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', channel.title || 'Канал'));
+  top.append(buildNameWithStatus(channel.title || 'Канал', chatStatusFor(channel.chatId)));
   if (subscribed) top.append(createEl('span', 'search-badge', 'вы подписаны'));
 
   const bottom = createEl('div', 'chat-item-bottom');
@@ -1542,7 +1703,7 @@ function buildGroupRow(group) {
 
   const body = createEl('div', 'chat-item-body');
   const top = createEl('div', 'chat-item-top');
-  top.append(createEl('span', 'chat-item-title', group.title || 'Группа'));
+  top.append(buildNameWithStatus(group.title || 'Группа', chatStatusFor(group.chatId)));
   if (member) top.append(createEl('span', 'search-badge', 'вы участник'));
 
   const bottom = createEl('div', 'chat-item-bottom');
@@ -1598,7 +1759,7 @@ function buildMessageResultRow(item) {
 
   const top = createEl('div', 'chat-item-top');
   const author = item.sender === state.user?.uid ? 'Вы' : getSenderName(item.sender);
-  top.append(createEl('span', 'chat-item-title', author));
+  top.append(buildUserNameWithStatus(author, item.sender));
   top.append(createEl('span', 'chat-item-time', formatListTime(item.timestamp)));
 
   const preview = createEl('div', 'chat-item-preview msg-result-text');
@@ -1981,6 +2142,11 @@ function clearChatScoped() {
   state.subscriptions.messages = null;
   state.messageNodes = new Map();
   state.messageNodesChatId = null;
+  cancelAnimationFrame(messagesRenderHandle);
+  messagesRenderHandle = 0;
+  window.clearTimeout(messagesRenderFallback);
+  messagesRenderFallback = 0;
+  pinBarSignature = null;
   messagesObserver?.disconnect();
   messagesObserver = null;
   messagesObserverChatId = null;
@@ -2023,18 +2189,18 @@ function setupChatScoped(chatId, chat) {
   // Голоса во всех опросах чата.
   scope.push(Chat.subscribeToPollVotes(chatId, (map) => {
     state.pollVotes = new Map(Object.entries(map || {}));
-    renderMessages();
+    scheduleMessagesRender();
   }));
 
   // Канал: комментарии (счётчики) и просмотры постов.
   if (chat?.type === 'channel') {
     scope.push(Chat.subscribeToChatComments(chatId, (map) => {
       state.chatComments = new Map(Object.entries(map || {}));
-      renderMessages();
+      scheduleMessagesRender();
     }));
     scope.push(Chat.subscribeToChatViews(chatId, (map) => {
       state.chatViews = new Map(Object.entries(map || {}));
-      renderMessages();
+      scheduleMessagesRender();
     }));
   }
 
@@ -2044,7 +2210,7 @@ function setupChatScoped(chatId, chat) {
     if (peerUid) {
       scope.push(Chat.subscribeToChatReads(peerUid, chatId, (ts) => {
         state.peerReadTs = ts;
-        renderMessages();
+        scheduleMessagesRender();
       }));
       scope.push(Chat.subscribeToPresence(peerUid, (presence) => {
         if (presence) state.presence.set(peerUid, presence);
@@ -2271,7 +2437,9 @@ function renderMainPanel() {
 
   const chat = state.chats.get(state.activeChatId) || null;
 
-  dom.chatTitle.textContent = getChatTitle(chat);
+  dom.chatTitle.textContent = '';
+  dom.chatTitle.append(createEl('span', 'chat-title-text', getChatTitle(chat)));
+  applyStatus(dom.chatTitle, chatItemStatus(state.activeChatId, chat));
   Emoji.parse(dom.chatTitle);
   applyChatAvatar(dom.chatHeaderAvatar, state.activeChatId, chat);
   updateChatStatus();
@@ -2310,7 +2478,9 @@ function renderChannelPreview() {
 
   if (chat) applyChatAvatar(dom.previewAvatar, chatId, chat);
   else applyAvatar(dom.previewAvatar, chatId, 'К');
-  dom.previewTitle.textContent = chat?.title || 'Загрузка…';
+  dom.previewTitle.textContent = '';
+  dom.previewTitle.append(createEl('span', 'preview-title-text', chat?.title || 'Загрузка…'));
+  if (chat) applyChatStatus(dom.previewTitle, chatId);
 
   if (chat) {
     const handle = chat.username ? `@${chat.username} · ` : '';
@@ -2341,20 +2511,41 @@ function renderChannelPreview() {
  * переиспользуется: реакции, просмотры или чужое прочтение больше не
  * пересобирают всю историю чата.
  */
-function messageRenderSignature(message, chat, showSender) {
-  const parts = [
+const messageBodySignatureCache = new WeakMap();
+
+/**
+ * Неизменяемая часть подписи сообщения (id, текст, реакции, ответ, опрос).
+ * Кэш по объекту сообщения: голоса, просмотры и комментарии приходят чаще,
+ * чем сами сообщения, а JSON.stringify по каждому сообщению на каждый рендер
+ * был основной ценой перерисовки ленты.
+ */
+function messageBodySignature(message) {
+  const cached = messageBodySignatureCache.get(message);
+  if (cached !== undefined) return cached;
+  const signature = [
     message.id,
     Number(message.timestamp) || 0,
     message.sender || '',
     message.text || '',
     message.editedAt || '',
-    showSender ? getSenderName(message.sender) : '',
-    chat?.pinned?.[message.id] ? '1' : '0',
     message.reactions ? JSON.stringify(message.reactions) : '',
-    message.replyTo ? JSON.stringify(message.replyTo) + getSenderName(message.replyTo.sender) : '',
+    message.replyTo ? JSON.stringify(message.replyTo) : '',
     message.savedFrom ? JSON.stringify(message.savedFrom) : '',
     message.forwardedFrom ? JSON.stringify(message.forwardedFrom) : '',
     message.poll ? JSON.stringify(message.poll) : '',
+  ].join('\u0001');
+  messageBodySignatureCache.set(message, signature);
+  return signature;
+}
+
+function messageRenderSignature(message, chat, showSender) {
+  const senderStatus = showSender ? Chat.getCachedUserStatus(message.sender) : null;
+  const parts = [
+    messageBodySignature(message),
+    showSender ? getSenderName(message.sender) : '',
+    senderStatus ? JSON.stringify(senderStatus) : '',
+    chat?.pinned?.[message.id] ? '1' : '0',
+    message.replyTo ? getSenderName(message.replyTo.sender) : '',
   ];
   if (message.poll) {
     // У опроса от результата зависят проценты, а от членства — доступность кнопок.
@@ -2369,6 +2560,19 @@ function messageRenderSignature(message, chat, showSender) {
     parts.push(String(Object.keys(state.chatComments.get(message.id) || {}).length));
   }
   return parts.join('\u0001');
+}
+
+/**
+ * Ключ дня для разделителя дат. Кэш по объекту сообщения: новый Date
+ * на каждое сообщение при каждом рендере стоил дороже самой отрисовки.
+ */
+const messageDayKeyCache = new WeakMap();
+function messageDayKey(message) {
+  const cached = messageDayKeyCache.get(message);
+  if (cached !== undefined) return cached;
+  const key = new Date(message.timestamp * 1000).toDateString();
+  messageDayKeyCache.set(message, key);
+  return key;
 }
 
 /** Привести узлы ленты к нужному порядку, лишние убрать из DOM. */
@@ -2443,7 +2647,7 @@ function renderMessages() {
     let lastDay = null;
 
     for (const message of visible) {
-      const dayKey = new Date(message.timestamp * 1000).toDateString();
+      const dayKey = messageDayKey(message);
       if (dayKey !== lastDay) {
         lastDay = dayKey;
         const label = formatDayLabel(message.timestamp);
@@ -2491,6 +2695,29 @@ function renderMessages() {
   setupViewsObserver(chat, visible, created);
   renderPinBar();
   hydrateUsers(visible.map((message) => message.sender));
+}
+
+/**
+ * Отложенная перерисовка ленты. Голоса опросов, комментарии и просмотры
+ * приходят пачками (особенно при открытии канала) — склеиваем их в один
+ * рендер, как это уже сделано для списка чатов.
+ */
+function scheduleMessagesRender() {
+  if (messagesRenderHandle || messagesRenderFallback) return;
+
+  const run = () => {
+    if (messagesRenderHandle) cancelAnimationFrame(messagesRenderHandle);
+    messagesRenderHandle = 0;
+    if (messagesRenderFallback) {
+      window.clearTimeout(messagesRenderFallback);
+      messagesRenderFallback = 0;
+    }
+    renderMessages();
+  };
+
+  messagesRenderHandle = requestAnimationFrame(run);
+  // requestAnimationFrame не срабатывает в скрытом или перекрытом окне.
+  messagesRenderFallback = window.setTimeout(run, 250);
 }
 
 /**
@@ -2753,7 +2980,10 @@ function buildMessageElement(message, showSender) {
   wrap.tabIndex = 0; // ТВ-пульт и клавиатура: Enter открывает меню
 
   if (showSender) {
-    wrap.append(createEl('div', 'message-sender', own ? 'Вы' : getSenderName(message.sender)));
+    const sender = createEl('div', 'message-sender');
+    sender.append(createEl('span', 'message-sender-name', own ? 'Вы' : getSenderName(message.sender)));
+    applyUserStatus(sender, message.sender);
+    wrap.append(sender);
   }
 
   const bubble = createEl('div', 'bubble');
@@ -2938,6 +3168,8 @@ function sortedPins() {
 function renderPinBar() {
   const pins = sortedPins();
   if (!pins.length) {
+    if (pinBarSignature === '') return;
+    pinBarSignature = '';
     dom.pinBar.classList.add('hidden');
     dom.pinBarTitle.textContent = '';
     dom.pinBarText.textContent = '';
@@ -2947,6 +3179,18 @@ function renderPinBar() {
 
   state.pinIndex = ((state.pinIndex % pins.length) + pins.length) % pins.length;
   const pin = pins[state.pinIndex];
+
+  // Плашка меняется только вместе с закрепом: на каждый рендер ленты
+  // (голоса, просмотры, комментарии) переписывать её незачем.
+  const signature = [
+    state.pinIndex,
+    pins.length,
+    pin.msgId,
+    pin.text,
+    pin.sender ? getSenderName(pin.sender) : '',
+  ].join('\u0001');
+  if (signature === pinBarSignature) return;
+  pinBarSignature = signature;
 
   dom.pinBar.classList.remove('hidden');
   dom.pinBarTitle.textContent = pin.sender ? getSenderName(pin.sender) : 'Закреплённое сообщение';
@@ -3112,6 +3356,23 @@ function startSubscriptions() {
     if (!dom.settingsOverlay.classList.contains('hidden')) renderSettingsAliases();
     if (!dom.aliasesOverlay.classList.contains('hidden')) loadUsernameAliases();
   });
+  // Статусы пользователей, каналов и групп видны всем; меняет их только супер-админ.
+  state.subscriptions.userStatuses = Chat.subscribeToUserStatuses(() => {
+    updateSidebarUser();
+    scheduleProfileRefresh();
+    if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
+    if (!dom.prefsOverlay.classList.contains('hidden')) {
+      renderStatusPreview();
+      renderCurrentStatus();
+    }
+  });
+  state.subscriptions.chatStatuses = Chat.subscribeToChatStatuses(() => {
+    scheduleProfileRefresh();
+    if (!dom.prefsOverlay.classList.contains('hidden')) {
+      renderStatusPreview();
+      renderCurrentStatus();
+    }
+  });
   state.subscriptions.bans = Chat.subscribeToBans((map) => {
     state.bannedUsers = new Set(Object.keys(map || {}).filter((key) => map[key]));
     if (!dom.chatMenuOverlay.classList.contains('hidden')) renderChatMenu();
@@ -3125,6 +3386,7 @@ function startSubscriptions() {
 function teardownSubscriptions() {
   const uid = state.user?.uid || null;
   sessionStartedForUid = null;
+  loginIndexBackfilledFor = null;
   subscriptionsStarted = false;
   stopProfileWatch();
 
@@ -3142,6 +3404,10 @@ function teardownSubscriptions() {
   state.subscriptions.bans?.();
   state.subscriptions.rootAdmins?.();
   state.subscriptions.usernameAliases?.();
+  state.subscriptions.userStatuses?.();
+  state.subscriptions.chatStatuses?.();
+  Chat.clearUserStatusCache();
+  Chat.clearChatStatusCache();
   for (const unsubscribe of state.subscriptions.chatMeta.values()) unsubscribe();
   clearChatScoped();
   clearInterval(typingTick);
@@ -3162,6 +3428,8 @@ function teardownSubscriptions() {
   state.subscriptions.bans = null;
   state.subscriptions.rootAdmins = null;
   state.subscriptions.usernameAliases = null;
+  state.subscriptions.userStatuses = null;
+  state.subscriptions.chatStatuses = null;
   state.subscriptions.chatMeta.clear();
   state.chats.clear();
   state.myChatIds = new Set();
@@ -3170,10 +3438,17 @@ function teardownSubscriptions() {
   state.messageNodes = new Map();
   state.messageNodesChatId = null;
   chatListSignature = null;
+  chatListNodes = new Map();
+  pinBarSignature = null;
+  foldersBarSignature = null;
   cancelAnimationFrame(chatListRenderHandle);
   chatListRenderHandle = 0;
   window.clearTimeout(chatListRenderFallback);
   chatListRenderFallback = 0;
+  cancelAnimationFrame(messagesRenderHandle);
+  messagesRenderHandle = 0;
+  window.clearTimeout(messagesRenderFallback);
+  messagesRenderFallback = 0;
   state.stickToBottom = true;
   state.channelPreview = null;
   state.devPromoChat = null;
@@ -3830,14 +4105,17 @@ function toast(message, type = 'info') {
 
 const DRAFT_PREFIX = 'beacon-draft:';
 
+/** Черновики, ещё не сброшенные в localStorage: chatId -> текст. */
+const pendingDrafts = new Map();
+let draftsFlushTimer = 0;
+
 /** Ключ черновика чата в localStorage. */
 function draftKey(chatId) {
   return `${DRAFT_PREFIX}${chatId}`;
 }
 
-/** Сохранить черновик чата (пустой текст — удаляем запись). */
-function saveDraft(chatId, value) {
-  if (!chatId) return;
+/** Собственно запись в localStorage. */
+function persistDraft(chatId, value) {
   try {
     const text = String(value ?? '');
     if (text.trim()) localStorage.setItem(draftKey(chatId), text);
@@ -3845,9 +4123,33 @@ function saveDraft(chatId, value) {
   } catch (error) { /* приватный режим — черновик просто не сохранится */ }
 }
 
+/** Записать все отложенные черновики (смена чата, отправка, выход, выгрузка). */
+function flushDrafts() {
+  if (draftsFlushTimer) {
+    window.clearTimeout(draftsFlushTimer);
+    draftsFlushTimer = 0;
+  }
+  if (!pendingDrafts.size) return;
+  for (const [chatId, text] of pendingDrafts) persistDraft(chatId, text);
+  pendingDrafts.clear();
+}
+
+/**
+ * Сохранить черновик чата (пустой текст — удаляем запись).
+ * Запись отложена: localStorage синхронный, и писать его на каждое нажатие
+ * клавиши — лишняя работа в обработчике ввода.
+ */
+function saveDraft(chatId, value) {
+  if (!chatId) return;
+  pendingDrafts.set(chatId, String(value ?? ''));
+  if (draftsFlushTimer) return;
+  draftsFlushTimer = window.setTimeout(flushDrafts, 400);
+}
+
 /** Черновик чата ('' — черновика нет). */
 function loadDraft(chatId) {
   if (!chatId) return '';
+  if (pendingDrafts.has(chatId)) return pendingDrafts.get(chatId);
   try {
     return localStorage.getItem(draftKey(chatId)) || '';
   } catch (error) {
@@ -3858,10 +4160,16 @@ function loadDraft(chatId) {
 /** Убрать черновик чата (после отправки). */
 function clearDraft(chatId) {
   if (!chatId) return;
+  pendingDrafts.delete(chatId);
   try {
     localStorage.removeItem(draftKey(chatId));
   } catch (error) { /* ignore */ }
 }
+
+window.addEventListener('beforeunload', flushDrafts);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushDrafts();
+});
 
 /** Подставить черновик активного чата в поле ввода. */
 function restoreDraftIntoComposer() {
@@ -4303,7 +4611,7 @@ function openForwardModal(message) {
 
     const body = createEl('div', 'chat-item-body');
     const top = createEl('div', 'chat-item-top');
-    top.append(createEl('span', 'chat-item-title', getChatTitle(chat)));
+    top.append(buildNameWithStatus(getChatTitle(chat), chatItemStatus(chatId, chat)));
     const bottom = createEl('div', 'chat-item-bottom');
     const kind = chat.type === 'channel' ? 'Канал' : chat.type === 'group' ? 'Группа' : 'Личный чат';
     bottom.append(createEl('span', 'chat-item-preview', kind));
@@ -4633,7 +4941,7 @@ function renderSettingsAdmins(chat) {
 
     const body = createEl('div', 'chat-item-body');
     const top = createEl('div', 'chat-item-top');
-    top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+    top.append(buildUserNameWithStatus(getProfileName(profile) || 'Пользователь', uid));
     const bottom = createEl('div', 'chat-item-bottom');
     bottom.append(createEl('span', 'chat-item-preview',
       uid === chat.owner ? 'владелец канала' : (profile?.username ? '@' + profile.username : 'администратор')));
@@ -4736,7 +5044,7 @@ function renderSettingsMembers(chat) {
     const isAdmin = Boolean(chat.admins?.[uid]);
     const body = createEl('div', 'chat-item-body');
     const top = createEl('div', 'chat-item-top');
-    top.append(createEl('span', 'chat-item-title', getProfileName(profile) || 'Пользователь'));
+    top.append(buildUserNameWithStatus(getProfileName(profile) || 'Пользователь', uid));
     const bottom = createEl('div', 'chat-item-bottom');
     bottom.append(createEl('span', 'chat-item-preview',
       uid === chat.owner
@@ -5048,7 +5356,10 @@ function renderChatMenu() {
   const missing = [];
 
   applyChatAvatar(dom.chatMenuAvatar, state.activeChatId, chat);
-  dom.chatMenuTitle.textContent = getChatTitle(chat);
+  dom.chatMenuTitle.textContent = '';
+  dom.chatMenuTitle.append(createEl('span', 'chat-title-text', getChatTitle(chat)));
+  applyStatus(dom.chatMenuTitle, chatItemStatus(state.activeChatId, chat));
+  Emoji.parse(dom.chatMenuTitle);
   dom.chatMenuType.textContent = chat.type === 'channel'
     ? 'Канал'
     : chat.type === 'group' ? 'Группа' : 'Личный чат';
@@ -5444,6 +5755,7 @@ async function deleteFolderWithConfirm(folderId, name) {
  * ============================================================ */
 
 function openPrefsModal() {
+  resetStatusForm();
   renderPrefsModal();
   dom.prefsOverlay.classList.remove('hidden');
 }
@@ -5480,6 +5792,7 @@ function renderPrefsModal() {
   dom.prefsInvitesField.classList.toggle('hidden', !isRoot);
   dom.prefsReservedField.classList.toggle('hidden', !isRoot);
   dom.prefsAliasesField.classList.toggle('hidden', !isRoot);
+  dom.prefsStatusField.classList.toggle('hidden', !isRoot);
   dom.prefsAdminToggle.checked = adminOn;
   dom.prefsDeleteUserField.classList.toggle('hidden', !adminOn);
   dom.prefsDeleteUserError.classList.add('hidden');
@@ -6537,7 +6850,9 @@ function openCommentsModal(message) {
 
   // Цитата поста в шапке окна.
   dom.commentsPost.innerHTML = '';
-  dom.commentsPost.append(createEl('span', 'comments-post-author', getSenderName(message.sender)));
+  const postAuthor = createEl('span', 'comments-post-author', getSenderName(message.sender));
+  applyUserStatus(postAuthor, message.sender);
+  dom.commentsPost.append(postAuthor);
   dom.commentsPost.append(createEl('span', 'comments-post-text',
     message.poll ? '📊 ' + (message.poll.question || '') : (message.text || '')));
   Emoji.parse(dom.commentsPost);
@@ -6584,7 +6899,9 @@ function renderComments(map) {
 
     const body = createEl('div', 'comment-body');
     const head = createEl('div', 'comment-head');
-    head.append(createEl('span', 'comment-author', comment.sender === state.user?.uid ? 'Вы' : getSenderName(comment.sender)));
+    const author = createEl('span', 'comment-author', comment.sender === state.user?.uid ? 'Вы' : getSenderName(comment.sender));
+    applyUserStatus(author, comment.sender);
+    head.append(author);
     head.append(createEl('span', 'comment-time', formatListTime(comment.timestamp)));
     body.append(head);
     const textEl = createEl('div', 'comment-text');
@@ -6946,6 +7263,7 @@ dom.onboardingForm.addEventListener('submit', (event) => {
 
 /** Выйти из аккаунта: сначала убрать запись сессии, потом signOut. */
 async function logoutCurrentUser() {
+  flushDrafts();
   if (state.user && !state.myDeleted) Chat.setOfflinePresence(state.user.uid).catch(() => {});
   // Не блокируем выход, если сеть пропала: запись сессии — вспомогательная.
   await Promise.race([
@@ -7066,6 +7384,308 @@ async function deleteAccountByUsernameClick() {
     dom.prefsDeleteUserBtn.disabled = false;
   }
 }
+
+/* --- Статусы пользователей, каналов и групп (только root-админы) --- */
+
+let statusFormKind = 'emoji';
+let statusFormTarget = 'user';
+let statusFormResolved = null;
+let statusResolveSeq = 0;
+
+/** Текущий выбранный тип статуса в форме выдачи. */
+function currentStatusFormKind() {
+  return statusFormKind === 'text' ? 'text' : 'emoji';
+}
+
+/** Текущая цель формы выдачи: пользователь или чат. */
+function currentStatusFormTarget() {
+  return statusFormTarget === 'chat' ? 'chat' : 'user';
+}
+
+/** Сбросить форму статуса к исходному состоянию. */
+function resetStatusForm() {
+  if (!dom.prefsStatusUser) return;
+  statusResolveSeq += 1;
+  statusFormTarget = 'user';
+  statusFormKind = 'emoji';
+  statusFormResolved = null;
+  dom.prefsStatusUser.value = '';
+  dom.prefsStatusValue.value = '';
+  dom.prefsStatusColor.value = Chat.STATUS_DEFAULT_COLOR;
+  dom.prefsStatusTarget.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.statusTarget === 'user');
+  });
+  dom.prefsStatusKind.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.statusKind === 'emoji');
+  });
+  dom.prefsStatusError.textContent = '';
+  dom.prefsStatusError.classList.add('hidden');
+  dom.prefsStatusSave.disabled = false;
+  dom.prefsStatusClear.disabled = false;
+  syncStatusTarget();
+  syncStatusFormKind();
+  renderStatusPreview();
+  renderCurrentStatus();
+}
+
+/** Подсказки, которые зависят от того, кому выдаём статус. */
+function syncStatusTarget() {
+  const isChat = currentStatusFormTarget() === 'chat';
+  dom.prefsStatusUser.placeholder = isChat ? '@канал или @группа' : '@username';
+  dom.prefsStatusClear.textContent = isChat ? 'Снять у чата' : 'Снять';
+}
+
+/** Показать/скрыть поля, которые зависят от типа статуса. */
+function syncStatusFormKind() {
+  const isText = currentStatusFormKind() === 'text';
+  dom.prefsStatusColorField.classList.toggle('hidden', !isText);
+  dom.prefsStatusEmojiBtn.classList.toggle('hidden', isText);
+  dom.prefsStatusValue.maxLength = isText ? Chat.STATUS_TEXT_MAX : 24;
+  dom.prefsStatusValue.placeholder = isText
+    ? `Текст до ${Chat.STATUS_TEXT_MAX} символов`
+    : 'Любой эмодзи';
+  dom.prefsStatusSave.textContent = isText ? 'Выдать текст' : 'Выдать эмодзи';
+}
+
+/** Статус выбранной цели (null, если его нет). */
+function statusOfTarget(target) {
+  if (!target) return null;
+  return target.type === 'chat' ? chatStatusFor(target.id) : userStatusFor(target.id);
+}
+
+/** Строка «Сейчас: …» с текущим статусом найденной цели. */
+function renderCurrentStatus() {
+  if (!dom.prefsStatusCurrent) return;
+  dom.prefsStatusCurrent.textContent = '';
+  const status = statusOfTarget(statusFormResolved);
+  if (!status) {
+    dom.prefsStatusCurrent.classList.add('hidden');
+    return;
+  }
+  dom.prefsStatusCurrent.classList.remove('hidden');
+  dom.prefsStatusCurrent.append(createEl('span', 'status-editor-label', 'Сейчас:'));
+  dom.prefsStatusCurrent.append(buildStatusBadge(status));
+  Emoji.parse(dom.prefsStatusCurrent);
+}
+
+/**
+ * Найти цель по @username: пользователя либо канал/группу.
+ * @returns {Promise<{type: 'user'|'chat', id: string, label: string}>}
+ */
+async function resolveStatusTarget(raw) {
+  if (currentStatusFormTarget() === 'chat') {
+    const chat = await Chat.getChatByUsername(raw);
+    if (!chat?.chatId) throw new Error('Канал или группа с таким юзернеймом не найдены');
+    return { type: 'chat', id: chat.chatId, label: '@' + (chat.username || Chat.normalizeUsername(raw)) };
+  }
+
+  const user = await Chat.getUserByUsername(raw);
+  if (!user?.uid) throw new Error('Пользователь с таким юзернеймом не найден');
+  if (user.deleted) throw new Error('Аккаунт удалён — статус не поставить');
+  return { type: 'user', id: user.uid, label: '@' + (user.username || Chat.normalizeUsername(raw)) };
+}
+
+/** Перечитать цель по введённому @username и показать её текущий статус. */
+async function refreshCurrentStatus() {
+  const raw = dom.prefsStatusUser.value.trim();
+  const seq = ++statusResolveSeq;
+  statusFormResolved = null;
+  renderCurrentStatus();
+  if (!raw) return;
+
+  try {
+    const target = await resolveStatusTarget(raw);
+    if (seq !== statusResolveSeq) return;
+    statusFormResolved = target;
+  } catch {
+    // Молчим: точную ошибку покажем при сохранении.
+    return;
+  }
+  renderCurrentStatus();
+}
+
+/** Живой предпросмотр статуса из полей формы. */
+function renderStatusPreview() {
+  if (!dom.prefsStatusPreview) return;
+  dom.prefsStatusPreview.innerHTML = '';
+
+  const value = String(dom.prefsStatusValue.value || '').trim();
+  if (!value) {
+    dom.prefsStatusPreview.append(createEl('span', 'status-preview-hint', 'Предпросмотр статуса'));
+    return;
+  }
+
+  const kind = currentStatusFormKind();
+  const badge = createEl('span', `user-status user-status-${kind}`);
+  badge.textContent = kind === 'text'
+    ? [...value].slice(0, Chat.STATUS_TEXT_MAX).join('')
+    : value;
+  if (kind === 'text') {
+    const color = dom.prefsStatusColor.value || Chat.STATUS_DEFAULT_COLOR;
+    badge.style.background = color;
+    badge.style.color = readableStatusTextColor(color);
+  }
+  dom.prefsStatusPreview.append(badge);
+  Emoji.parse(badge);
+}
+
+/** Ошибка в форме статуса. */
+function showStatusError(message) {
+  dom.prefsStatusError.textContent = message;
+  dom.prefsStatusError.classList.remove('hidden');
+}
+
+/** Привести ошибку записи статуса к понятному тексту. */
+function statusWriteError(error) {
+  const message = String(error?.message || '');
+  if (/permission|denied|PERMISSION_DENIED/i.test(message)) {
+    return 'Нет доступа на запись: проверьте, что новые правила базы опубликованы';
+  }
+  return message || 'Не удалось сохранить статус';
+}
+
+/** Выдать или заменить статус по @username (только супер-админ). */
+async function saveUserStatusClick() {
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  const raw = dom.prefsStatusUser.value.trim();
+  if (!raw) {
+    showStatusError('Введите @username');
+    dom.prefsStatusUser.focus();
+    return;
+  }
+
+  const kind = currentStatusFormKind();
+  const value = String(dom.prefsStatusValue.value || '').trim();
+  if (!value) {
+    showStatusError(kind === 'text' ? 'Введите текст статуса' : 'Выберите эмодзи');
+    dom.prefsStatusValue.focus();
+    return;
+  }
+  if (kind === 'emoji' && !/\p{Extended_Pictographic}/u.test(value)) {
+    showStatusError('В режиме «Эмодзи» нужен эмодзи — или переключитесь на «Текст»');
+    dom.prefsStatusValue.focus();
+    return;
+  }
+
+  dom.prefsStatusError.classList.add('hidden');
+  dom.prefsStatusSave.disabled = true;
+  dom.prefsStatusSave.textContent = 'Сохраняем…';
+  try {
+    const target = await resolveStatusTarget(raw);
+    statusFormResolved = target;
+
+    const hadStatus = Boolean(statusOfTarget(target));
+    const payload = {
+      kind,
+      value,
+      color: kind === 'text' ? dom.prefsStatusColor.value : '',
+      by: state.user.uid,
+    };
+    if (target.type === 'chat') await Chat.setChatStatus({ chatId: target.id, ...payload });
+    else await Chat.setUserStatus({ uid: target.id, ...payload });
+
+    toast(hadStatus ? 'Статус обновлён' : 'Статус выдан', 'success');
+    dom.prefsStatusValue.value = '';
+    renderStatusPreview();
+    renderCurrentStatus();
+    dom.prefsStatusError.classList.add('hidden');
+  } catch (error) {
+    console.error(error);
+    showStatusError(statusWriteError(error));
+  } finally {
+    dom.prefsStatusSave.disabled = false;
+    syncStatusFormKind();
+  }
+}
+
+/** Снять статус по @username (только супер-админ). */
+async function clearUserStatusClick() {
+  if (!state.user || !state.rootAdmins.has(state.user.uid)) return;
+
+  const raw = dom.prefsStatusUser.value.trim();
+  if (!raw) {
+    showStatusError('Введите @username');
+    dom.prefsStatusUser.focus();
+    return;
+  }
+
+  dom.prefsStatusError.classList.add('hidden');
+  dom.prefsStatusClear.disabled = true;
+  try {
+    const target = await resolveStatusTarget(raw);
+    statusFormResolved = target;
+    renderCurrentStatus();
+
+    if (!statusOfTarget(target)) {
+      showStatusError(target.type === 'chat' ? 'У этого чата нет статуса' : 'У этого пользователя нет статуса');
+      return;
+    }
+    const what = target.type === 'chat' ? 'чата' : 'пользователя';
+    if (!window.confirm(`Снять статус ${what} ${target.label}?`)) return;
+
+    if (target.type === 'chat') await Chat.removeChatStatus(target.id);
+    else await Chat.removeUserStatus(target.id);
+
+    toast('Статус снят', 'success');
+    dom.prefsStatusValue.value = '';
+    renderStatusPreview();
+    renderCurrentStatus();
+  } catch (error) {
+    console.error(error);
+    showStatusError(statusWriteError(error));
+  } finally {
+    dom.prefsStatusClear.disabled = false;
+  }
+}
+
+dom.prefsStatusTarget.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-status-target]');
+  if (!btn) return;
+  statusFormTarget = btn.dataset.statusTarget === 'chat' ? 'chat' : 'user';
+  dom.prefsStatusTarget.querySelectorAll('.seg-btn').forEach((item) => {
+    item.classList.toggle('active', item === btn);
+  });
+  syncStatusTarget();
+  refreshCurrentStatus();
+});
+
+dom.prefsStatusUser.addEventListener('change', refreshCurrentStatus);
+
+dom.prefsStatusKind.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-status-kind]');
+  if (!btn) return;
+  statusFormKind = btn.dataset.statusKind === 'text' ? 'text' : 'emoji';
+  dom.prefsStatusKind.querySelectorAll('.seg-btn').forEach((item) => {
+    item.classList.toggle('active', item === btn);
+  });
+  syncStatusFormKind();
+  renderStatusPreview();
+});
+
+dom.prefsStatusValue.addEventListener('input', renderStatusPreview);
+dom.prefsStatusColor.addEventListener('input', renderStatusPreview);
+dom.prefsStatusSave.addEventListener('click', saveUserStatusClick);
+dom.prefsStatusClear.addEventListener('click', clearUserStatusClick);
+dom.prefsStatusUser.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveUserStatusClick();
+  }
+});
+
+dom.prefsStatusEmojiBtn.addEventListener('click', () => {
+  Emoji.openPicker({
+    mode: 'insert',
+    anchor: dom.prefsStatusEmojiBtn,
+    trigger: dom.prefsStatusEmojiBtn,
+    onSelect: (emoji) => {
+      dom.prefsStatusValue.value = emoji;
+      renderStatusPreview();
+      Emoji.closePicker();
+    },
+  });
+});
 
 dom.onboardingLogout.addEventListener('click', () => {
   logoutCurrentUser();
@@ -7787,6 +8407,28 @@ async function handleAuthChange(user) {
 }
 
 /**
+ * Дозаполнить публичный индекс входа (только супер-админ).
+ * Запускается в простое и один раз за сессию: чтение /usernames и /users
+ * целиком не должно конкурировать с загрузкой чатов при входе.
+ */
+function scheduleLoginIndexBackfill(uid) {
+  if (!uid || loginIndexBackfilledFor === uid) return;
+  loginIndexBackfilledFor = uid;
+
+  const run = () => {
+    Chat.isRootAdmin(uid)
+      .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
+      .catch((error) => console.warn('Не удалось дозаполнить индекс входа:', error));
+  };
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 5000 });
+  } else {
+    window.setTimeout(run, 3000);
+  }
+}
+
+/**
  * Разложить вошедшего пользователя по экранам: мессенджер, онбординг,
  * требование инвайта или бан. Вызывается при смене состояния Auth и после
  * успешного применения инвайт-кода на отдельном экране.
@@ -7872,9 +8514,7 @@ async function routeSignedInUser(user) {
   }
 
   // Супер-админ дозаполняет публичный индекс входа для существующих аккаунтов.
-  Chat.isRootAdmin(user.uid)
-    .then((isRoot) => (isRoot ? Chat.backfillLoginIndex() : 0))
-    .catch((error) => console.warn('Не удалось дозаполнить индекс входа:', error));
+  scheduleLoginIndexBackfill(user.uid);
 
   const ban = await banPromise;
   if (state.user !== user) return; // пользователь успел выйти, пока грузили

@@ -417,12 +417,20 @@ textarea:-webkit-autofill {
   line-height: 1.25;
 }
 .current-user {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
+}
+.current-user-name {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-actions {
@@ -617,6 +625,10 @@ textarea:-webkit-autofill {
   min-width: 0;
 }
 .chat-header-info h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   font-size: 15.5px;
   font-weight: 600;
   white-space: nowrap;
@@ -664,10 +676,123 @@ textarea:-webkit-autofill {
 }
 
 .message-sender {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--accent-text);
+}
+
+/* ============================================================
+ *  Статусы пользователей: эмодзи или текст на цветном фоне
+ * ============================================================ */
+.name-with-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.name-with-status > .chat-item-title {
+  flex: 1;
+  min-width: 0;
+}
+.user-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  max-width: 140px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.user-status-emoji {
+  font-size: 14px;
+  font-weight: 400;
+}
+.user-status-text {
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
+.user-status .emoji {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.15em;
+  margin: 0;
+}
+.chat-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Форма выдачи статуса в настройках */
+.status-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.status-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.status-editor-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.status-editor-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.status-emoji-btn {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.status-color-input {
+  width: 46px;
+  height: 38px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  cursor: pointer;
+}
+.status-preview {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 2px;
+}
+.status-preview-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.status-editor-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 .bubble {
@@ -1007,9 +1132,18 @@ textarea:-webkit-autofill {
 
 /* ---------- Предпросмотр канала ---------- */
 .preview-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
+}
+.preview-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .preview-meta {
   font-size: 13px;
@@ -1795,6 +1929,9 @@ html[data-theme='light'] .toast.success {
   text-align: center;
 }
 .chat-menu-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
 }
 .chat-menu-type {

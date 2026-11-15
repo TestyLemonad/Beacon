@@ -26,8 +26,8 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=60';
-import { hasInviteGrant } from './invites.js?v=60';
+import { auth, db } from '../firebase-config.js?v=66';
+import { hasInviteGrant } from './invites.js?v=66';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();

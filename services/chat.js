@@ -26,6 +26,12 @@
  *   /user_message_deletes/$uid/$chat_id/$msg_id  true   — «удалено у меня»
  *   /presence/$uid           { online: bool, lastSeen }  — онлайн-статусы
  *   /user_settings/$uid      { lastSeenPrivacy: 'all' | 'nobody', adminMode?: bool, hideDevPromo?: true }
+ *   /user_statuses/$uid      { kind: 'emoji' | 'text', value, color?, at, by }
+ *                              статус рядом с именем; выдаёт только супер-админ,
+ *                              максимум один на пользователя
+ *   /chat_statuses/$chat_id  { kind: 'emoji' | 'text', value, color?, at, by }
+ *                              статус рядом с названием канала или группы;
+ *                              выдаёт только супер-админ, владелец может снять
  *   /user_reads/$uid/$chat_id   ts (unix-секунды)       — докуда дочитано
  *   /typing/$chat_id/$uid    { name, ts }               — «печатает…»
  *   /poll_votes/$chat_id/$msg_id/$uid  { $option_id: true } — голоса в опросах
@@ -62,7 +68,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=60';
+import { auth, db } from '../firebase-config.js?v=66';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -1007,6 +1013,214 @@ export function subscribeToUserProfile(uid, onChange, onError = null) {
   };
 }
 
+/* ============================================================
+ *  Статусы пользователей (выдаёт только супер-админ)
+ * ============================================================ */
+
+/** Максимальная длина текстового статуса. */
+export const STATUS_TEXT_MAX = 10;
+
+/** Максимальное число символов для эмодзи-статуса (составные эмодзи длиннее). */
+const STATUS_EMOJI_MAX = 8;
+
+/** Цвет текстового статуса по умолчанию — акцентный. */
+export const STATUS_DEFAULT_COLOR = '#ffb84d';
+
+/** Разрешённый формат цвета фона статуса: #rrggbb. */
+const STATUS_COLOR_REGEX = /^#[0-9a-f]{6}$/;
+
+/** Кэш статусов /user_statuses/$uid. */
+const userStatusesCache = new Map();
+
+/** Нормализовать цвет статуса: только #rrggbb в нижнем регистре. */
+export function normalizeStatusColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return STATUS_COLOR_REGEX.test(color) ? color : null;
+}
+
+/**
+ * Проверить и нормализовать статус пользователя.
+ * @param {object|null} raw
+ * @returns {{kind: 'emoji', value: string}|{kind: 'text', value: string, color: string}|null}
+ */
+export function normalizeUserStatus(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const kind = raw.kind === 'text' ? 'text' : raw.kind === 'emoji' ? 'emoji' : null;
+  if (!kind) return null;
+
+  const value = String(raw.value || '').trim();
+  if (!value) return null;
+
+  if (kind === 'text') {
+    const text = [...value].slice(0, STATUS_TEXT_MAX).join('');
+    return { kind, value: text, color: normalizeStatusColor(raw.color) || STATUS_DEFAULT_COLOR };
+  }
+  return { kind, value: [...value].slice(0, STATUS_EMOJI_MAX).join('') };
+}
+
+/** Статус из кэша (или null, если у пользователя его нет). */
+export function getCachedUserStatus(uid) {
+  if (!uid) return null;
+  return userStatusesCache.get(uid) || null;
+}
+
+/** Очистить кэш статусов (при выходе из аккаунта). */
+export function clearUserStatusCache() {
+  userStatusesCache.clear();
+}
+
+/**
+ * Подписка на /user_statuses: статусов мало (их выдаёт только супер-админ),
+ * поэтому читаем узел целиком одним слушателем.
+ * @param {(statuses: Map<string, object>) => void} onChange
+ * @param {((error: Error) => void)|null} onError
+ * @returns {() => void} функция отписки
+ */
+export function subscribeToUserStatuses(onChange, onError = null) {
+  return onValue(
+    ref(db, 'user_statuses'),
+    (snapshot) => {
+      const all = snapshot.val() || {};
+      userStatusesCache.clear();
+      for (const [uid, raw] of Object.entries(all)) {
+        const status = normalizeUserStatus(raw);
+        if (status) userStatusesCache.set(uid, status);
+      }
+      if (typeof onChange === 'function') onChange(new Map(userStatusesCache));
+    },
+    (error) => {
+      console.error('Ошибка подписки на статусы пользователей:', error);
+      if (typeof onError === 'function') onError(error);
+    },
+  );
+}
+
+/**
+ * Выдать или заменить статус пользователя.
+ * Один пользователь — один статус: запись перезаписывает предыдущую.
+ * Права проверяют правила базы (/root_admins).
+ */
+export async function setUserStatus({ uid, kind, value, color = '', by }) {
+  if (!uid || !by) throw new Error('Некорректный статус');
+  const status = normalizeUserStatus({ kind, value, color });
+  if (!status) throw new Error('Статус не может быть пустым');
+  if (status.kind === 'text' && !normalizeStatusColor(color)) {
+    throw new Error('Некорректный цвет статуса');
+  }
+
+  await set(ref(db, `user_statuses/${uid}`), {
+    ...status,
+    at: nowSeconds(),
+    by,
+  });
+}
+
+/** Снять статус пользователя. */
+export async function removeUserStatus(uid) {
+  if (!uid) return;
+  await set(ref(db, `user_statuses/${uid}`), null);
+  userStatusesCache.delete(uid);
+}
+
+/* --- Статусы каналов и групп --- */
+
+/** Кэш статусов /chat_statuses/$chatId. */
+const chatStatusesCache = new Map();
+
+/** Статус чата из кэша (или null, если статуса нет). */
+export function getCachedChatStatus(chatId) {
+  if (!chatId) return null;
+  return chatStatusesCache.get(chatId) || null;
+}
+
+/** Очистить кэш статусов чатов (при выходе из аккаунта). */
+export function clearChatStatusCache() {
+  chatStatusesCache.clear();
+}
+
+/**
+ * Подписка на /chat_statuses: статусы выдаёт только супер-админ,
+ * поэтому читаем узел целиком одним слушателем.
+ * @param {(statuses: Map<string, object>) => void} onChange
+ * @param {((error: Error) => void)|null} onError
+ * @returns {() => void} функция отписки
+ */
+export function subscribeToChatStatuses(onChange, onError = null) {
+  return onValue(
+    ref(db, 'chat_statuses'),
+    (snapshot) => {
+      const all = snapshot.val() || {};
+      chatStatusesCache.clear();
+      for (const [chatId, raw] of Object.entries(all)) {
+        const status = normalizeUserStatus(raw);
+        if (status) chatStatusesCache.set(chatId, status);
+      }
+      if (typeof onChange === 'function') onChange(new Map(chatStatusesCache));
+    },
+    (error) => {
+      console.error('Ошибка подписки на статусы чатов:', error);
+      if (typeof onError === 'function') onError(error);
+    },
+  );
+}
+
+/**
+ * Выдать или заменить статус канала или группы.
+ * Один чат — один статус: запись перезаписывает предыдущую.
+ * Права проверяют правила базы (/root_admins).
+ */
+export async function setChatStatus({ chatId, kind, value, color = '', by }) {
+  if (!chatId || !by) throw new Error('Некорректный статус');
+  const status = normalizeUserStatus({ kind, value, color });
+  if (!status) throw new Error('Статус не может быть пустым');
+  if (status.kind === 'text' && !normalizeStatusColor(color)) {
+    throw new Error('Некорректный цвет статуса');
+  }
+
+  await set(ref(db, `chat_statuses/${chatId}`), {
+    ...status,
+    at: nowSeconds(),
+    by,
+  });
+}
+
+/** Снять статус канала или группы. */
+export async function removeChatStatus(chatId) {
+  if (!chatId) return;
+  await set(ref(db, `chat_statuses/${chatId}`), null);
+  chatStatusesCache.delete(chatId);
+}
+
+/**
+ * Найти канал или публичную группу по юзернейму.
+ * @param {string} rawUsername — можно передавать с «@»
+ * @returns {Promise<({chatId: string} & Record<string, unknown>) | null>}
+ */
+export async function getChatByUsername(rawUsername) {
+  const username = normalizeUsername(rawUsername);
+  if (!isValidUsername(username)) return null;
+
+  const [channelSnapshot, groupSnapshot] = await Promise.all([
+    get(ref(db, `channel_usernames/${username}`)),
+    get(ref(db, `group_usernames/${username}`)),
+  ]);
+  let chatId = channelSnapshot.val() || groupSnapshot.val() || null;
+  let expectedType = channelSnapshot.val() ? 'channel' : groupSnapshot.val() ? 'group' : null;
+
+  // Дополнительный юзернейм ведёт на основной канал или группу.
+  if (!chatId) {
+    const alias = await getUsernameAlias(username);
+    if (!alias || (alias.type !== 'channel' && alias.type !== 'group')) return null;
+    chatId = alias.target;
+    expectedType = alias.type;
+  }
+  if (!chatId) return null;
+
+  const chat = await getChat(chatId);
+  if (!chat || chat.type !== expectedType) return null;
+  return { chatId, ...chat, username: String(chat.username || username) };
+}
+
 /**
  * Найти пользователя по юзернейму (через индекс /usernames).
  * @param {string} rawUsername — можно передавать с «@»
@@ -1907,6 +2121,7 @@ export async function deleteChat(chatId, requesterUid) {
   updates[`views/${chatId}`] = null;
   updates[`poll_votes/${chatId}`] = null;
   updates[`typing/${chatId}`] = null;
+  updates[`chat_statuses/${chatId}`] = null;
 
   // 3. Индекс юзернейма и выданные дополнительные имена.
   if (chat.username) {
@@ -2279,8 +2494,13 @@ export async function deleteUserAccount(uid, { deletedBy = null, ban = false } =
     updates[`banned_users/${uid}`] = { by: deletedBy, at: serverTimestamp() };
   }
 
+  // Статус удалённому аккаунту больше не нужен. Снимаем до основной записи:
+  // после неё аккаунт помечен удалённым и писать уже не может.
+  await removeUserStatus(uid).catch(() => {});
+
   await update(ref(db), updates);
   usersCache.delete(uid);
+  userStatusesCache.delete(uid);
   await getUserProfile(uid, { force: true }).catch(() => null);
 }
 

@@ -21,8 +21,8 @@ const EMOJI_ASSET_BASE = `${CDN_ORIGIN}/assets/svg/`;
  * Подключается в index.html обычным <script defer>, поэтому к моменту
  * первого рендера window.twemoji уже есть; здесь — запасная загрузка.
  */
-const TWEMOJI_SRC = './vendor/twemoji.min.js?v=60';
-const CATALOG_URL = './data/emoji.json?v=60';
+const TWEMOJI_SRC = './vendor/twemoji.min.js?v=66';
+const CATALOG_URL = './data/emoji.json?v=66';
 
 /**
  * Контейнеры, где эмодзи заменяются на Twemoji. Специально не включаем
@@ -46,6 +46,8 @@ const ROOT_SELECTOR = [
   '#msg-menu',
   '#forward-list',
   '#blocked-list',
+  '#settings-members-list',
+  '#settings-admins-list',
 ].join(',');
 
 /** Иконки категорий пикера: реальные имена файлов на форке. */
@@ -58,7 +60,7 @@ const CATEGORY_ICONS = {
   6: '26bd',
   7: '1f4a1',
   8: '2764',
-  9: '1f3f3-fe0f-200d-1f308',
+  9: '1f1f7-1f1fa',
 };
 
 /**
@@ -80,6 +82,7 @@ let picker = null;
 let catalog = null;
 let catalogLoading = null;
 let onSelect = null;
+let activeOnSelect = null;
 let initialized = false;
 
 let isOpen = false;
@@ -678,7 +681,7 @@ function chooseEmoji(emoji) {
     onSelect?.(emoji, { mode: 'reaction', message });
     return;
   }
-  onSelect?.(emoji, { mode: 'insert' });
+  (activeOnSelect || onSelect)?.(emoji, { mode: 'insert' });
 }
 
 /** Открыть общий пикер. anchor — элемент или DOMRect, trigger — кнопка для aria-expanded. */
@@ -695,6 +698,7 @@ export async function openPicker(options = {}) {
 
   mode = nextMode;
   activeMessage = options.message || null;
+  activeOnSelect = typeof options.onSelect === 'function' ? options.onSelect : null;
   selectedEmojis = new Set(options.selected || Object.keys(activeMessage?.reactions || {}));
   focusSource = options.focusSource || null;
   anchorRect = rectOf(options.anchor || trigger);
@@ -750,6 +754,7 @@ export function closePicker() {
   sheetMode = false;
   mode = 'insert';
   activeMessage = null;
+  activeOnSelect = null;
   activeTrigger = null;
   focusSource = null;
   anchorRect = null;
