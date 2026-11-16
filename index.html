@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>Beacon</title>
 
   <!-- Favicon -->
@@ -21,18 +21,18 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=70" />
+  <link rel="stylesheet" href="styles.css?v=71" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=70" />
-  <link rel="modulepreload" href="services/auth.js?v=70" />
-  <link rel="modulepreload" href="services/chat.js?v=70" />
-  <link rel="modulepreload" href="services/sessions.js?v=70" />
-  <link rel="modulepreload" href="services/invites.js?v=70" />
-  <link rel="modulepreload" href="emoji.js?v=70" />
-  <link rel="modulepreload" href="color-picker.js?v=70" />
-  <link rel="modulepreload" href="firebase-config.js?v=70" />
+  <link rel="modulepreload" href="app.js?v=71" />
+  <link rel="modulepreload" href="services/auth.js?v=71" />
+  <link rel="modulepreload" href="services/chat.js?v=71" />
+  <link rel="modulepreload" href="services/sessions.js?v=71" />
+  <link rel="modulepreload" href="services/invites.js?v=71" />
+  <link rel="modulepreload" href="emoji.js?v=71" />
+  <link rel="modulepreload" href="color-picker.js?v=71" />
+  <link rel="modulepreload" href="firebase-config.js?v=71" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -1722,9 +1722,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=70" defer></script>
+  <script src="vendor/twemoji.min.js?v=71" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=70"></script>
+  <script type="module" src="app.js?v=71"></script>
 </body>
 </html>

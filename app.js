@@ -10,12 +10,12 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=70';
-import * as Chat from './services/chat.js?v=70';
-import * as Sessions from './services/sessions.js?v=70';
-import * as Invites from './services/invites.js?v=70';
-import * as Emoji from './emoji.js?v=70';
-import * as ColorPicker from './color-picker.js?v=70';
+import * as Auth from './services/auth.js?v=71';
+import * as Chat from './services/chat.js?v=71';
+import * as Sessions from './services/sessions.js?v=71';
+import * as Invites from './services/invites.js?v=71';
+import * as Emoji from './emoji.js?v=71';
+import * as ColorPicker from './color-picker.js?v=71';
 
 /* ============================================================
  *  DOM
@@ -686,9 +686,13 @@ function formatLastSeen(unixSecondsOrMs) {
   return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-/** Сенсорный ли ввод (мобильные): Enter в поле ввода переносит строку. */
+/** Сенсорный ли основной ввод (мобильные): Enter в поле ввода переносит строку. */
 function isTouchDevice() {
-  return window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  // navigator.maxTouchPoints здесь не годится: на ноутбуках с тачскрином (и в
+  // Firefox/Zen) он больше нуля, и Enter ошибочно считался переносом строки.
+  // Основной указатель — мышь/тачпад, значит перед нами клавиатура десктопа.
+  if (window.matchMedia('(any-pointer: fine)').matches) return false;
+  return window.matchMedia('(pointer: coarse)').matches;
 }
 
 /** Склонение: plural(3, ['участник', 'участника', 'участников']). */
@@ -8916,12 +8920,30 @@ dom.emojiBtn.addEventListener('click', () => {
 
 dom.messageForm.addEventListener('submit', handleSendMessage);
 
+/** Enter ли это — с запасным вариантом для клавиатур без event.key. */
+function isEnterKey(event) {
+  if (event.key === 'Enter' || event.key === 'Return') return true;
+  return !event.key && (event.keyCode === 13 || event.which === 13);
+}
+
+/** Отправить из композера так же, как кнопкой (requestSubmit есть не везде). */
+function submitComposer() {
+  if (typeof dom.messageForm.requestSubmit === 'function') {
+    dom.messageForm.requestSubmit();
+    return;
+  }
+  dom.messageForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+}
+
 // Поле ввода: Enter отправляет (на тач-устройствах — перенос строки), Shift+Enter — перенос.
 dom.messageInput.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' || event.isComposing) return;
-  if (event.shiftKey || event.ctrlKey || event.metaKey || isTouchDevice()) return;
+  // Композиция IME: Enter подтверждает ввод, а не отправляет сообщение.
+  if (event.isComposing || event.keyCode === 229) return;
+  if (!isEnterKey(event)) return;
+  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (isTouchDevice()) return;
   event.preventDefault();
-  dom.messageForm.requestSubmit();
+  submitComposer();
 });
 dom.messageInput.addEventListener('input', () => {
   autoGrowComposer();
@@ -9094,6 +9116,21 @@ document.addEventListener('keydown', (event) => {
     target.click();
   }
 });
+
+/* ============================================================
+ *  Запрет масштабирования страницы
+ * ============================================================ */
+
+// Мета-тег user-scalable=no iOS игнорирует, поэтому «щипок» глушим событиями.
+// Одиночный скролл и drag при этом остаются рабочими.
+['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+  document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+});
+
+// Два пальца на экране — это масштаб, а не прокрутка.
+document.addEventListener('touchmove', (event) => {
+  if (event.touches.length > 1) event.preventDefault();
+}, { passive: false });
 
 // Разблокировка из плашки над композером.
 dom.privateUnblockBtn.addEventListener('click', () => {
