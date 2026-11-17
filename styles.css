@@ -351,6 +351,16 @@ textarea:-webkit-autofill {
   gap: 12px;
 }
 
+/* «Забыли пароль?» — под полем пароля, только в режиме входа */
+.auth-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+.auth-forgot-row .link-btn {
+  font-size: 12.5px;
+}
+
 .divider {
   display: flex;
   align-items: center;
@@ -1904,6 +1914,19 @@ textarea:-webkit-autofill {
   margin: 0 0 10px;
   font-size: 13.5px;
   color: var(--text-muted);
+}
+
+/* Ответ на запрос сброса пароля: ошибка или «письмо отправлено» */
+.auth-reset-status {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.auth-reset-status.error {
+  color: var(--danger);
+}
+.auth-reset-status.success {
+  color: var(--success);
 }
 
 .btn.danger {

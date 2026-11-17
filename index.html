@@ -21,18 +21,18 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=72" />
+  <link rel="stylesheet" href="styles.css?v=73" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=72" />
-  <link rel="modulepreload" href="services/auth.js?v=72" />
-  <link rel="modulepreload" href="services/chat.js?v=72" />
-  <link rel="modulepreload" href="services/sessions.js?v=72" />
-  <link rel="modulepreload" href="services/invites.js?v=72" />
-  <link rel="modulepreload" href="emoji.js?v=72" />
-  <link rel="modulepreload" href="color-picker.js?v=72" />
-  <link rel="modulepreload" href="firebase-config.js?v=72" />
+  <link rel="modulepreload" href="app.js?v=73" />
+  <link rel="modulepreload" href="services/auth.js?v=73" />
+  <link rel="modulepreload" href="services/chat.js?v=73" />
+  <link rel="modulepreload" href="services/sessions.js?v=73" />
+  <link rel="modulepreload" href="services/invites.js?v=73" />
+  <link rel="modulepreload" href="emoji.js?v=73" />
+  <link rel="modulepreload" href="color-picker.js?v=73" />
+  <link rel="modulepreload" href="firebase-config.js?v=73" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -219,6 +219,10 @@
                  autocomplete="current-password" minlength="6" required />
         </div>
 
+        <div class="auth-forgot-row">
+          <button id="auth-forgot-btn" type="button" class="link-btn">Забыли пароль?</button>
+        </div>
+
         <!-- Инвайт-код: регистрация закрыта, код нужен и для почты, и для Google -->
         <div class="field hidden" id="auth-invite-field">
           <label for="auth-invite">Инвайт-код</label>
@@ -246,6 +250,22 @@
           <button id="auth-link-submit" class="btn primary" type="button">Привязать и войти</button>
         </div>
       </div>
+
+      <!-- Сброс пароля письмом: открывается по «Забыли пароль?» на экране входа.
+           Firebase присылает ссылку, по которой задаётся новый пароль. -->
+      <form id="auth-reset-panel" class="auth-link-panel hidden">
+        <p class="auth-link-text">Пришлём на почту письмо от Firebase со ссылкой для нового пароля. Сброс работает только по email — юзернейм не подойдёт.</p>
+        <div class="field">
+          <label for="auth-reset-email">Email аккаунта</label>
+          <input id="auth-reset-email" class="input" type="text" inputmode="email"
+                 placeholder="smotritel@mayak.ru" autocomplete="email" spellcheck="false" />
+        </div>
+        <p id="auth-reset-status" class="auth-reset-status hidden"></p>
+        <div class="modal-actions">
+          <button id="auth-reset-cancel" class="btn ghost" type="button">Отмена</button>
+          <button id="auth-reset-submit" class="btn primary" type="submit">Отправить письмо</button>
+        </div>
+      </form>
 
       <button id="auth-toggle-mode" type="button" class="link-btn">
         Нет аккаунта? Зарегистрироваться
@@ -1150,7 +1170,8 @@
         <div class="field hidden" id="prefs-password-field">
           <label>Пароль</label>
           <button id="prefs-password-btn" class="btn ghost full" type="button">Сменить пароль</button>
-          <p class="field-hint">Откроется отдельное окно смены пароля.</p>
+          <button id="prefs-password-reset-btn" class="btn ghost full" type="button">Сбросить пароль по почте</button>
+          <p class="field-hint">Сброс письмом: ссылка для нового пароля придёт на почту аккаунта.</p>
         </div>
 
         <div class="field">
@@ -1718,9 +1739,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=72" defer></script>
+  <script src="vendor/twemoji.min.js?v=73" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=72"></script>
+  <script type="module" src="app.js?v=73"></script>
 </body>
 </html>

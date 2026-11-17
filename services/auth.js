@@ -18,6 +18,7 @@ import {
   linkWithCredential,
   unlink,
   updatePassword,
+  sendPasswordResetEmail,
   reauthenticateWithCredential,
   EmailAuthProvider,
   GoogleAuthProvider,
@@ -26,8 +27,8 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js';
 import { ref, get, set, update } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=72';
-import { hasInviteGrant } from './invites.js?v=72';
+import { auth, db } from '../firebase-config.js?v=73';
+import { hasInviteGrant } from './invites.js?v=73';
 
 /** Провайдер входа через Google (только email + вход, без профиля). */
 const googleProvider = new GoogleAuthProvider();
@@ -116,6 +117,34 @@ export async function resolveLoginEmail(identifier) {
 export async function loginWithIdentifier(identifier, password) {
   const email = await resolveLoginEmail(identifier);
   return loginWithEmail(email, password);
+}
+
+/**
+ * Отправить письмо со ссылкой для сброса пароля.
+ * Письмо шлёт Firebase Auth по своему шаблону; по ссылке пользователь
+ * задаёт новый пароль, не зная старого. Сброс возможен только по почте,
+ * поэтому @username сначала превращаем в email.
+ * @param {string} identifier — email или @username
+ * @returns {Promise<string>} адрес, на который ушло письмо
+ */
+export async function sendPasswordReset(identifier) {
+  const email = await resolveLoginEmail(identifier);
+  await sendPasswordResetEmail(auth, email);
+  return email;
+}
+
+/**
+ * Отправить письмо для сброса пароля текущему пользователю
+ * (кнопка в «Настройки → Безопасность»).
+ * @returns {Promise<string>} адрес аккаунта
+ */
+export async function sendPasswordResetToCurrentUser() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Сначала войдите в аккаунт');
+  const email = String(user.email || '').trim().toLowerCase();
+  if (!email) throw new Error('У аккаунта нет email — письмо отправить некуда');
+  await sendPasswordResetEmail(auth, email);
+  return email;
 }
 
 /**
@@ -307,6 +336,7 @@ const AUTH_ERROR_MESSAGES = {
   'auth/invalid-email': 'Некорректный email',
   'auth/weak-password': 'Слишком слабый пароль (минимум 6 символов)',
   'auth/missing-password': 'Введите пароль',
+  'auth/missing-email': 'Введите email',
   'auth/user-not-found': 'Пользователь не найден',
   'auth/wrong-password': 'Неверный пароль',
   'auth/invalid-credential': 'Неверный email или пароль',

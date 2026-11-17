@@ -10,12 +10,12 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=72';
-import * as Chat from './services/chat.js?v=72';
-import * as Sessions from './services/sessions.js?v=72';
-import * as Invites from './services/invites.js?v=72';
-import * as Emoji from './emoji.js?v=72';
-import * as ColorPicker from './color-picker.js?v=72';
+import * as Auth from './services/auth.js?v=73';
+import * as Chat from './services/chat.js?v=73';
+import * as Sessions from './services/sessions.js?v=73';
+import * as Invites from './services/invites.js?v=73';
+import * as Emoji from './emoji.js?v=73';
+import * as ColorPicker from './color-picker.js?v=73';
 
 /* ============================================================
  *  DOM
@@ -43,6 +43,12 @@ const dom = {
   authLinkPassword: $('auth-link-password'),
   authLinkSubmit: $('auth-link-submit'),
   authLinkCancel: $('auth-link-cancel'),
+  authForgotBtn: $('auth-forgot-btn'),
+  authResetPanel: $('auth-reset-panel'),
+  authResetEmail: $('auth-reset-email'),
+  authResetStatus: $('auth-reset-status'),
+  authResetSubmit: $('auth-reset-submit'),
+  authResetCancel: $('auth-reset-cancel'),
   googleBtn: $('google-btn'),
   googleBtnLabel: $('google-btn-label'),
   authInviteField: $('auth-invite-field'),
@@ -211,6 +217,7 @@ const dom = {
   prefsProviders: $('prefs-providers'),
   prefsPasswordField: $('prefs-password-field'),
   prefsPasswordBtn: $('prefs-password-btn'),
+  prefsPasswordResetBtn: $('prefs-password-reset-btn'),
   prefsLogoutBtn: $('prefs-logout-btn'),
   prefsDeleteAccountBtn: $('prefs-delete-account-btn'),
   prefsDeleteAccountHint: $('prefs-delete-account-hint'),
@@ -3996,6 +4003,9 @@ function showAuthScreen() {
   hideBannedScreen();
   document.body.classList.remove('chat-open');
   dom.authPassword.value = '';
+  // Панель сброса пароля не должна оставаться открытой после выхода.
+  closeAuthResetPanel();
+  dom.authForgotBtn.classList.toggle('hidden', authMode === 'register');
   hideAuthError();
 }
 
@@ -4145,6 +4155,86 @@ function authFormError(error) {
   return Auth.getAuthErrorMessage(error);
 }
 
+/** Текст ошибки сброса пароля: про письмо, а не про вход. */
+function passwordResetError(error) {
+  const code = String(error?.code || '');
+  if (code === 'auth/user-not-found') return 'Аккаунт с такой почтой не найден';
+  if (code === 'auth/too-many-requests') return 'Слишком много запросов — попробуйте позже';
+  return authFormError(error);
+}
+
+/* ---------- Сброс пароля письмом от Firebase ---------- */
+
+/** Открыть на экране входа панель «пришлём ссылку на почту». */
+function openAuthResetPanel() {
+  hideAuthError();
+  // Привязка Google и сброс пароля одновременно ни к чему.
+  if (pendingGoogleLink) {
+    pendingGoogleLink = null;
+    dom.authLinkPanel.classList.add('hidden');
+  }
+  dom.authResetPanel.classList.remove('hidden');
+  dom.authForgotBtn.classList.add('hidden');
+  // Если в поле входа уже email — подставляем его, чтобы не набирать заново.
+  const typed = dom.authEmail.value.trim();
+  dom.authResetEmail.value = Auth.isEmailAddress(typed) ? typed : '';
+  hideAuthResetStatus();
+  dom.authResetEmail.focus();
+}
+
+/** Свернуть панель сброса и вернуть ссылку «Забыли пароль?». */
+function closeAuthResetPanel() {
+  dom.authResetPanel.classList.add('hidden');
+  dom.authForgotBtn.classList.remove('hidden');
+  hideAuthResetStatus();
+  dom.authResetSubmit.disabled = false;
+  dom.authResetSubmit.textContent = 'Отправить письмо';
+}
+
+function hideAuthResetStatus() {
+  dom.authResetStatus.textContent = '';
+  dom.authResetStatus.className = 'auth-reset-status hidden';
+}
+
+/** @param {'error'|'success'} kind */
+function showAuthResetStatus(message, kind) {
+  dom.authResetStatus.textContent = message;
+  dom.authResetStatus.className = `auth-reset-status ${kind}`;
+}
+
+/** Отправить письмо со ссылкой для сброса пароля с экрана входа. */
+async function submitAuthReset(event) {
+  event.preventDefault();
+  const value = dom.authResetEmail.value.trim();
+
+  if (!value) {
+    showAuthResetStatus('Введите email аккаунта', 'error');
+    dom.authResetEmail.focus();
+    return;
+  }
+  if (!Auth.isEmailAddress(value)) {
+    showAuthResetStatus('Сброс работает только по почте — юзернейм не подойдёт', 'error');
+    dom.authResetEmail.focus();
+    return;
+  }
+
+  dom.authResetSubmit.disabled = true;
+  dom.authResetSubmit.textContent = 'Отправляем…';
+  try {
+    const email = await Auth.sendPasswordReset(value);
+    showAuthResetStatus(
+      `Письмо со ссылкой для нового пароля отправлено на ${email}. Если его нет во «Входящих», загляните в «Спам».`,
+      'success',
+    );
+  } catch (error) {
+    console.error(error);
+    showAuthResetStatus(passwordResetError(error), 'error');
+  } finally {
+    dom.authResetSubmit.disabled = false;
+    dom.authResetSubmit.textContent = 'Отправить письмо';
+  }
+}
+
 /** Переключение «Вход <-> Регистрация». */
 function setAuthMode(mode) {
   authMode = mode;
@@ -4168,6 +4258,10 @@ function setAuthMode(mode) {
   dom.authInviteField.classList.toggle('hidden', !isRegister);
   dom.authInvite.required = isRegister;
   dom.googleBtnLabel.textContent = isRegister ? 'Зарегистрироваться через Google' : 'Войти через Google';
+
+  // Сброс пароля по письму — только для входа.
+  closeAuthResetPanel();
+  dom.authForgotBtn.classList.toggle('hidden', isRegister);
 
   hideAuthError();
 }
@@ -7731,6 +7825,7 @@ dom.googleBtn.addEventListener('click', async () => {
     if (result?.needsLink) {
       pendingInviteCode = '';
       pendingGoogleLink = { email: result.email, pendingCredential: result.pendingCredential };
+      closeAuthResetPanel();
       dom.authLinkPanel.classList.remove('hidden');
       dom.authLinkPassword.value = '';
       dom.authLinkPassword.focus();
@@ -7764,6 +7859,11 @@ dom.authLinkCancel.addEventListener('click', () => {
   dom.authLinkPanel.classList.add('hidden');
   hideAuthError();
 });
+
+// --- Сброс пароля письмом с экрана входа ---
+dom.authForgotBtn.addEventListener('click', openAuthResetPanel);
+dom.authResetCancel.addEventListener('click', closeAuthResetPanel);
+dom.authResetPanel.addEventListener('submit', submitAuthReset);
 
 // --- Экран требования инвайта (новый Google-аккаунт без кода) ---
 dom.inviteGateForm.addEventListener('submit', async (event) => {
@@ -8497,6 +8597,22 @@ dom.prefsPrivacyToggle.addEventListener('click', async (event) => {
   }
 });
 dom.prefsPasswordBtn.addEventListener('click', openPasswordModal);
+// Сброс пароля письмом из «Настройки → Безопасность»: ссылка идёт на почту аккаунта.
+dom.prefsPasswordResetBtn.addEventListener('click', async () => {
+  const btn = dom.prefsPasswordResetBtn;
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
+  try {
+    const email = await Auth.sendPasswordResetToCurrentUser();
+    toast(`Письмо со ссылкой для нового пароля отправлено на ${email}`, 'success');
+  } catch (error) {
+    console.error(error);
+    toast(passwordResetError(error), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сбросить пароль по почте';
+  }
+});
 dom.passwordClose.addEventListener('click', closePasswordModal);
 dom.passwordCancel.addEventListener('click', closePasswordModal);
 dom.passwordOverlay.addEventListener('click', (event) => {
