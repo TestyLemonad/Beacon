@@ -10,12 +10,12 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=71';
-import * as Chat from './services/chat.js?v=71';
-import * as Sessions from './services/sessions.js?v=71';
-import * as Invites from './services/invites.js?v=71';
-import * as Emoji from './emoji.js?v=71';
-import * as ColorPicker from './color-picker.js?v=71';
+import * as Auth from './services/auth.js?v=72';
+import * as Chat from './services/chat.js?v=72';
+import * as Sessions from './services/sessions.js?v=72';
+import * as Invites from './services/invites.js?v=72';
+import * as Emoji from './emoji.js?v=72';
+import * as ColorPicker from './color-picker.js?v=72';
 
 /* ============================================================
  *  DOM
@@ -407,8 +407,6 @@ const dom = {
   avatarValue: $('avatar-value'),
   avatarKindBtns: Array.from(document.querySelectorAll('[data-avatar-kind]')),
   avatarBgBtns: Array.from(document.querySelectorAll('[data-avatar-bg]')),
-  avatarPalette1: $('avatar-palette-1'),
-  avatarPalette2: $('avatar-palette-2'),
   avatarHex1: $('avatar-hex-1'),
   avatarHex2: $('avatar-hex-2'),
   avatarPick1: $('avatar-pick-1'),
@@ -470,8 +468,6 @@ const dom = {
   settingsAvatarPick1: $('settings-avatar-pick1'),
   settingsAvatarPick2: $('settings-avatar-pick2'),
   settingsAvatarColorRow2: $('settings-avatar-color-row2'),
-  settingsAvatarPalette1: $('settings-avatar-palette1'),
-  settingsAvatarPalette2: $('settings-avatar-palette2'),
   settingsAvatarReset: $('settings-avatar-reset'),
 
   // Уведомления
@@ -4350,13 +4346,6 @@ function renderAvatarEditor(syncInput = true) {
 
   dom.avatarSizeValue.textContent = `${avatarDraft.size}%`;
   dom.avatarColorRow2.classList.toggle('hidden', avatarDraft.bgType !== 'gradient');
-  dom.avatarPalette2.classList.toggle('hidden', avatarDraft.bgType !== 'gradient');
-  dom.avatarPalette1.querySelectorAll('.swatch').forEach((swatch) => {
-    swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg1);
-  });
-  dom.avatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
-    swatch.classList.toggle('active', swatch.dataset.color === avatarDraft.bg2);
-  });
   ColorPicker.syncColorChip(dom.avatarPick1, dom.avatarHex1);
   ColorPicker.syncColorChip(dom.avatarPick2, dom.avatarHex2);
 
@@ -4374,31 +4363,6 @@ function renderAvatarEditor(syncInput = true) {
     applyAvatar(dom.avatarPreview, state.user?.uid || 'me', getProfileInitials(state.profile));
   }
 }
-
-/** Собрать ряд кнопок-цветов. */
-function buildPalette(container, onPick) {
-  container.innerHTML = '';
-  AVATAR_COLORS.forEach((color) => {
-    const swatch = createEl('button', 'swatch');
-    swatch.type = 'button';
-    swatch.dataset.color = color;
-    swatch.style.background = color;
-    swatch.title = color;
-    swatch.addEventListener('click', () => onPick(color));
-    container.append(swatch);
-  });
-}
-
-buildPalette(dom.avatarPalette1, (color) => {
-  avatarDraft.custom = true;
-  avatarDraft.bg1 = color;
-  renderAvatarEditor();
-});
-buildPalette(dom.avatarPalette2, (color) => {
-  avatarDraft.custom = true;
-  avatarDraft.bg2 = color;
-  renderAvatarEditor();
-});
 
 dom.avatarKindBtns.forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -5771,13 +5735,6 @@ function renderChatAvatarEditor(syncInput = true) {
   }
 
   dom.settingsAvatarColorRow2.classList.toggle('hidden', chatAvatarDraft.bgType !== 'gradient');
-  dom.settingsAvatarPalette2.classList.toggle('hidden', chatAvatarDraft.bgType !== 'gradient');
-  dom.settingsAvatarPalette1.querySelectorAll('.swatch').forEach((swatch) => {
-    swatch.classList.toggle('active', swatch.dataset.color === chatAvatarDraft.bg1);
-  });
-  dom.settingsAvatarPalette2.querySelectorAll('.swatch').forEach((swatch) => {
-    swatch.classList.toggle('active', swatch.dataset.color === chatAvatarDraft.bg2);
-  });
   ColorPicker.syncColorChip(dom.settingsAvatarPick1, dom.settingsAvatarHex1);
   ColorPicker.syncColorChip(dom.settingsAvatarPick2, dom.settingsAvatarHex2);
 
@@ -5795,17 +5752,6 @@ function renderChatAvatarEditor(syncInput = true) {
     applyChatAvatar(dom.settingsAvatarPreview, settingsChatId || 'chat', { type: chat.type || 'channel', title: chat.title });
   }
 }
-
-buildPalette(dom.settingsAvatarPalette1, (color) => {
-  touchChatAvatar();
-  chatAvatarDraft.bg1 = color;
-  renderChatAvatarEditor();
-});
-buildPalette(dom.settingsAvatarPalette2, (color) => {
-  touchChatAvatar();
-  chatAvatarDraft.bg2 = color;
-  renderChatAvatarEditor();
-});
 
 dom.settingsAvatarKindBtns.forEach((btn) => {
   btn.addEventListener('click', () => {

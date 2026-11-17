@@ -1462,11 +1462,6 @@ textarea:-webkit-autofill {
   font-size: 1.4em;
 }
 
-.palette {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .swatch {
   width: 30px;
   height: 30px;

@@ -21,18 +21,18 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=71" />
+  <link rel="stylesheet" href="styles.css?v=72" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=71" />
-  <link rel="modulepreload" href="services/auth.js?v=71" />
-  <link rel="modulepreload" href="services/chat.js?v=71" />
-  <link rel="modulepreload" href="services/sessions.js?v=71" />
-  <link rel="modulepreload" href="services/invites.js?v=71" />
-  <link rel="modulepreload" href="emoji.js?v=71" />
-  <link rel="modulepreload" href="color-picker.js?v=71" />
-  <link rel="modulepreload" href="firebase-config.js?v=71" />
+  <link rel="modulepreload" href="app.js?v=72" />
+  <link rel="modulepreload" href="services/auth.js?v=72" />
+  <link rel="modulepreload" href="services/chat.js?v=72" />
+  <link rel="modulepreload" href="services/sessions.js?v=72" />
+  <link rel="modulepreload" href="services/invites.js?v=72" />
+  <link rel="modulepreload" href="emoji.js?v=72" />
+  <link rel="modulepreload" href="color-picker.js?v=72" />
+  <link rel="modulepreload" href="firebase-config.js?v=72" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -671,7 +671,6 @@
                        autocomplete="off" spellcheck="false" />
               </div>
             </div>
-            <div id="avatar-palette-1" class="palette"></div>
             <div id="avatar-color-row-2" class="avatar-color-row hidden">
               <span class="avatar-mini-label">Второй</span>
               <div class="color-field">
@@ -681,7 +680,6 @@
                        autocomplete="off" spellcheck="false" />
               </div>
             </div>
-            <div id="avatar-palette-2" class="palette hidden"></div>
           </div>
         </div>
 
@@ -747,7 +745,6 @@
                          placeholder="#f0a24a" autocomplete="off" spellcheck="false" />
                 </div>
               </div>
-              <div id="settings-avatar-palette1" class="palette"></div>
               <div class="avatar-color-row hidden" id="settings-avatar-color-row2">
                 <span class="avatar-mini-label">Второй</span>
                 <div class="color-field">
@@ -757,7 +754,6 @@
                          placeholder="#61afef" autocomplete="off" spellcheck="false" />
                 </div>
               </div>
-              <div id="settings-avatar-palette2" class="palette hidden"></div>
               <button id="settings-avatar-reset" class="btn ghost full" type="button">Убрать логотип</button>
             </div>
           </div>
@@ -1722,9 +1718,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=71" defer></script>
+  <script src="vendor/twemoji.min.js?v=72" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=71"></script>
+  <script type="module" src="app.js?v=72"></script>
 </body>
 </html>
