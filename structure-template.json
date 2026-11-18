@@ -330,7 +330,19 @@
   },
 
   "user_settings": {
-    "user1_id": { "lastSeenPrivacy": "all", "adminMode": true, "hideDevPromo": true },
+    "user1_id": {
+      "lastSeenPrivacy": "all",
+      "adminMode": true,
+      "hideDevPromo": true,
+      "notifications": {
+        "enabled": true,
+        "sound": true,
+        "preview": true,
+        "private": true,
+        "group": true,
+        "channel": true
+      }
+    },
     "user2_id": { "lastSeenPrivacy": "nobody" }
   },
 
@@ -424,10 +436,12 @@
     "user1_id": {
       "chat_group_1": {
         "pinnedAt": 1728724400,
-        "folders": { "folder_1": true }
+        "folders": { "folder_1": true },
+        "muted": true
       },
       "chat_private_1": {
-        "archived": true
+        "archived": true,
+        "mutedUntil": 1728731600
       }
     }
   },

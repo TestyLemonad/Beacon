@@ -10,12 +10,12 @@
  *  - меню сообщения (ПКМ / долгое нажатие): реакции, ответ, правка, пересылка,
  *    закреп, копирование и удаление (у себя или у всех).
  */
-import * as Auth from './services/auth.js?v=73';
-import * as Chat from './services/chat.js?v=73';
-import * as Sessions from './services/sessions.js?v=73';
-import * as Invites from './services/invites.js?v=73';
-import * as Emoji from './emoji.js?v=73';
-import * as ColorPicker from './color-picker.js?v=73';
+import * as Auth from './services/auth.js?v=76';
+import * as Chat from './services/chat.js?v=76';
+import * as Sessions from './services/sessions.js?v=76';
+import * as Invites from './services/invites.js?v=76';
+import * as Emoji from './emoji.js?v=76';
+import * as ColorPicker from './color-picker.js?v=76';
 
 /* ============================================================
  *  DOM
@@ -186,6 +186,7 @@ const dom = {
   chatCtxMenu: $('chat-ctx-menu'),
   chatCtxActions: $('chat-ctx-actions'),
   chatCtxFolders: $('chat-ctx-folders'),
+  chatCtxNotify: $('chat-ctx-notify'),
 
   // Настройки пользователя (по клику на логотип)
   prefsOverlay: $('prefs-overlay'),
@@ -200,6 +201,8 @@ const dom = {
   prefsSecurityHint: $('prefs-security-hint'),
   prefsDataBtn: $('prefs-data-btn'),
   prefsDataHint: $('prefs-data-hint'),
+  prefsNotificationsBtn: $('prefs-notifications-btn'),
+  prefsNotificationsHint: $('prefs-notifications-hint'),
   prefsAccountBtn: $('prefs-account-btn'),
   prefsAccountHint: $('prefs-account-hint'),
   prefsThemeToggle: $('prefs-theme-toggle'),
@@ -229,6 +232,17 @@ const dom = {
   // Подокна настроек: оформление, приватность, безопасность, аккаунт, данные, админка
   appearanceOverlay: $('appearance-overlay'),
   appearanceClose: $('appearance-close'),
+  notificationsOverlay: $('notifications-overlay'),
+  notificationsClose: $('notifications-close'),
+  notifEnabledToggle: $('notif-enabled-toggle'),
+  notifPermissionHint: $('notif-permission-hint'),
+  notifPermissionBtn: $('notif-permission-btn'),
+  notifSound: $('notif-sound'),
+  notifPreview: $('notif-preview'),
+  notifPrivate: $('notif-private'),
+  notifGroup: $('notif-group'),
+  notifChannel: $('notif-channel'),
+  notifTestBtn: $('notif-test-btn'),
   privacyOverlay: $('privacy-overlay'),
   privacyClose: $('privacy-close'),
   securityOverlay: $('security-overlay'),
@@ -626,6 +640,11 @@ let accountDeletionInProgress = false; // удаляем аккаунт: не р
 let routeQueue = Promise.resolve(); // очередь разбора состояния Auth по экранам
 let profileRefreshTimer = null;     // отложенная перерисовка после изменения профилей
 let profileRefreshPending = false;  // перерисовка уже запрошена
+let notifyStartedAt = 0;            // unix-секунды, с которых шлём уведомления о новых сообщениях
+const notifiedChatTs = new Map(); // chatId -> время последнего уведомлённого сообщения
+let notifyAudioContext = null;      // AudioContext для звука уведомлений (создаётся по требованию)
+let muteRefreshTimer = 0;           // таймер снятия иконки мьюта, когда истечёт срок
+const shownNotifications = new Map(); // ключ -> Notification, чтобы новые уведомления не пропадали
 
 /** Канал-промо @dev: показывается вверху списка, пока пользователь не подписан и не скрыл его. */
 const DEV_CHANNEL_ID = '-P4EgAjn7KM6VFk2-rc_';
@@ -1387,6 +1406,10 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>',
   ban:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>',
+  bell:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  bellOff:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.33-5"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8c0 1.4-.1 2.7-.28 3.9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="3" y1="3" x2="21" y2="21"/></svg>',
   trash:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   close:
@@ -1766,11 +1789,13 @@ function buildDevPromoItem() {
 
 /** Элемент списка чатов (используется и в сайдбаре, и в результатах поиска). */
 function buildChatListItem(tag, chatId, chat) {
-  const pinned = Boolean(getChatMeta(chatId).pinnedAt);
+  const meta = getChatMeta(chatId);
+  const pinned = Boolean(meta.pinnedAt);
+  const muted = Boolean(chatMuteInfo(meta));
   const unread = isChatUnread(chatId, chat);
   const item = createEl(
     tag,
-    `chat-item${chatId === state.activeChatId ? ' active' : ''}${pinned ? ' pinned' : ''}${unread ? ' unread' : ''}`,
+    `chat-item${chatId === state.activeChatId ? ' active' : ''}${pinned ? ' pinned' : ''}${muted ? ' muted' : ''}${unread ? ' unread' : ''}`,
   );
   item.dataset.chatId = chatId;
   item.tabIndex = 0; // фокус для клавиатуры и ТВ-пульта
@@ -1783,6 +1808,11 @@ function buildChatListItem(tag, chatId, chat) {
   const top = createEl('div', 'chat-item-top');
   top.append(buildNameWithStatus(getChatTitle(chat), chatItemStatus(chatId, chat)));
   if (pinned) top.append(createIcon('pin', 'chat-pin'));
+  if (muted) {
+    const muteIcon = createIcon('bellOff', 'chat-mute');
+    muteIcon.title = 'Уведомления выключены';
+    top.append(muteIcon);
+  }
   if (chat.lastMessage?.timestamp) {
     top.append(createEl('span', 'chat-item-time', formatListTime(chat.lastMessage.timestamp)));
   }
@@ -1845,6 +1875,7 @@ function chatListItemSignature(chatId, chat) {
     chat?.lastMessage?.timestamp || 0,
     isChatUnread(chatId, chat) ? 1 : 0,
     getChatMeta(chatId).pinnedAt ? 1 : 0,
+    isChatMuted(chatId) ? 1 : 0,
     chat?.avatar ? JSON.stringify(chat.avatar) : '',
     peerAvatar ? JSON.stringify(peerAvatar) : '',
     status ? JSON.stringify(status) : '',
@@ -3744,6 +3775,9 @@ function handleUserChatsUpdate(chatIds) {
         if (chat) state.chats.set(chatId, chat);
         else state.chats.delete(chatId);
 
+        // Новое сообщение в любом чате — браузерное уведомление (вкладка открыта).
+        if (chat) maybeNotifyChat(chatId, chat);
+
         // Данные чата могли прийти после открытия — донастраиваем подписки чата.
         if (chatId === state.activeChatId && chat && state.subscriptions.chatScopedId !== chatId) {
           setupChatScoped(chatId, chat);
@@ -3776,6 +3810,10 @@ function handleUserChatsUpdate(chatIds) {
 function startChatListSubscriptions(uid) {
   if (!state.user || state.subscriptions.userChats) return;
 
+  // Уведомляем только о том, что пришло после входа: история не должна всплывать.
+  notifyStartedAt = Date.now() / 1000;
+  notifiedChatTs.clear();
+
   state.subscriptions.userChats = Chat.subscribeToUserChats(
     uid,
     handleUserChatsUpdate,
@@ -3786,10 +3824,12 @@ function startChatListSubscriptions(uid) {
   state.subscriptions.userMeta = Chat.subscribeToUserChatMeta(uid, (map) => {
     state.chatMeta = new Map(Object.entries(map || {}));
     scheduleChatListRender();
+    scheduleMuteRefresh();
     if (!dom.archiveOverlay.classList.contains('hidden')) renderArchiveList();
     if (!dom.chatCtxOverlay.classList.contains('hidden')) {
-      // Если открыто подменю папок — остаёмся в нём (обновляем галочки).
+      // Открыто подменю — остаёмся в нём (обновляем галочки и сроки).
       if (!dom.chatCtxFolders.classList.contains('hidden')) renderChatCtxFolders();
+      else if (!dom.chatCtxNotify.classList.contains('hidden')) renderChatCtxNotify();
       else renderChatCtxMenu();
     }
     dom.prefsArchiveCount.textContent = String(archivedChats().length);
@@ -3893,6 +3933,18 @@ function teardownSubscriptions() {
   sessionStartedForUid = null;
   loginIndexBackfilledFor = null;
   subscriptionsStarted = false;
+  notifyStartedAt = 0;
+  notifiedChatTs.clear();
+  for (const notification of shownNotifications.values()) {
+    try {
+      notification.close();
+    } catch (error) {
+      // уже закрыто пользователем — не мешает
+    }
+  }
+  shownNotifications.clear();
+  if (muteRefreshTimer) window.clearTimeout(muteRefreshTimer);
+  muteRefreshTimer = 0;
   stopProfileWatch();
 
   state.subscriptions.userChats?.();
@@ -4120,6 +4172,7 @@ function enterMessenger() {
   updateSidebarUser();
   renderChatList();
   startSubscriptions();
+  askNotificationPermissionAfterLogin();
 
   // Чёрный список пользователя (сообщения и композер учитывают его).
   state.blocked = new Set();
@@ -6005,6 +6058,13 @@ function renderChatMenu() {
     addChatMenuAction('Подписаться на канал', subscribeToActiveChannel);
   }
 
+  // Уведомления чата: быстрый переключатель (срок — в меню списка чатов).
+  const chatMuted = isChatMuted(state.activeChatId);
+  addChatMenuAction(chatMuted ? 'Включить уведомления' : 'Выключить уведомления', () => {
+    closeChatMenu();
+    applyChatMute(state.activeChatId, chatMuted ? null : 'forever');
+  }, chatMuted ? 'bell' : 'bellOff');
+
   // Статистика канала — администраторам канала и супер-админу (идея 14).
   if (chat.type === 'channel' && (chat.admins?.[myUid] || rootAdmin)) {
     addChatMenuAction('Статистика канала', () => {
@@ -6222,15 +6282,98 @@ function renderChatCtxMenu() {
 
   addAction('folder', 'Переместить в папку', openChatCtxFolders);
 
-  // Основной вид — действия; папки открываются кнопкой «Переместить в папку».
+  const mute = chatMuteInfo(meta);
+  addAction(
+    mute ? 'bellOff' : 'bell',
+    mute ? 'Уведомления выключены' : 'Уведомления включены',
+    openChatCtxNotify,
+  );
+
+  // Основной вид — действия; папки и уведомления открываются подменю.
   dom.chatCtxActions.classList.remove('hidden');
   dom.chatCtxFolders.classList.add('hidden');
+  dom.chatCtxNotify.classList.add('hidden');
+  positionChatCtxMenu();
+}
+
+/** Показать подменю «Уведомления»: включить или заглушить на время. */
+function openChatCtxNotify() {
+  dom.chatCtxActions.classList.add('hidden');
+  dom.chatCtxFolders.classList.add('hidden');
+  dom.chatCtxNotify.classList.remove('hidden');
+  renderChatCtxNotify();
+}
+
+/** Вернуться от подменю уведомлений к действиям меню. */
+function closeChatCtxNotify() {
+  dom.chatCtxNotify.classList.add('hidden');
+  dom.chatCtxActions.classList.remove('hidden');
+  positionChatCtxMenu();
+}
+
+/** Варианты мьюта: включить, на 1 час / 8 часов / 1 день / 3 дня, навсегда. */
+function renderChatCtxNotify() {
+  const chatId = state.chatCtxChatId;
+  if (!chatId) return;
+
+  const mute = chatMuteInfo(getChatMeta(chatId));
+  dom.chatCtxNotify.innerHTML = '';
+
+  const head = createEl('div', 'ctx-subhead');
+  const backBtn = createEl('button', 'ctx-back-btn');
+  backBtn.type = 'button';
+  backBtn.title = 'Назад';
+  backBtn.append(createIcon('back'));
+  backBtn.addEventListener('click', closeChatCtxNotify);
+  head.append(backBtn, createEl('span', 'ctx-title', 'Уведомления'));
+  dom.chatCtxNotify.append(head);
+
+  if (mute) {
+    dom.chatCtxNotify.append(createEl('p', 'ctx-note', chatMuteLabel(mute)));
+
+    const enable = createEl('button', 'ctx-action ctx-action-active');
+    enable.type = 'button';
+    const check = createEl('span', 'ctx-check');
+    check.append(createIcon('check'));
+    enable.append(check, createEl('span', 'ctx-label', 'Включить уведомления'));
+    enable.addEventListener('click', () => {
+      closeChatCtxMenu();
+      applyChatMute(chatId, null);
+    });
+    dom.chatCtxNotify.append(enable);
+  }
+
+  for (const option of NOTIFY_MUTE_OPTIONS) {
+    const btn = createEl('button', 'ctx-action');
+    btn.type = 'button';
+    const icon = createEl('span', 'ctx-check');
+    icon.append(createIcon('bellOff'));
+    btn.append(icon, createEl('span', 'ctx-label', option.label));
+    btn.addEventListener('click', () => {
+      closeChatCtxMenu();
+      applyChatMute(chatId, option.seconds);
+    });
+    dom.chatCtxNotify.append(btn);
+  }
+
+  const forever = createEl('button', 'ctx-action');
+  forever.type = 'button';
+  const foreverIcon = createEl('span', 'ctx-check');
+  foreverIcon.append(createIcon('bellOff'));
+  forever.append(foreverIcon, createEl('span', 'ctx-label', 'Навсегда'));
+  forever.addEventListener('click', () => {
+    closeChatCtxMenu();
+    applyChatMute(chatId, 'forever');
+  });
+  dom.chatCtxNotify.append(forever);
+
   positionChatCtxMenu();
 }
 
 /** Показать подменю «Переместить в папку». */
 function openChatCtxFolders() {
   dom.chatCtxActions.classList.add('hidden');
+  dom.chatCtxNotify.classList.add('hidden');
   dom.chatCtxFolders.classList.remove('hidden');
   renderChatCtxFolders();
 }
@@ -6359,6 +6502,374 @@ async function deleteFolderWithConfirm(folderId, name) {
 }
 
 /* ============================================================
+ *  Уведомления в браузере: только пока вкладка Beacon открыта
+ * ============================================================ */
+
+const NOTIFY_ASK_STORAGE_KEY = 'beacon.notifyAskedAt';
+const NOTIFY_ASK_INTERVAL = 7 * 24 * 60 * 60 * 1000; // спрашиваем не чаще раза в неделю
+const NOTIFY_MUTE_OPTIONS = [
+  { label: 'На 1 час', seconds: 60 * 60 },
+  { label: 'На 8 часов', seconds: 8 * 60 * 60 },
+  { label: 'На 1 день', seconds: 24 * 60 * 60 },
+  { label: 'На 3 дня', seconds: 3 * 24 * 60 * 60 },
+];
+
+/** Поддерживает ли браузер системные уведомления. */
+function notificationsSupported() {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+/** Мои настройки уведомлений: значения по умолчанию плюс сохранённые. */
+function myNotificationSettings() {
+  return { ...Chat.DEFAULT_NOTIFICATION_SETTINGS, ...(state.settings?.notifications || {}) };
+}
+
+/** Состояние мьюта чата: null — уведомления включены. */
+function chatMuteInfo(meta = EMPTY_CHAT_META) {
+  if (!meta) return null;
+  if (meta.muted === true) return { forever: true, until: 0 };
+  const until = Number(meta.mutedUntil) || 0;
+  return until > Date.now() / 1000 ? { forever: false, until } : null;
+}
+
+/** Заглушены ли уведомления чата (бессрочно или до срока). */
+function isChatMuted(chatId) {
+  return Boolean(chatMuteInfo(getChatMeta(chatId)));
+}
+
+/** «сегодня в 18:30», «завтра в 09:00» или «05.12 в 21:00». */
+function formatMuteMoment(unixSeconds) {
+  const date = new Date(unixSeconds * 1000);
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  if (sameDay(date, today)) return `сегодня в ${formatTime(unixSeconds)}`;
+  if (sameDay(date, tomorrow)) return `завтра в ${formatTime(unixSeconds)}`;
+  const day = date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  return `${day} в ${formatTime(unixSeconds)}`;
+}
+
+/** Подпись срока мьюта для меню чата. */
+function chatMuteLabel(info) {
+  if (!info) return '';
+  return info.forever ? 'Выключены навсегда' : `Выключены до ${formatMuteMoment(info.until)}`;
+}
+
+/** Перерисовать список чатов, когда истечёт ближайший временный мьют. */
+function scheduleMuteRefresh() {
+  if (muteRefreshTimer) window.clearTimeout(muteRefreshTimer);
+  muteRefreshTimer = 0;
+
+  const now = Date.now();
+  let soonest = 0;
+  for (const meta of state.chatMeta.values()) {
+    const info = chatMuteInfo(meta);
+    if (!info || info.forever) continue;
+    const at = info.until * 1000;
+    if (at > now && (!soonest || at < soonest)) soonest = at;
+  }
+  if (!soonest) return;
+
+  // Запас в секунду, чтобы к моменту перерисовки срок уже считался истёкшим.
+  muteRefreshTimer = window.setTimeout(() => {
+    muteRefreshTimer = 0;
+    scheduleChatListRender();
+    scheduleMuteRefresh();
+  }, Math.min(soonest - now + 1000, 2147483647));
+}
+
+/** Короткий сигнал о новом сообщении: WebAudio вместо файлов и CDN. */
+function playNotificationSound() {
+  try {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return;
+    if (!notifyAudioContext) notifyAudioContext = new AudioCtor();
+    const ctx = notifyAudioContext;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const start = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.26);
+    gain.connect(ctx.destination);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, start);
+    osc.frequency.exponentialRampToValueAtTime(660, start + 0.2);
+    osc.connect(gain);
+    osc.start(start);
+    osc.stop(start + 0.28);
+  } catch (error) {
+    // Звук необязателен: уведомление покажется и без него.
+  }
+}
+
+/**
+ * Спросить разрешение на системные уведомления.
+ * silent — без всплывашек (запрос при входе не должен мешать).
+ * @returns {Promise<string>} 'granted' | 'denied' | 'default' | 'unsupported'
+ */
+async function requestNotificationPermission(silent = false) {
+  if (!notificationsSupported()) {
+    if (!silent) toast('Браузер не поддерживает уведомления', 'error');
+    return 'unsupported';
+  }
+
+  let permission = Notification.permission;
+  if (permission === 'default') {
+    try {
+      permission = await Notification.requestPermission();
+    } catch (error) {
+      console.error('Не удалось запросить разрешение на уведомления:', error);
+      permission = Notification.permission;
+    }
+  }
+
+  renderNotificationSettings();
+  if (!silent) {
+    if (permission === 'granted') toast('Уведомления разрешены', 'success');
+    else if (permission === 'denied') toast('Браузер запретил уведомления для Beacon', 'error');
+  }
+  return permission;
+}
+
+/** Спросить разрешение после входа, если браузер ещё не спрашивал. */
+function askNotificationPermissionAfterLogin() {
+  if (!notificationsSupported() || !state.user) return;
+  if (myNotificationSettings().enabled === false) return;
+  if (Notification.permission !== 'default') return;
+
+  let askedAt = 0;
+  try {
+    askedAt = Number(localStorage.getItem(NOTIFY_ASK_STORAGE_KEY)) || 0;
+  } catch (error) {
+    askedAt = 0; // приватный режим: localStorage может быть недоступен
+  }
+  if (askedAt && Date.now() - askedAt < NOTIFY_ASK_INTERVAL) return;
+  try {
+    localStorage.setItem(NOTIFY_ASK_STORAGE_KEY, String(Date.now()));
+  } catch (error) {
+    // не критично: спросим ещё раз в следующий раз
+  }
+
+  // Даём интерфейсу дорисоваться, чтобы запрос не спорил с загрузкой чатов.
+  window.setTimeout(() => {
+    if (!state.user || Notification.permission !== 'default') return;
+    requestNotificationPermission(true);
+  }, 1600);
+}
+
+/** Заголовок и текст уведомления с учётом «скрывать текст». */
+function notificationContent(chat, settings) {
+  if (settings.preview === false) {
+    return { title: 'Beacon', body: 'Новое сообщение' };
+  }
+  const title = getChatTitle(chat);
+  const raw = String(chat.lastMessage?.text || '').replace(/\s+/g, ' ').trim();
+  const text = raw.length > 160 ? `${raw.slice(0, 159)}…` : raw;
+
+  if (chat.type === 'channel') return { title, body: text || 'Новый пост' };
+  if (chat.type === 'group') {
+    const sender = getSenderName(chat.lastMessage?.sender);
+    return { title, body: text ? `${sender}: ${text}` : sender };
+  }
+  return { title, body: text || 'Новое сообщение' };
+}
+
+/**
+ * Показать системное уведомление.
+ * У каждого сообщения свой tag: с общим tag на чат браузер молча заменяет
+ * висящее уведомление, и новые не всплывают, пока старое не закрыто.
+ * Прошлое уведомление того же ключа закрываем сами, чтобы они не копились.
+ */
+function showBrowserNotification(key, { title, body, tag, onClick = null }) {
+  const previous = shownNotifications.get(key);
+  if (previous) {
+    shownNotifications.delete(key);
+    try {
+      previous.close();
+    } catch (error) {
+      // уже закрыто пользователем — не мешает
+    }
+  }
+
+  const notification = new Notification(title, {
+    body,
+    tag,
+    icon: './icon.png',
+    badge: './icon.png',
+    silent: true, // сигнал играем сами, чтобы не дублировать
+  });
+
+  shownNotifications.set(key, notification);
+  notification.onclose = () => {
+    if (shownNotifications.get(key) === notification) shownNotifications.delete(key);
+  };
+  notification.onclick = () => {
+    if (onClick) onClick();
+    notification.close();
+  };
+  return notification;
+}
+
+/**
+ * Уведомление о последнем сообщении чата. Один раз на сообщение: подписка
+ * на чат приходит и на реакции, и на правки превью.
+ */
+function maybeNotifyChat(chatId, chat) {
+  const last = chat?.lastMessage;
+  if (!state.user || !last?.timestamp) return;
+  if (dom.messengerScreen.classList.contains('hidden')) return; // ещё онбординг или экран входа
+  if (last.sender === state.user.uid) return;
+
+  const timestamp = Number(last.timestamp) || 0;
+  if (!notifyStartedAt || timestamp < notifyStartedAt) return;
+
+  // Один раз на сообщение и без повторов на правки текста превью.
+  const previousTs = Number(notifiedChatTs.get(chatId)) || 0;
+  if (timestamp <= previousTs) return;
+  notifiedChatTs.set(chatId, timestamp);
+
+  const settings = myNotificationSettings();
+  if (settings.enabled === false) return;
+
+  const type = chat.type === 'group' || chat.type === 'channel' ? chat.type : 'private';
+  if (settings[type] === false) return;
+  if (isChatMuted(chatId)) return;
+  if (state.blocked.has(last.sender)) return;
+
+  // Открытый и сфокусированный чат читается сразу — дубль не нужен.
+  const focused = document.visibilityState === 'visible' && document.hasFocus();
+  if (focused && (chatId === state.activeChatId || chatId === state.channelPreview?.chatId)) return;
+
+  // Имя отправителя могло ещё не загрузиться — догружаем для следующих раз.
+  hydrateUsers([last.sender]).catch(() => {});
+
+  if (settings.sound !== false) playNotificationSound();
+
+  if (!notificationsSupported() || Notification.permission !== 'granted') return;
+
+  const content = notificationContent(chat, settings);
+  try {
+    showBrowserNotification(`chat:${chatId}`, {
+      title: content.title,
+      body: content.body,
+      tag: `beacon-chat-${chatId}-${timestamp}`,
+      onClick: () => {
+        window.focus();
+        selectChat(chatId);
+      },
+    });
+  } catch (error) {
+    console.error('Не удалось показать уведомление:', error);
+  }
+}
+
+/** Заглушить чат: null — включить, 'forever' — навсегда, число — секунды. */
+async function applyChatMute(chatId, choice = null) {
+  if (!state.user || !chatId) return;
+  const until = typeof choice === 'number' ? Math.floor(Date.now() / 1000) + choice : 0;
+  const payload = choice === 'forever' ? { forever: true } : choice ? { until } : {};
+
+  try {
+    await Chat.setChatMuted(state.user.uid, chatId, payload);
+    scheduleMuteRefresh();
+    if (choice === 'forever') toast('Уведомления чата выключены навсегда');
+    else if (typeof choice === 'number') {
+      const label = NOTIFY_MUTE_OPTIONS.find((option) => option.seconds === choice)?.label || '';
+      toast(`Уведомления выключены ${label.toLowerCase()}`.trim());
+    } else {
+      toast('Уведомления чата включены');
+    }
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось изменить уведомления чата', 'error');
+  }
+}
+
+/** Сохранить настройку уведомлений: локально сразу, в базу — следом. */
+async function saveNotificationSetting(key, enabled) {
+  if (!state.user) return;
+  if (!state.settings.notifications) state.settings.notifications = {};
+  state.settings.notifications[key] = enabled;
+  renderPrefsModal();
+  try {
+    await Chat.setNotificationSetting(state.user.uid, key, enabled);
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось сохранить настройку уведомлений', 'error');
+  }
+}
+
+/** Синхронизировать окно «Уведомления» с настройками и разрешением браузера. */
+function renderNotificationSettings() {
+  if (!dom.notifEnabledToggle) return;
+  const settings = myNotificationSettings();
+  const enabled = settings.enabled !== false;
+
+  dom.notifEnabledToggle.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', (btn.dataset.notifEnabled === 'on') === enabled);
+  });
+  dom.notifSound.checked = settings.sound !== false;
+  dom.notifPreview.checked = settings.preview !== false;
+  dom.notifPrivate.checked = settings.private !== false;
+  dom.notifGroup.checked = settings.group !== false;
+  dom.notifChannel.checked = settings.channel !== false;
+
+  const supported = notificationsSupported();
+  const permission = supported ? Notification.permission : 'unsupported';
+  [dom.notifSound, dom.notifPreview, dom.notifPrivate, dom.notifGroup, dom.notifChannel, dom.notifTestBtn]
+    .forEach((control) => {
+      control.disabled = !enabled || !supported;
+    });
+
+  // Кнопка запроса — только когда браузер ещё не спросил и всё включено.
+  dom.notifPermissionBtn.classList.toggle('hidden', !supported || !enabled || permission !== 'default');
+
+  let hint = '';
+  if (!supported) {
+    hint = 'Этот браузер не поддерживает системные уведомления.';
+  } else if (!enabled) {
+    hint = 'Уведомления выключены: новые сообщения видны только в списке чатов.';
+  } else if (permission === 'denied') {
+    hint = 'Браузер запрещает уведомления для Beacon. Разрешите их в настройках сайта — рядом с адресом страницы.';
+  } else if (permission === 'default') {
+    hint = 'Браузер ещё не спрашивал разрешение. Нажмите кнопку ниже — без него уведомления не появятся.';
+  } else {
+    hint = 'Разрешение выдано. Уведомления приходят, пока вкладка Beacon открыта.';
+  }
+  dom.notifPermissionHint.textContent = hint;
+}
+
+/** Тестовое уведомление из настроек: проверка разрешения и звука. */
+async function sendTestNotification() {
+  if (!state.user) return;
+  if (!notificationsSupported()) {
+    toast('Браузер не поддерживает уведомления', 'error');
+    return;
+  }
+  if (Notification.permission !== 'granted') {
+    const permission = await requestNotificationPermission();
+    if (permission !== 'granted') return;
+  }
+
+  if (myNotificationSettings().sound !== false) playNotificationSound();
+  try {
+    showBrowserNotification('test', {
+      title: 'Beacon',
+      body: 'Так выглядит уведомление о новом сообщении.',
+      tag: `beacon-test-${Date.now()}`,
+      onClick: () => window.focus(),
+    });
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось показать уведомление', 'error');
+  }
+}
+
+/* ============================================================
  *  Настройки пользователя (клик по логотипу): тема, приватность, архив
  * ============================================================ */
 
@@ -6372,6 +6883,7 @@ function openPrefsModal() {
 function prefsSubOverlays() {
   return [
     dom.appearanceOverlay,
+    dom.notificationsOverlay,
     dom.privacyOverlay,
     dom.securityOverlay,
     dom.accountOverlay,
@@ -6434,6 +6946,11 @@ function renderPrefsModal() {
   dom.prefsProfileHint.textContent = [ownName, ownHandle].filter(Boolean).join(' · ')
     || 'Имя, юзернейм и аватарка';
   dom.prefsAppearanceHint.textContent = theme === 'light' ? 'Светлая тема' : 'Тёмная тема';
+  const notifications = myNotificationSettings();
+  dom.prefsNotificationsHint.textContent = notifications.enabled === false
+    ? 'Выключены'
+    : notifications.sound === false ? 'Включены, без звука' : 'Включены, со звуком';
+  renderNotificationSettings();
   dom.prefsPrivacyHint.textContent = privacy === 'nobody'
     ? 'Последний визит скрыт'
     : 'Последний визит виден всем';
@@ -8405,6 +8922,7 @@ dom.prefsProfileBtn.addEventListener('click', () => {
   openProfileModal();
 });
 dom.prefsAppearanceBtn.addEventListener('click', () => openPrefsPage(dom.appearanceOverlay));
+dom.prefsNotificationsBtn.addEventListener('click', () => openPrefsPage(dom.notificationsOverlay));
 dom.prefsPrivacyBtn.addEventListener('click', () => openPrefsPage(dom.privacyOverlay));
 dom.prefsSecurityBtn.addEventListener('click', () => openPrefsPage(dom.securityOverlay));
 dom.prefsAccountBtn.addEventListener('click', () => openPrefsPage(dom.accountOverlay));
@@ -8464,6 +8982,7 @@ dom.profileAdminOpen.addEventListener('click', () => {
 
 [
   [dom.appearanceOverlay, dom.appearanceClose],
+  [dom.notificationsOverlay, dom.notificationsClose],
   [dom.privacyOverlay, dom.privacyClose],
   [dom.securityOverlay, dom.securityClose],
   [dom.accountOverlay, dom.accountClose],
@@ -8582,6 +9101,25 @@ dom.prefsThemeToggle.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-theme-choice]');
   if (btn) setTheme(btn.dataset.themeChoice);
 });
+
+// --- Уведомления: включение, звук, текст и типы чатов ---
+dom.notifEnabledToggle.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-notif-enabled]');
+  if (!btn) return;
+  const enabling = btn.dataset.notifEnabled === 'on';
+  saveNotificationSetting('enabled', enabling);
+  // Включение — это клик пользователя: удобный момент спросить разрешение.
+  if (enabling && notificationsSupported() && Notification.permission === 'default') {
+    requestNotificationPermission(true);
+  }
+});
+dom.notifSound.addEventListener('change', () => saveNotificationSetting('sound', dom.notifSound.checked));
+dom.notifPreview.addEventListener('change', () => saveNotificationSetting('preview', dom.notifPreview.checked));
+dom.notifPrivate.addEventListener('change', () => saveNotificationSetting('private', dom.notifPrivate.checked));
+dom.notifGroup.addEventListener('change', () => saveNotificationSetting('group', dom.notifGroup.checked));
+dom.notifChannel.addEventListener('change', () => saveNotificationSetting('channel', dom.notifChannel.checked));
+dom.notifPermissionBtn.addEventListener('click', () => requestNotificationPermission());
+dom.notifTestBtn.addEventListener('click', sendTestNotification);
 dom.prefsPrivacyToggle.addEventListener('click', async (event) => {
   const btn = event.target.closest('[data-privacy-choice]');
   if (!btn || !state.user) return;

@@ -68,7 +68,7 @@ import {
   runTransaction,
   increment,
 } from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js';
-import { auth, db } from '../firebase-config.js?v=73';
+import { auth, db } from '../firebase-config.js?v=76';
 
 /** Сколько сообщений подгружать в историю чата (пагинация). */
 export const MESSAGES_PAGE_SIZE = 50;
@@ -2853,6 +2853,36 @@ export async function setDevPromoHidden(uid, hidden) {
 }
 
 /* ============================================================
+ *  Уведомления: /user_settings/$uid/notifications
+ * ============================================================ */
+
+/**
+ * Значения по умолчанию. enabled — общий выключатель, sound — сигнал,
+ * preview — показывать текст в уведомлении, private/group/channel — типы чатов.
+ */
+export const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
+  enabled: true,
+  sound: true,
+  preview: true,
+  private: true,
+  group: true,
+  channel: true,
+});
+
+/**
+ * Сохранить одну настройку уведомлений:
+ * /user_settings/$uid/notifications/$key = true|false.
+ * @returns {Promise<void>}
+ */
+export async function setNotificationSetting(uid, key, enabled) {
+  if (!uid) throw new Error('Некорректный пользователь');
+  if (!Object.prototype.hasOwnProperty.call(DEFAULT_NOTIFICATION_SETTINGS, key)) {
+    throw new Error('Неизвестная настройка уведомлений');
+  }
+  await set(ref(db, `user_settings/${uid}/notifications/${key}`), Boolean(enabled));
+}
+
+/* ============================================================
  *  Индикатор «печатает…»
  * ============================================================ */
 
@@ -3153,6 +3183,21 @@ export async function setChatArchived(uid, chatId, archived) {
 export async function setChatPinned(uid, chatId, pinned) {
   if (!uid || !chatId) throw new Error('Некорректные параметры');
   await update(ref(db), { [`user_chat_meta/${uid}/${chatId}/pinnedAt`]: pinned ? nowSeconds() : null });
+}
+
+/**
+ * Заглушить уведомления чата в личных настройках:
+ *   muted = true — бессрочно;
+ *   mutedUntil = unix-секунды — до указанного момента.
+ * Пустой объект снимает мьют.
+ * @returns {Promise<void>}
+ */
+export async function setChatMuted(uid, chatId, { forever = false, until = 0 } = {}) {
+  if (!uid || !chatId) throw new Error('Некорректные параметры');
+  await update(ref(db), {
+    [`user_chat_meta/${uid}/${chatId}/muted`]: forever ? true : null,
+    [`user_chat_meta/${uid}/${chatId}/mutedUntil`]: !forever && until ? until : null,
+  });
 }
 
 /** Добавить (member=true) или убрать (false) чат в папке. */

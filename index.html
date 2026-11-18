@@ -21,18 +21,18 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=73" />
+  <link rel="stylesheet" href="styles.css?v=76" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=73" />
-  <link rel="modulepreload" href="services/auth.js?v=73" />
-  <link rel="modulepreload" href="services/chat.js?v=73" />
-  <link rel="modulepreload" href="services/sessions.js?v=73" />
-  <link rel="modulepreload" href="services/invites.js?v=73" />
-  <link rel="modulepreload" href="emoji.js?v=73" />
-  <link rel="modulepreload" href="color-picker.js?v=73" />
-  <link rel="modulepreload" href="firebase-config.js?v=73" />
+  <link rel="modulepreload" href="app.js?v=76" />
+  <link rel="modulepreload" href="services/auth.js?v=76" />
+  <link rel="modulepreload" href="services/chat.js?v=76" />
+  <link rel="modulepreload" href="services/sessions.js?v=76" />
+  <link rel="modulepreload" href="services/invites.js?v=76" />
+  <link rel="modulepreload" href="emoji.js?v=76" />
+  <link rel="modulepreload" href="color-picker.js?v=76" />
+  <link rel="modulepreload" href="firebase-config.js?v=76" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -991,6 +991,7 @@
     <div id="chat-ctx-menu" class="ctx-menu">
       <div id="chat-ctx-actions" class="ctx-actions"></div>
       <div id="chat-ctx-folders" class="ctx-folders hidden"></div>
+      <div id="chat-ctx-notify" class="ctx-folders hidden"></div>
     </div>
   </div>
 
@@ -1024,6 +1025,17 @@
               <span class="settings-row-body">
                 <span class="settings-row-title">Оформление</span>
                 <span id="prefs-appearance-hint" class="settings-row-hint">Тёмная тема</span>
+              </span>
+              <span class="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button id="prefs-notifications-btn" class="settings-row" type="button">
+              <span class="settings-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              </span>
+              <span class="settings-row-body">
+                <span class="settings-row-title">Уведомления</span>
+                <span id="prefs-notifications-hint" class="settings-row-hint">Звук, текст и типы чатов</span>
               </span>
               <span class="settings-row-chevron" aria-hidden="true">›</span>
             </button>
@@ -1124,6 +1136,67 @@
             <button class="seg-btn" type="button" data-theme-choice="light">Светлая</button>
           </div>
           <p class="field-hint">Тёмная тема включена по умолчанию. Выбор сохраняется на этом устройстве.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Уведомления: браузерные оповещения, звук, текст и типы чатов -->
+  <div id="notifications-overlay" class="overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Уведомления</h3>
+        <button id="notifications-close" class="icon-btn" type="button" title="Закрыть" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="create-form">
+        <div class="field">
+          <label>Уведомления в браузере</label>
+          <div class="segmented" id="notif-enabled-toggle">
+            <button class="seg-btn" type="button" data-notif-enabled="on">Включены</button>
+            <button class="seg-btn" type="button" data-notif-enabled="off">Выключены</button>
+          </div>
+          <p id="notif-permission-hint" class="field-hint"></p>
+          <button id="notif-permission-btn" class="btn ghost full hidden" type="button">Разрешить уведомления</button>
+        </div>
+
+        <div class="field">
+          <label>Оповещения</label>
+          <div class="notif-checks">
+            <label class="check-row">
+              <input id="notif-sound" type="checkbox" />
+              <span>Звук</span>
+            </label>
+            <label class="check-row">
+              <input id="notif-preview" type="checkbox" />
+              <span>Показывать текст сообщения</span>
+            </label>
+          </div>
+          <p class="field-hint">Без текста в уведомлении будет только «Новое сообщение» — удобно, если экран виден окружающим.</p>
+        </div>
+
+        <div class="field">
+          <label>Где уведомлять</label>
+          <div class="notif-checks">
+            <label class="check-row">
+              <input id="notif-private" type="checkbox" />
+              <span>Личные чаты</span>
+            </label>
+            <label class="check-row">
+              <input id="notif-group" type="checkbox" />
+              <span>Группы</span>
+            </label>
+            <label class="check-row">
+              <input id="notif-channel" type="checkbox" />
+              <span>Каналы</span>
+            </label>
+          </div>
+          <p class="field-hint">Уведомления приходят, пока вкладка Beacon открыта. Открытый и сфокусированный чат не дублируется. Отдельный чат можно заглушить: правый клик по нему в списке → «Уведомления».</p>
+        </div>
+
+        <div class="field">
+          <label>Проверка</label>
+          <button id="notif-test-btn" class="btn ghost full" type="button">Отправить тестовое уведомление</button>
         </div>
       </div>
     </div>
@@ -1739,9 +1812,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=73" defer></script>
+  <script src="vendor/twemoji.min.js?v=76" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=73"></script>
+  <script type="module" src="app.js?v=76"></script>
 </body>
 </html>
