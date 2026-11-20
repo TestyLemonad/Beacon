@@ -21,18 +21,46 @@
   <!-- Запрещаем эвристическое кеширование, чтобы браузер всегда брал свежие модули -->
   <meta http-equiv="Cache-Control" content="no-cache" />
 
-  <link rel="stylesheet" href="styles.css?v=76" />
+  <link rel="stylesheet" href="styles.css?v=77" />
 
   <!-- Модули грузим параллельно, а не водопадом «app.js → сервисы → SDK».
        Без этого браузер узнаёт о зависимостях только после разбора app.js. -->
-  <link rel="modulepreload" href="app.js?v=76" />
-  <link rel="modulepreload" href="services/auth.js?v=76" />
-  <link rel="modulepreload" href="services/chat.js?v=76" />
-  <link rel="modulepreload" href="services/sessions.js?v=76" />
-  <link rel="modulepreload" href="services/invites.js?v=76" />
-  <link rel="modulepreload" href="emoji.js?v=76" />
-  <link rel="modulepreload" href="color-picker.js?v=76" />
-  <link rel="modulepreload" href="firebase-config.js?v=76" />
+  <link rel="modulepreload" href="app.js?v=77" />
+  <link rel="modulepreload" href="services/auth.js?v=77" />
+  <link rel="modulepreload" href="services/chat.js?v=77" />
+  <link rel="modulepreload" href="services/sessions.js?v=77" />
+  <link rel="modulepreload" href="services/invites.js?v=77" />
+  <link rel="modulepreload" href="emoji.js?v=77" />
+  <link rel="modulepreload" href="color-picker.js?v=77" />
+  <link rel="modulepreload" href="firebase-config.js?v=77" />
+  <!-- Экраны интерфейса: раньше жили в app.js, теперь отдельные модули -->
+  <link rel="modulepreload" href="ui/dom.js?v=77" />
+  <link rel="modulepreload" href="ui/state.js?v=77" />
+  <link rel="modulepreload" href="ui/utils.js?v=77" />
+  <link rel="modulepreload" href="ui/access.js?v=77" />
+  <link rel="modulepreload" href="ui/admin-target.js?v=77" />
+  <link rel="modulepreload" href="ui/admin-usernames.js?v=77" />
+  <link rel="modulepreload" href="ui/auth-screen.js?v=77" />
+  <link rel="modulepreload" href="ui/avatar-editor.js?v=77" />
+  <link rel="modulepreload" href="ui/chat-list.js?v=77" />
+  <link rel="modulepreload" href="ui/chat-list-menu.js?v=77" />
+  <link rel="modulepreload" href="ui/chat-menu.js?v=77" />
+  <link rel="modulepreload" href="ui/chat-settings.js?v=77" />
+  <link rel="modulepreload" href="ui/chat-view.js?v=77" />
+  <link rel="modulepreload" href="ui/composer.js?v=77" />
+  <link rel="modulepreload" href="ui/extras.js?v=77" />
+  <link rel="modulepreload" href="ui/hotkeys.js?v=77" />
+  <link rel="modulepreload" href="ui/message-menu.js?v=77" />
+  <link rel="modulepreload" href="ui/messages.js?v=77" />
+  <link rel="modulepreload" href="ui/new-chat.js?v=77" />
+  <link rel="modulepreload" href="ui/notifications.js?v=77" />
+  <link rel="modulepreload" href="ui/prefs.js?v=77" />
+  <link rel="modulepreload" href="ui/profile-modal.js?v=77" />
+  <link rel="modulepreload" href="ui/profile-view.js?v=77" />
+  <link rel="modulepreload" href="ui/router.js?v=77" />
+  <link rel="modulepreload" href="ui/search.js?v=77" />
+  <link rel="modulepreload" href="ui/status-admin.js?v=77" />
+  <link rel="modulepreload" href="ui/subscriptions.js?v=77" />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js" crossorigin />
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js" crossorigin />
@@ -1812,9 +1840,9 @@
 
   <!-- Twemoji: локальный скрипт, картинки — с форка. Обычный defer,
        чтобы window.twemoji был готов к первому рендеру. -->
-  <script src="vendor/twemoji.min.js?v=76" defer></script>
+  <script src="vendor/twemoji.min.js?v=77" defer></script>
 
   <!-- Точка входа приложения -->
-  <script type="module" src="app.js?v=76"></script>
+  <script type="module" src="app.js?v=77"></script>
 </body>
 </html>
